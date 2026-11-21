@@ -66,8 +66,8 @@ curl -fsSL https://bun.sh/install | bash
 brew install cmake
 
 # 2. Get the code
-git clone https://github.com/Akhil21232123/promptflow.git
-cd promptflow
+git clone https://github.com/Akhil21232123/prompt-flow.git
+cd prompt-flow
 bun install
 
 # 3. Run in development mode (first build takes 5–15 minutes)
