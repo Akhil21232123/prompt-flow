@@ -84,4 +84,6 @@ bun install
 
 say "Building and launching PromptFlow (first build takes 5-15 minutes)"
 echo "Build log: $DIR/build.log"
+# Newer CMake rejects some bundled C++ projects without this (see AGENTS.md).
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 bun run tauri dev 2>&1 | tee "$DIR/build.log"
