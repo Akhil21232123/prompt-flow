@@ -322,6 +322,9 @@ pub struct FlowSettings {
     pub prompt_engineer: PromptEngineerSettings,
     #[serde(default)]
     pub cloud_stt: CloudSttSettings,
+    /// Set once the first-run switch to local Ollama has been considered.
+    #[serde(default)]
+    pub local_ai_defaults_applied: bool,
 }
 
 impl Default for FlowSettings {
@@ -336,6 +339,7 @@ impl Default for FlowSettings {
             app_overrides: Vec::new(),
             prompt_engineer: PromptEngineerSettings::default(),
             cloud_stt: CloudSttSettings::default(),
+            local_ai_defaults_applied: false,
         }
     }
 }

@@ -717,7 +717,7 @@ fn default_theme() -> Theme {
 }
 
 fn default_post_process_enabled() -> bool {
-    false
+    true
 }
 
 fn default_app_language() -> String {
@@ -731,7 +731,8 @@ fn default_show_tray_icon() -> bool {
 }
 
 fn default_post_process_provider_id() -> String {
-    "openai".to_string()
+    // Local Ollama until the user adds a cloud key.
+    "custom".to_string()
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
@@ -842,9 +843,15 @@ fn default_post_process_api_keys() -> SecretMap {
     SecretMap(map)
 }
 
+/// Free local model PromptFlow starts with (Ollama via the custom provider).
+pub const LOCAL_AI_DEFAULT_MODEL: &str = "llama3.1";
+
 fn default_model_for_provider(provider_id: &str) -> String {
     if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
         return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
+    }
+    if provider_id == "custom" {
+        return LOCAL_AI_DEFAULT_MODEL.to_string();
     }
     String::new()
 }
@@ -955,6 +962,27 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                 changed = true;
             }
         }
+    }
+
+    // One-time PromptFlow bootstrap: with no API key anywhere, start on the
+    // free local model (Ollama) with cleanup on, instead of a provider that
+    // can't work. Runs once, so the user's later choices stand.
+    if !settings.flow.local_ai_defaults_applied {
+        settings.flow.local_ai_defaults_applied = true;
+        let has_any_key = settings
+            .post_process_api_keys
+            .values()
+            .any(|k| !k.trim().is_empty());
+        if !has_any_key {
+            settings.post_process_provider_id = "custom".to_string();
+            settings.post_process_enabled = true;
+            if let Some(model) = settings.post_process_models.get_mut("custom") {
+                if model.trim().is_empty() {
+                    *model = LOCAL_AI_DEFAULT_MODEL.to_string();
+                }
+            }
+        }
+        changed = true;
     }
 
     changed

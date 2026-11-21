@@ -293,6 +293,15 @@ mod tests {
     }
 
     #[test]
+    fn fresh_install_defaults_to_local_ollama() {
+        let s = get_default_settings();
+        assert_eq!(s.post_process_provider_id, "custom");
+        assert!(s.post_process_enabled);
+        let llm = llm::ProviderLlm::from_settings(&s, None, None).unwrap();
+        assert!(llm.label().contains("llama3.1"));
+    }
+
+    #[test]
     fn app_awareness_can_be_turned_off() {
         let mut s = get_default_settings();
         s.flow.app_aware = false;
@@ -304,9 +313,10 @@ mod tests {
 
     #[test]
     fn unconfigured_engineer_falls_back() {
-        // Default settings have no API key, so Prompt Engineer declines and
+        // A cloud provider with no API key: Prompt Engineer declines and
         // normal cleanup takes over.
-        let s = get_default_settings();
+        let mut s = get_default_settings();
+        s.post_process_provider_id = "openai".into();
         let input = FlowInput {
             mode: FlowMode::PromptEngineer,
             ..Default::default()
@@ -325,7 +335,8 @@ mod tests {
 
     #[test]
     fn unconfigured_command_pastes_nothing() {
-        let s = get_default_settings();
+        let mut s = get_default_settings();
+        s.post_process_provider_id = "openai".into();
         let input = FlowInput {
             mode: FlowMode::Command,
             selection: Some("keep me".into()),

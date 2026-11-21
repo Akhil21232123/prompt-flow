@@ -71,6 +71,7 @@ const withDefaults = (flow?: Flow): FullFlow => ({
     fallback_to_local: true,
     ...flow?.cloud_stt,
   },
+  local_ai_defaults_applied: flow?.local_ai_defaults_applied ?? true,
 });
 
 const newId = () =>
