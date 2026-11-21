@@ -73,6 +73,8 @@ fi
 
 say "Getting the code into $DIR"
 if [ -d "$DIR/.git" ]; then
+  # Dev runs regenerate src/bindings.ts; drop that copy so the pull applies.
+  git -C "$DIR" checkout -- src/bindings.ts 2>/dev/null || true
   git -C "$DIR" pull --ff-only
 else
   git clone https://github.com/Akhil21232123/prompt-flow.git "$DIR"
