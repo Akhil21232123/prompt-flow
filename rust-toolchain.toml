@@ -1,0 +1,6 @@
+[toolchain]
+# Pinned: newer Cargo nests build output one level deeper, which makes
+# tauri-build 2.x copy resources to the wrong folder (app crashes at startup
+# looking for its tray icon). Bump together with tauri-build.
+channel = "1.97.0"
+profile = "minimal"

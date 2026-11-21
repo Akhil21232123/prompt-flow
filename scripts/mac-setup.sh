@@ -32,7 +32,7 @@ if ! command -v cargo >/dev/null 2>&1; then
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal
   . "$HOME/.cargo/env"
 fi
-rustup update stable >/dev/null 2>&1 || true
+# rust-toolchain.toml pins the version; rustup installs it on first use.
 cargo --version
 
 say "Checking Bun"
