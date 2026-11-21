@@ -897,6 +897,52 @@ fn sends_keys(paste_method: PasteMethod) -> bool {
     }
 }
 
+/// Copies the focused app's selection and returns it, restoring the user's
+/// clipboard afterwards. `None` when nothing is selected. Call from a worker
+/// thread after the shortcut keys are released (it sleeps while waiting).
+pub fn copy_selection(app_handle: &AppHandle) -> Option<String> {
+    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let clipboard = app_handle.clipboard();
+    let saved_text = clipboard.read_text().ok();
+    // A sentinel shows whether the copy changed anything: copying with no
+    // selection leaves the clipboard as it was in most apps.
+    let sentinel = format!("\u{2063}promptflow-{}", std::process::id());
+    if write_text_to_clipboard(app_handle, &sentinel).is_err() {
+        return None;
+    }
+
+    // Give the user a moment to release the shortcut's modifier keys so they
+    // don't combine with the synthetic Cmd/Ctrl+C.
+    std::thread::sleep(Duration::from_millis(120));
+    let sent = with_enigo(app_handle, input::send_copy);
+
+    let mut copied = None;
+    if sent.is_ok() {
+        for _ in 0..12 {
+            std::thread::sleep(Duration::from_millis(25));
+            match clipboard.read_text() {
+                Ok(text) if text != sentinel => {
+                    copied = Some(text);
+                    break;
+                }
+                _ => {}
+            }
+        }
+    } else if let Err(e) = sent {
+        log::warn!("Could not send the copy shortcut: {e}");
+    }
+
+    match saved_text {
+        Some(text) if !text.is_empty() => {
+            let _ = write_text_to_clipboard(app_handle, &text);
+        }
+        _ => {
+            let _ = clipboard.clear();
+        }
+    }
+    copied.filter(|t| !t.trim().is_empty())
+}
+
 /// Pastes `text` into the focused app. Call from a worker thread, never the main
 /// thread: it sleeps between steps (input injection hops via `with_enigo`).
 pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {

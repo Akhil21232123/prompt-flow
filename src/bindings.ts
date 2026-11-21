@@ -423,6 +423,14 @@ async changeFillerWordRemovalEnabledSetting(enabled: boolean) : Promise<Result<n
     else return { status: "error", error: e  as any };
 }
 },
+async changeFlowSettings(flow: FlowSettings) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_flow_settings", { flow }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeChineseScriptSetting(script: ChineseScript) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_chinese_script_setting", { script }) };
@@ -1185,7 +1193,25 @@ language_detection_window_secs?: number;
  * not gated on this — that follows model capability. Migrated from the old
  * `overlay_position` (position `none` → style `None`).
  */
-overlay_style?: OverlayStyle }
+overlay_style?: OverlayStyle; 
+/**
+ * PromptFlow features (smart polish, styles, snippets, Prompt Engineer,
+ * Command Mode, cloud transcription).
+ */
+flow?: FlowSettings }
+export type AppCategory = "email" | "work_chat" | "personal_chat" | "code" | "terminal" | "ai_chat" | "docs" | "other"
+export type AppCategoryOverride = { app: string; category: AppCategory }
+export type CategoryStyles = { email?: WritingStyle; work_chat?: WritingStyle; personal_chat?: WritingStyle; docs?: WritingStyle; other?: WritingStyle }
+export type CloudSttProvider = "groq" | "openai"
+export type CloudSttSettings = { enabled?: boolean; provider?: CloudSttProvider; model?: string; fallback_to_local?: boolean }
+export type EngineerQuality = "fast" | "balanced" | "max"
+export type FlowSettings = { smart_polish?: boolean; polish_main_shortcut?: boolean; app_aware?: boolean; styles?: CategoryStyles; developer_mode?: boolean; snippets?: Snippet[]; app_overrides?: AppCategoryOverride[]; prompt_engineer?: PromptEngineerSettings; cloud_stt?: CloudSttSettings }
+export type MissingInfoPolicy = "state_assumptions" | "ask_first"
+export type PromptEngineerSettings = { quality?: EngineerQuality; target?: PromptTarget; missing_info?: MissingInfoPolicy; format?: PromptFormat; min_score?: number; max_rounds?: number; provider_id?: string | null; model?: string | null; auto_in_ai_apps?: boolean; auto_min_words?: number; custom_instructions?: string }
+export type PromptFormat = "auto" | "xml" | "markdown" | "plain"
+export type PromptTarget = "auto" | "coding_agent" | "chat_assistant" | "research" | "writing" | "image_generation" | "data_analysis"
+export type Snippet = { id: string; trigger: string; expansion: string }
+export type WritingStyle = "formal" | "casual" | "very_casual"
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 

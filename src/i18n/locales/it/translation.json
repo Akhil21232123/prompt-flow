@@ -19,7 +19,8 @@
     "postProcessing": "Post-Elaborazione",
     "history": "Cronologia",
     "debug": "Debug",
-    "about": "Informazioni"
+    "about": "Informazioni",
+    "flow": "PromptFlow"
   },
   "onboarding": {
     "customModelDescription": "Non ufficialmente supportato",
@@ -897,6 +898,159 @@
           "description": "Inferenza ad alte prestazioni del modello di riconoscimento vocale automatico Whisper di OpenAI",
           "details": "Handy usa ggml per il riconoscimento vocale veloce in locale. Grazie a Georgi Gerganov e collaboratori per il fantastico lavoro."
         }
+      }
+    },
+    "flow": {
+      "setupNeeded": "Prompt Engineer, Command Mode and smart cleanup need an AI model. Turn on Post Processing below, then pick a provider, model and API key in the Post Process page (or set a provider for Prompt Engineer here).",
+      "shortcuts": {
+        "title": "Shortcuts",
+        "description": "Hold to talk, release to paste. Dictate cleans up what you say; Prompt Engineer turns it into a prompt for an AI; Command Mode edits your selection."
+      },
+      "engineer": {
+        "title": "Prompt Engineer",
+        "description": "Rewrites a spoken request into the prompt that gets the most out of the AI it's for, then has a second pass critique and improve it.",
+        "quality": {
+          "title": "Quality",
+          "description": "Fast: one rewrite. Balanced: rewrite plus one critique-and-revise pass. Max: keeps revising until the critic scores 9/10 (up to 3 rounds).",
+          "options": {
+            "fast": "Fast (1 call)",
+            "balanced": "Balanced (rewrite + critique)",
+            "max": "Max (revise until 9/10)"
+          }
+        },
+        "target": {
+          "title": "Prompt is for",
+          "description": "Auto picks from the app in front and what you said.",
+          "options": {
+            "auto": "Auto-detect",
+            "coding_agent": "Coding agent",
+            "chat_assistant": "Chat assistant",
+            "research": "Research",
+            "writing": "Writing",
+            "image_generation": "Image generation",
+            "data_analysis": "Data analysis"
+          }
+        },
+        "missing": {
+          "title": "When details are missing",
+          "description": "What the prompt tells the AI to do about things you didn't say. The rewrite never invents them.",
+          "options": {
+            "state_assumptions": "Assume and say so",
+            "ask_first": "Ask me first"
+          }
+        },
+        "format": {
+          "title": "Prompt format",
+          "description": "Auto uses XML sections for Claude, Cursor and terminals, Markdown elsewhere.",
+          "options": {
+            "auto": "Auto",
+            "xml": "XML sections",
+            "markdown": "Markdown",
+            "plain": "Plain text"
+          }
+        },
+        "auto": {
+          "title": "Auto in AI apps",
+          "description": "When you dictate normally into Claude, ChatGPT, Cursor, a terminal or another AI app, engineer the prompt automatically. Short replies like \"yes, go ahead\" are only cleaned up."
+        },
+        "provider": {
+          "title": "AI model",
+          "description": "Which provider and model writes and critiques prompts. Leave on \"Same as Post Process\" to use that one.",
+          "same": "Same as Post Process",
+          "modelPlaceholder": "model id",
+          "key": "API key",
+          "keyDescription": "Key for the provider chosen above."
+        },
+        "custom": {
+          "title": "Standing context",
+          "description": "Added to every engineered prompt where relevant, e.g. your stack or role.",
+          "placeholder": "I'm building with Next.js, TypeScript, Supabase and pnpm. Keep explanations short."
+        }
+      },
+      "dictation": {
+        "title": "Dictation",
+        "description": "Wispr Flow-style cleanup: removes fillers, handles \"actually, make that 6\", formats lists, numbers and emails.",
+        "smart": {
+          "title": "Smart cleanup",
+          "description": "Use PromptFlow's context-aware prompt instead of the selected Post Process prompt."
+        },
+        "main": {
+          "title": "Clean up with the main shortcut",
+          "description": "Polish every dictation, not only the Post Process shortcut."
+        },
+        "appAware": {
+          "title": "Adapt to the app",
+          "description": "Detect the app in front (Mail, Slack, Cursor...) and match tone and formatting to it."
+        },
+        "developer": {
+          "title": "Developer formatting",
+          "description": "In code editors and terminals: say \"camel case user id\" for userId, \"app dot tsx\" for app.tsx, and \"at file\" for @-mentions in Cursor and Windsurf."
+        }
+      },
+      "styles": {
+        "title": "Styles",
+        "description": "How formal dictation should be in each kind of app.",
+        "options": {
+          "formal": "Formal",
+          "casual": "Casual",
+          "very_casual": "Very casual"
+        },
+        "hint": {
+          "email": "Mail, Outlook, Gmail, Superhuman",
+          "work_chat": "Slack, Teams, Linear",
+          "personal_chat": "Messages, WhatsApp, Telegram, Discord",
+          "docs": "Notion, Notes, Pages, Word, Obsidian",
+          "other": "Everything else"
+        }
+      },
+      "categories": {
+        "email": "Email",
+        "work_chat": "Work messages",
+        "personal_chat": "Personal messages",
+        "code": "Code editor",
+        "terminal": "Terminal",
+        "ai_chat": "AI chat",
+        "docs": "Documents",
+        "other": "Other"
+      },
+      "snippets": {
+        "title": "Snippets",
+        "description": "Say a trigger phrase and get the saved text, e.g. \"my calendly link\".",
+        "trigger": "Trigger phrase",
+        "expansion": "Text to insert",
+        "add": "Add snippet",
+        "remove": "Remove snippet"
+      },
+      "cloud": {
+        "title": "Cloud transcription",
+        "description": "Send audio to Groq or OpenAI Whisper for speed and accuracy. Off by default: transcription stays on your Mac.",
+        "enabled": {
+          "title": "Use cloud transcription",
+          "description": "Needs an API key for the provider below."
+        },
+        "provider": {
+          "title": "Provider and model",
+          "description": "Leave the model empty for the default.",
+          "options": {
+            "groq": "Groq",
+            "openai": "OpenAI"
+          }
+        },
+        "key": {
+          "title": "API key",
+          "description": "Shared with the same provider in Post Process."
+        },
+        "fallback": {
+          "title": "Fall back to local",
+          "description": "Use the local model if the cloud request fails."
+        }
+      },
+      "overrides": {
+        "title": "App categories",
+        "description": "Override how an app is treated. Use its bundle id (com.tinyspeck.slackmacgap) or name (Slack).",
+        "app": "Bundle id or app name",
+        "add": "Add app",
+        "remove": "Remove"
       }
     }
   },

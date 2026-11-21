@@ -572,6 +572,10 @@ pub struct AppSettings {
     /// `overlay_position` (position `none` → style `None`).
     #[serde(default = "default_overlay_style")]
     pub overlay_style: OverlayStyle,
+    /// PromptFlow features (smart polish, styles, snippets, Prompt Engineer,
+    /// Command Mode, cloud transcription).
+    #[serde(default)]
+    pub flow: crate::flow::settings::FlowSettings,
 }
 
 fn default_model() -> String {
@@ -605,7 +609,9 @@ fn default_autostart_enabled() -> bool {
 }
 
 fn default_update_checks_enabled() -> bool {
-    true
+    // PromptFlow ships no signed update feed yet; Handy's feed would replace
+    // this app with upstream Handy.
+    false
 }
 
 fn default_show_whats_new_on_update() -> bool {
@@ -997,6 +1003,32 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_post_process_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let (default_prompt_shortcut, default_command_shortcut) = ("ctrl+option+p", "ctrl+option+e");
+    #[cfg(not(target_os = "macos"))]
+    let (default_prompt_shortcut, default_command_shortcut) = ("ctrl+alt+p", "ctrl+alt+e");
+    bindings.insert(
+        "prompt_engineer".to_string(),
+        ShortcutBinding {
+            id: "prompt_engineer".to_string(),
+            name: "Prompt Engineer".to_string(),
+            description: "Turns what you say into an engineered prompt for an AI, refined by a critique pass."
+                .to_string(),
+            default_binding: default_prompt_shortcut.to_string(),
+            current_binding: default_prompt_shortcut.to_string(),
+        },
+    );
+    bindings.insert(
+        "command_mode".to_string(),
+        ShortcutBinding {
+            id: "command_mode".to_string(),
+            name: "Command Mode".to_string(),
+            description: "Edits the selected text with a spoken instruction, or writes new text at the cursor."
+                .to_string(),
+            default_binding: default_command_shortcut.to_string(),
+            current_binding: default_command_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {
@@ -1076,6 +1108,7 @@ pub fn get_default_settings() -> AppSettings {
         language_detection: LanguageDetectionMode::default(),
         language_detection_window_secs: default_language_detection_window_secs(),
         overlay_style: default_overlay_style(),
+        flow: crate::flow::settings::FlowSettings::default(),
     }
 }
 

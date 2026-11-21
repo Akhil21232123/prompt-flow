@@ -2,6 +2,7 @@
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::audio_toolkit::VadPolicy;
+use crate::flow::{FlowInput, FlowMode};
 use crate::managers::audio::{recording_notice_code, AudioRecordingManager};
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
@@ -134,6 +135,8 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction {
     post_process: bool,
+    /// Which PromptFlow mode this shortcut runs.
+    mode: FlowMode,
 }
 
 /// Field name for structured output JSON schema
@@ -460,7 +463,61 @@ pub(crate) async fn process_transcription_output(
     transcription: &str,
     post_process: bool,
 ) -> ProcessedTranscription {
+    process_with_settings(get_settings(app), transcription, post_process).await
+}
+
+/// PromptFlow's output stage: Prompt Engineer and Command Mode when they
+/// apply, otherwise snippet-protected dictation cleanup with the
+/// context-aware prompt.
+pub(crate) async fn process_flow_output(
+    app: &AppHandle,
+    transcription: &str,
+    post_process: bool,
+    input: FlowInput,
+) -> ProcessedTranscription {
     let settings = get_settings(app);
+    if let Some(special) = crate::flow::run_special(&settings, transcription, &input).await {
+        return ProcessedTranscription {
+            post_processed_text: (!special.failed).then(|| special.text.clone()),
+            final_text: special.text,
+            post_process_prompt: Some(special.label),
+            post_process_failed: special.failed,
+        };
+    }
+
+    let flow = &settings.flow;
+    let protected = crate::flow::snippets::protect(transcription, &flow.snippets);
+    let category = crate::flow::category_for(&settings, input.app.as_ref());
+    let use_smart = post_process && flow.smart_polish;
+    let run_settings = if use_smart {
+        crate::flow::smart_polish_settings(
+            &settings,
+            input.app.as_ref(),
+            category,
+            !protected.tokens.is_empty(),
+        )
+    } else {
+        settings.clone()
+    };
+    let mut out = process_with_settings(run_settings, &protected.text, post_process).await;
+    out.final_text = crate::flow::snippets::expand(&out.final_text, &protected.tokens);
+    out.post_processed_text = out
+        .post_processed_text
+        .map(|t| crate::flow::snippets::expand(&t, &protected.tokens));
+    if use_smart && out.post_processed_text.is_some() {
+        out.post_process_prompt = Some(crate::flow::smart_polish_label(
+            category,
+            crate::flow::style_for(&settings, category),
+        ));
+    }
+    out
+}
+
+async fn process_with_settings(
+    settings: AppSettings,
+    transcription: &str,
+    post_process: bool,
+) -> ProcessedTranscription {
     let mut final_text = transcription.to_string();
     let mut post_processed_text: Option<String> = None;
     let mut post_process_prompt: Option<String> = None;
@@ -517,6 +574,9 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        // Note the app the user is dictating into while it is still in front.
+        crate::flow::app_context::begin_capture();
+        let cloud_stt = crate::flow::cloud_stt::is_active(&get_settings(app));
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -537,7 +597,7 @@ impl ShortcutAction for TranscribeAction {
 
         // Don't open the mic if nothing can transcribe the recording. A load
         // started above reports its own failure; one already running doesn't.
-        if !tm.is_model_loaded() {
+        if !cloud_stt && !tm.is_model_loaded() {
             if selected_model.is_empty() {
                 warn!("Not starting recording: no model is selected");
                 tm.raise_no_model_selected();
@@ -573,10 +633,12 @@ impl ShortcutAction for TranscribeAction {
         // Use the app-facing model capability as the single pre-recording source
         // for live streaming decisions. Unknown support is represented as false
         // until the model registry is updated by discovery or runtime load.
-        let model_supports_streaming = selected_model_info
-            .as_ref()
-            .map(|m| m.supports_streaming)
-            .unwrap_or(false);
+        // Cloud transcription works on the whole recording, so no live stream.
+        let model_supports_streaming = !cloud_stt
+            && selected_model_info
+                .as_ref()
+                .map(|m| m.supports_streaming)
+                .unwrap_or(false);
         let vad_policy = if !settings.vad_enabled {
             VadPolicy::Disabled
         } else if model_supports_streaming {
@@ -736,7 +798,14 @@ impl ShortcutAction for TranscribeAction {
         play_feedback_sound(app, SoundType::Stop);
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
-        let post_process = self.post_process;
+        let mode = self.mode;
+        let post_process = {
+            let s = get_settings(app);
+            self.post_process
+                || (mode == FlowMode::Dictate
+                    && s.flow.polish_main_shortcut
+                    && s.post_process_enabled)
+        };
         let cancel_generation = rm.cancel_generation();
 
         tauri::async_runtime::spawn(async move {
@@ -745,6 +814,17 @@ impl ShortcutAction for TranscribeAction {
                 "Starting async transcription task for binding: {}",
                 binding_id
             );
+
+            // The selection must be read before anything is pasted; the
+            // shortcut keys are up by now.
+            let selection_task = (mode == FlowMode::Command).then(|| {
+                let ah_sel = ah.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    crate::clipboard::copy_selection(&ah_sel)
+                })
+            });
+            let app_context_task =
+                tauri::async_runtime::spawn_blocking(crate::flow::app_context::take_captured);
 
             let stop_recording_time = Instant::now();
             if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
@@ -787,7 +867,30 @@ impl ShortcutAction for TranscribeAction {
                     // otherwise a batch run of the samples. A cancel is surfaced
                     // as an error, so it never starts a batch run.
                     let transcription_time = Instant::now();
-                    let transcription_result = tm.transcribe_recording(samples);
+                    let stt_settings = get_settings(&ah);
+                    let transcription_result = match crate::flow::cloud_stt::target(&stt_settings) {
+                        Some(target) => {
+                            tm.cancel_stream();
+                            match crate::flow::cloud_stt::transcribe(
+                                &target,
+                                &samples,
+                                &stt_settings,
+                            )
+                            .await
+                            {
+                                Ok(text) => Ok(Transcription {
+                                    text,
+                                    language: None,
+                                }),
+                                Err(e) if stt_settings.flow.cloud_stt.fallback_to_local => {
+                                    warn!("{e}; falling back to the local model");
+                                    tm.transcribe_recording(samples)
+                                }
+                                Err(e) => Err(anyhow::anyhow!(e)),
+                            }
+                        }
+                        None => tm.transcribe_recording(samples),
+                    };
 
                     // Await WAV save and verify
                     let wav_saved = match wav_handle.await {
@@ -838,8 +941,26 @@ impl ShortcutAction for TranscribeAction {
                                     show_processing_overlay(&ah);
                                 }
                             }
+                            let selection = match selection_task {
+                                Some(task) => task.await.ok().flatten(),
+                                None => None,
+                            };
+                            let flow_input = FlowInput {
+                                mode,
+                                // Capped: the first run waits on macOS's
+                                // automation prompt until the user answers.
+                                app: tokio::time::timeout(
+                                    Duration::from_millis(1500),
+                                    app_context_task,
+                                )
+                                .await
+                                .ok()
+                                .and_then(|joined| joined.ok())
+                                .flatten(),
+                                selection,
+                            };
                             let Some(processed) = complete_unless_cancelled(
-                                process_transcription_output(&ah, &transcription, post_process),
+                                process_flow_output(&ah, &transcription, post_process, flow_input),
                                 || rm.was_cancelled_since(cancel_generation),
                             )
                             .await
@@ -1093,11 +1214,29 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction {
             post_process: false,
+            mode: FlowMode::Dictate,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "transcribe_with_post_process".to_string(),
-        Arc::new(TranscribeAction { post_process: true }) as Arc<dyn ShortcutAction>,
+        Arc::new(TranscribeAction {
+            post_process: true,
+            mode: FlowMode::Dictate,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "prompt_engineer".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: true,
+            mode: FlowMode::PromptEngineer,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "command_mode".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: true,
+            mode: FlowMode::Command,
+        }) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),
