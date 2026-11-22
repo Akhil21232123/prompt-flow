@@ -177,6 +177,12 @@ final class FlowEngine: ObservableObject {
             setPhase(.ready)
             return
         }
+        // Nothing but silence or room noise: don't send it, or speech models
+        // invent words ("Thank you", or names from your dictionary).
+        guard Wav.voicedSeconds(pcm) >= 0.3 else {
+            fail("Didn't hear anything. Try again a little closer to the mic.")
+            return
+        }
         setPhase(.working)
         let wav = Wav.encode(pcm: Wav.pcm16(pcm))
         let field = delivery != nil ? inAppField : store.fieldContext

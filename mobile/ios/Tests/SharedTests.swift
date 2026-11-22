@@ -60,4 +60,11 @@ final class SharedTests: XCTestCase {
         let bad = URL(string: "promptflow://auth#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired")!
         XCTAssertEqual(API.linkParams(bad)["error_description"], "Email link is invalid or has expired")
     }
+
+    func testSilenceIsNotSpeech() {
+        let room = [Float](repeating: 0.004, count: 16_000)
+        XCTAssertEqual(Wav.voicedSeconds(room), 0)
+        let voice = (0..<8_000).map { Float(sin(Double($0) / 8)) * 0.2 }
+        XCTAssertEqual(Wav.voicedSeconds(room + voice + room), 0.5, accuracy: 0.051)
+    }
 }

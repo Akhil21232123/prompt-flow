@@ -36,3 +36,28 @@ enum TextJoin {
         return needsSpace ? " " + insert : insert
     }
 }
+
+extension Wav {
+    /**
+     Seconds of 16 kHz audio that sound like speech: 50 ms frames above an
+     absolute floor and well above the clip's own background noise (capped so
+     a clip that is speech end to end still counts).
+     */
+    static func voicedSeconds(_ samples: [Float]) -> Double {
+        let frame = sampleRate / 20
+        guard samples.count >= frame else { return 0 }
+        var rms: [Float] = []
+        rms.reserveCapacity(samples.count / frame)
+        var i = 0
+        while i + frame <= samples.count {
+            var sum: Float = 0
+            for j in i..<(i + frame) { sum += samples[j] * samples[j] }
+            rms.append((sum / Float(frame)).squareRoot())
+            i += frame
+        }
+        let sorted = rms.sorted()
+        let noise = sorted[min(Int(Double(sorted.count) * 0.2), sorted.count - 1)]
+        let threshold = max(0.012, min(noise * 3, 0.04))
+        return Double(rms.filter { $0 > threshold }.count) * 0.05
+    }
+}
