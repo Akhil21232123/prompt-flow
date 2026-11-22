@@ -68,8 +68,9 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
         // The app being typed into (events from the keyboard itself say nothing about it).
         val pkg = (focused?.packageName ?: rootInActiveWindow?.packageName ?: event.packageName)
             ?.toString()?.takeIf { p -> KEYBOARD_PACKAGES.none { p.startsWith(it) } }
-        // Never over passwords, and not inside PromptFlow (it has its own orb).
-        if (focused?.isPassword == true || pkg == packageName) {
+        // Never over passwords, payment or banking apps, or inside PromptFlow
+        // (it has its own orb).
+        if (focused?.isPassword == true || pkg == packageName || isSensitive(pkg)) {
             hideBubbleSoon()
             return
         }
@@ -184,33 +185,50 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
 
     // ----------------------------------------------------------- gestures
 
-    override fun onTap() = toggle(Mode.Dictate)
-    override fun onLongPress() = toggle(Mode.Engineer)
-    override fun onDoubleTap() = toggle(Mode.Command)
-
-    private fun toggle(mode: Mode) {
+    override fun onTap() {
         val d = app.dictation
-        if (d.isListening) {
-            haptic()
-            RecordingService.stop(this)
-            d.finish(context = ::readContext, deliver = { result ->
-                val node = findFocusedEditable() ?: target?.takeIf { it.refresh() }
-                if (node == null || !TextInserter.insert(this, node, result.text)) {
-                    // Some apps hide their text box from accessibility: hand
-                    // the text over by clipboard instead of losing it.
-                    val clip = getSystemService(android.content.ClipboardManager::class.java)
-                    clip.setPrimaryClip(android.content.ClipData.newPlainText("PromptFlow", result.text))
-                    android.widget.Toast.makeText(this, "Copied. Long-press the text box and tap Paste.", android.widget.Toast.LENGTH_LONG).show()
-                }
-            })
-            return
+        if (!d.isListening && !micAllowed()) return
+        when (d.tap(stop = ::finish, start = ::begin)) {
+            com.akhil.promptflow.core.Dictation.TapResult.SwitchedToStyle -> haptic()
+            else -> Unit
         }
-        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            android.widget.Toast.makeText(this, "Open PromptFlow to allow the microphone", android.widget.Toast.LENGTH_LONG).show()
-            return
-        }
+    }
+
+    override fun onHoldStart() {
+        val d = app.dictation
+        if (d.isListening || d.state.value is DictationState.Working || !micAllowed()) return
+        begin(Mode.Command)
+    }
+
+    override fun onHoldEnd() {
+        val d = app.dictation
+        if (d.isListening && d.currentMode == Mode.Command) finish()
+    }
+
+    private fun micAllowed(): Boolean {
+        if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) return true
+        android.widget.Toast.makeText(this, "Open PromptFlow to allow the microphone", android.widget.Toast.LENGTH_LONG).show()
+        return false
+    }
+
+    private fun begin(mode: Mode) {
         RecordingService.start(this)
-        if (d.start(mode)) haptic() else RecordingService.stop(this)
+        if (app.dictation.start(mode)) haptic() else RecordingService.stop(this)
+    }
+
+    private fun finish() {
+        haptic()
+        RecordingService.stop(this)
+        app.dictation.finish(context = ::readContext, deliver = { result ->
+            val node = findFocusedEditable() ?: target?.takeIf { it.refresh() }
+            if (node == null || !TextInserter.insert(this, node, result.text)) {
+                // Some apps hide their text box from accessibility: hand
+                // the text over by clipboard instead of losing it.
+                val clip = getSystemService(android.content.ClipboardManager::class.java)
+                clip.setPrimaryClip(android.content.ClipData.newPlainText("PromptFlow", result.text))
+                android.widget.Toast.makeText(this, "Copied. Long-press the text box and tap Paste.", android.widget.Toast.LENGTH_LONG).show()
+            }
+        })
     }
 
     private fun readContext(): Pair<AppContext?, String?> {
@@ -257,7 +275,20 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
         }
     }
 
+    private fun isSensitive(pkg: String?): Boolean {
+        val p = pkg?.lowercase() ?: return false
+        return p in SENSITIVE_APPS || SENSITIVE_WORDS.any { p.contains(it) }
+    }
+
     private companion object {
+        /** Apps where an overlay is unwelcome: payments, banks, wallets. */
+        val SENSITIVE_APPS = setOf(
+            "com.google.android.apps.nbu.paisa.user", "com.google.android.apps.walletnfcrel",
+            "com.phonepe.app", "net.one97.paytm", "in.org.npci.upiapp",
+            "com.whatsapp.w4b.payments", "com.paypal.android.p2pmobile",
+        )
+        val SENSITIVE_WORDS = listOf("bank", "upi", "wallet", "pay", "trading", "broker", "zerodha", "groww")
+
         /** Keyboard apps, whose own events say nothing about the target app. */
         val KEYBOARD_PACKAGES = listOf("com.google.android.inputmethod", "com.samsung.android.honeyboard", "com.touchtype", "com.swiftkey")
     }

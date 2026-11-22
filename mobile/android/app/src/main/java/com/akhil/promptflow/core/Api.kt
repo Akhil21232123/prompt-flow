@@ -101,6 +101,7 @@ class Api(private val store: Store) {
             .put("device", "android")
         app?.let { meta.put("app", it.toJson()) }
         selection?.takeIf { it.isNotBlank() }?.let { meta.put("selection", it) }
+        if (mode == Mode.Dictate) meta.put("preset", store.stylePreset.wire)
         val res = multipart("/functions/v1/dictate", meta, wav)
         return DictationResult.fromJson(JSONObject(res))
     }

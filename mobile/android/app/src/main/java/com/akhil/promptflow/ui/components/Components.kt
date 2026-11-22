@@ -1,5 +1,12 @@
 package com.akhil.promptflow.ui.components
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
@@ -55,7 +62,18 @@ fun brushFor(mode: Mode): Brush = when (mode) {
 
 /** The big tappable orb on Home: breathes when idle, dances with your voice. */
 @Composable
-fun Orb(state: DictationState, mode: Mode, size: Dp = 168.dp, onClick: () -> Unit) {
+fun Orb(
+    state: DictationState,
+    mode: Mode,
+    size: Dp = 168.dp,
+    onHoldStart: () -> Unit = {},
+    onHoldEnd: () -> Unit = {},
+    onClick: () -> Unit,
+) {
+    // Latest callbacks, read inside the long-lived gesture handler.
+    val onClickState = rememberUpdatedState(onClick)
+    val onHoldStartState = rememberUpdatedState(onHoldStart)
+    val onHoldEndState = rememberUpdatedState(onHoldEnd)
     val t = rememberInfiniteTransition(label = "orb")
     val breathe by t.animateFloat(
         0.96f, 1.04f,
@@ -87,7 +105,20 @@ fun Orb(state: DictationState, mode: Mode, size: Dp = 168.dp, onClick: () -> Uni
                 .scale(scale)
                 .clip(CircleShape)
                 .background(brush)
-                .clickable(remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+                .pointerInput(Unit) {
+                    // Tap, or hold past HOLD_MS (released = hold ended).
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        val up = withTimeoutOrNull(com.akhil.promptflow.core.Gestures.HOLD_MS) { waitForUpOrCancellation() }
+                        if (up != null) {
+                            onClickState.value()
+                        } else {
+                            onHoldStartState.value()
+                            waitForUpOrCancellation()
+                            onHoldEndState.value()
+                        }
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             Canvas(Modifier.size(size * 0.5f)) {
@@ -176,5 +207,31 @@ fun GradientButton(text: String, modifier: Modifier = Modifier, brush: Brush = B
         contentAlignment = Alignment.Center,
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge, color = Color.White)
+    }
+}
+
+/** Chips for the double-tap style. */
+@Composable
+fun StylePicker(selected: com.akhil.promptflow.core.StylePreset, onChange: (com.akhil.promptflow.core.StylePreset) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        com.akhil.promptflow.core.StylePreset.entries.forEach { p ->
+            val on = p == selected
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(if (on) brushFor(Mode.Dictate) else androidx.compose.ui.graphics.SolidColor(Brand.SurfaceHigh))
+                    .clickable { onChange(p) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    p.label,
+                    color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.labelLarge,
+                )
+            }
+        }
     }
 }

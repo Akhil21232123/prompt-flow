@@ -39,7 +39,9 @@ import com.akhil.promptflow.core.AppContext
 import com.akhil.promptflow.core.DictationState
 import com.akhil.promptflow.core.Mode
 import com.akhil.promptflow.ui.components.Card
-import com.akhil.promptflow.ui.components.ModeSwitch
+import com.akhil.promptflow.ui.components.StylePicker
+import com.akhil.promptflow.core.StylePreset
+import com.akhil.promptflow.core.Dictation
 import com.akhil.promptflow.ui.components.Orb
 import com.akhil.promptflow.ui.components.Stat
 
@@ -49,17 +51,27 @@ fun HomeScreen() {
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
     val state by app.dictation.state.collectAsState()
-    var mode by rememberSaveable { mutableStateOf(Mode.Dictate) }
+    var style by remember { mutableStateOf(app.store.stylePreset) }
     var pad by rememberSaveable { mutableStateOf("") }
     var bubbleOn by remember { mutableStateOf(Sys.bubbleEnabled(context)) }
+    var keyboardOn by remember { mutableStateOf(Sys.keyboardEnabled(context)) }
     // Re-check whenever the user comes back (e.g. from Accessibility settings).
     val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
     androidx.compose.runtime.DisposableEffect(owner) {
         val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
-            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) bubbleOn = Sys.bubbleEnabled(context)
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                bubbleOn = Sys.bubbleEnabled(context)
+                keyboardOn = Sys.keyboardEnabled(context)
+            }
         }
         owner.lifecycle.addObserver(obs)
         onDispose { owner.lifecycle.removeObserver(obs) }
+    }
+
+    val d = app.dictation
+    fun ctx() = AppContext(name = "PromptFlow", packageName = context.packageName) to pad.ifBlank { null }
+    val deliver: (com.akhil.promptflow.core.DictationResult) -> Unit = { r ->
+        pad = if (r.mode == Mode.Command) r.text else listOf(pad, r.text).filter { it.isNotBlank() }.joinToString(" ")
     }
 
     Column(
@@ -68,26 +80,35 @@ fun HomeScreen() {
     ) {
         Text("PromptFlow", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.fillMaxWidth())
         Spacer(Modifier.height(12.dp))
-        ModeSwitch(mode) { mode = it }
+        StylePicker(style) { style = it; app.store.stylePreset = it }
+        Text(
+            "Double-tap style: ${style.hint}",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        )
         Spacer(Modifier.height(8.dp))
-        Orb(state, mode) {
+        val orbMode = (state as? DictationState.Listening)?.mode ?: (state as? DictationState.Working)?.mode ?: Mode.Engineer
+        Orb(
+            state, orbMode,
+            onHoldStart = {
+                if (!d.isListening && state !is DictationState.Working) {
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    d.start(Mode.Command)
+                }
+            },
+            onHoldEnd = { if (d.isListening && d.currentMode == Mode.Command) d.finish(::ctx, deliver) },
+        ) {
             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-            if (app.dictation.isListening) {
-                app.dictation.finish(
-                    context = { AppContext(name = "PromptFlow", packageName = context.packageName) to pad.ifBlank { null } },
-                    deliver = { r -> pad = if (mode == Mode.Command) r.text else listOf(pad, r.text).filter { it.isNotBlank() }.joinToString(" ") },
-                )
-            } else {
-                app.dictation.start(mode)
-            }
+            d.tap(stop = { d.finish(::ctx, deliver) }, start = { d.start(it) })
         }
-        StatusLine(state, mode)
+        StatusLine(state, style)
         Spacer(Modifier.height(16.dp))
         OutlinedTextField(
             value = pad,
             onValueChange = { pad = it },
             modifier = Modifier.fillMaxWidth().heightIn(min = 140.dp),
-            placeholder = { Text("Try it here: tap the orb and talk. Or tap this field and use the bubble.") },
+            placeholder = { Text("Try it here: tap the orb and talk.") },
             shape = RoundedCornerShape(18.dp),
         )
         if (pad.isNotBlank()) TextButton(onClick = { pad = "" }) { Text("Clear") }
@@ -103,45 +124,65 @@ fun HomeScreen() {
         Spacer(Modifier.height(12.dp))
         Card {
             Column {
-                if (bubbleOn) {
-                    Text("● Bubble is on", style = MaterialTheme.typography.titleMedium, color = androidx.compose.ui.graphics.Color(0xFF4ADE80))
+                if (keyboardOn) {
+                    Text("● Keyboard is on", style = MaterialTheme.typography.titleMedium, color = androidx.compose.ui.graphics.Color(0xFF4ADE80))
                     Text(
-                        "Open any app and tap a text box: the bubble appears just above your keyboard.",
+                        "In any app, tap a text box, then switch to PromptFlow with your keyboard's switch button (or below).",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    TextButton(onClick = { Sys.showKeyboardPicker(context) }) { Text("Switch keyboard now") }
                 } else {
-                    Text("Turn on the bubble", style = MaterialTheme.typography.titleMedium)
+                    Text("Turn on the PromptFlow keyboard", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        "It's what lets you dictate into WhatsApp, Gmail, ChatGPT and every other app. " +
-                            "Settings → Accessibility → Installed apps → PromptFlow → On.\n\n" +
-                            "Greyed out? Settings → Apps → PromptFlow → ⋮ → Allow restricted settings, then try again.",
+                        "It's how you dictate into WhatsApp, Gmail, ChatGPT and every other app. Turn on \"PromptFlow voice keyboard\" in the list that opens.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { Sys.openAccessibilitySettings(context) }) { Text("Open Accessibility settings") }
+                    TextButton(onClick = { Sys.openKeyboardSettings(context) }) { Text("Open keyboard settings") }
                 }
             }
         }
         Spacer(Modifier.height(12.dp))
         Card {
             Column {
-                Text("Using the bubble", style = MaterialTheme.typography.titleMedium)
+                Text("Floating bubble (optional)", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    if (bubbleOn) "On. It hides itself in payment and banking apps, but some of them still warn while it's switched on. Turn it off in Accessibility if that bothers you."
+                    else "A bubble over your usual keyboard instead. It needs Accessibility access, which banking apps like GPay warn about, so the keyboard is the better choice.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = { Sys.openAccessibilitySettings(context) }) { Text(if (bubbleOn) "Accessibility settings" else "Turn on the bubble") }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
+        Card {
+            Column {
+                Text("How it works", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(6.dp))
-                Text("Tap: dictate · Hold: Prompt Engineer · Double-tap: edit selected text · Drag: move", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    "Tap the mic, talk, tap again: you get a prompt engineered for the best answer.\n" +
+                        "Double-tap: your words in the style you picked above, never turned into a prompt.\n" +
+                        "Hold: say how to change the selected text, then let go.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StatusLine(state: DictationState, mode: Mode) {
+private fun StatusLine(state: DictationState, style: StylePreset) {
     val text = when (state) {
-        DictationState.Idle -> when (mode) {
-            Mode.Dictate -> "Tap and talk. Tap again when you're done."
-            Mode.Engineer -> "Ramble your request. You'll get a prompt built to get the best answer."
-            Mode.Command -> "Say what to change about the text below."
+        DictationState.Idle -> "Tap: Prompt · Double-tap: ${style.label} · Hold: edit the text below"
+        is DictationState.Listening -> when (state.mode) {
+            Mode.Engineer -> "Listening for a prompt… double-tap for ${style.label}"
+            Mode.Dictate -> "Listening · ${style.label}"
+            Mode.Command -> "Say what to change, then let go."
         }
-        is DictationState.Listening -> "Listening…"
-        is DictationState.Working -> if (state.mode == Mode.Engineer) "Engineering your prompt…" else "Polishing…"
+        is DictationState.Working -> when (state.mode) {
+            Mode.Engineer -> "Engineering your prompt…"
+            Mode.Dictate -> "Writing it ${style.label.lowercase()}…"
+            Mode.Command -> "Editing…"
+        }
         is DictationState.Done -> if (state.result.dropped) "Didn't catch anything" else "${state.result.label} · ${state.result.totalMs} ms"
         is DictationState.Failed -> state.message
     }

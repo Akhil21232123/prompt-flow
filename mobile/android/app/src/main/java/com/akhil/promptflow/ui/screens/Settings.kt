@@ -74,7 +74,29 @@ fun SettingsScreen() {
             }
         }
 
-        Section("Style", "How formal your writing is in each kind of app.") {
+        Section("Gestures", "Tap: Prompt Engineer. Double-tap: your words in this style, never turned into a prompt. Hold: edit the selected text by voice.") {
+            var preset by remember { mutableStateOf(app.store.stylePreset) }
+            com.akhil.promptflow.ui.components.StylePicker(preset) { preset = it; app.store.stylePreset = it }
+            Spacer(Modifier.height(8.dp))
+            var custom by remember(settings) { mutableStateOf(settings.optString("custom_style", app.store.customStyle)) }
+            androidx.compose.material3.OutlinedTextField(
+                custom, { custom = it.take(400) }, Modifier.fillMaxWidth(),
+                label = { Text("Custom style") },
+                placeholder = { Text("e.g. like a LinkedIn post, no emojis") },
+                maxLines = 3,
+            )
+            TextButton(
+                enabled = custom.isNotBlank(),
+                onClick = {
+                    app.store.customStyle = custom
+                    update { it.put("custom_style", custom) }
+                    preset = com.akhil.promptflow.core.StylePreset.Custom
+                    app.store.stylePreset = preset
+                },
+            ) { Text("Save custom style") }
+        }
+
+        Section("Style by app", "When you don't pick a style: how formal your writing is in each kind of app.") {
             listOf("email" to "Email", "work_chat" to "Work messages", "personal_chat" to "Personal messages", "docs" to "Documents", "other" to "Other")
                 .forEach { (key, label) ->
                     Text(label, style = MaterialTheme.typography.bodyMedium)
@@ -98,9 +120,6 @@ fun SettingsScreen() {
                         update { it.put("engineer", JSONObject(engineer().toString()).put("quality", v)) }
                     }, label = { Text(l) })
                 }
-            }
-            ToggleRow("Auto in AI apps", "Turn dictation into a prompt in ChatGPT, Claude and Gemini.", engineer().optBoolean("auto_in_ai_apps", true)) { on ->
-                update { it.put("engineer", JSONObject(engineer().toString()).put("auto_in_ai_apps", on)) }
             }
         }
 

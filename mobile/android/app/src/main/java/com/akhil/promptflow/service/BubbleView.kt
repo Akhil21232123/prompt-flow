@@ -28,8 +28,8 @@ class BubbleView(context: Context, private val listener: Listener) : View(contex
 
     interface Listener {
         fun onTap()
-        fun onLongPress()
-        fun onDoubleTap()
+        fun onHoldStart()
+        fun onHoldEnd()
         fun onDragged(dx: Float, dy: Float)
         fun onDragEnd()
     }
@@ -173,15 +173,13 @@ class BubbleView(context: Context, private val listener: Listener) : View(contex
     private var lastY = 0f
     private var dragging = false
     private var longPressed = false
-    private var lastTapAt = 0L
     private val longPress = Runnable {
         if (!dragging) {
             longPressed = true
             performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            listener.onLongPress()
+            listener.onHoldStart()
         }
     }
-    private val singleTap = Runnable { listener.onTap() }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(e: MotionEvent): Boolean {
@@ -191,7 +189,7 @@ class BubbleView(context: Context, private val listener: Listener) : View(contex
                 downX = e.rawX; downY = e.rawY; lastX = e.rawX; lastY = e.rawY
                 dragging = false
                 longPressed = false
-                postDelayed(longPress, 450)
+                postDelayed(longPress, com.akhil.promptflow.core.Gestures.HOLD_MS)
             }
             MotionEvent.ACTION_MOVE -> {
                 if (!dragging && (abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop)) {
@@ -207,25 +205,16 @@ class BubbleView(context: Context, private val listener: Listener) : View(contex
                 removeCallbacks(longPress)
                 when {
                     dragging -> listener.onDragEnd()
-                    longPressed -> Unit
-                    else -> {
-                        val now = System.currentTimeMillis()
-                        if (now - lastTapAt < 280) {
-                            removeCallbacks(singleTap)
-                            lastTapAt = 0
-                            listener.onDoubleTap()
-                        } else {
-                            lastTapAt = now
-                            // While listening a tap stops at once; otherwise wait
-                            // briefly to tell a single tap from a double tap.
-                            if (look == Look.Listening) listener.onTap() else postDelayed(singleTap, 260)
-                        }
-                    }
+                    longPressed -> listener.onHoldEnd()
+                    // Taps act at once: a second tap right after the first is
+                    // the double-tap, decided by the dictation itself.
+                    else -> listener.onTap()
                 }
             }
             MotionEvent.ACTION_CANCEL -> {
                 removeCallbacks(longPress)
                 if (dragging) listener.onDragEnd()
+                if (longPressed) listener.onHoldEnd()
             }
         }
         return true

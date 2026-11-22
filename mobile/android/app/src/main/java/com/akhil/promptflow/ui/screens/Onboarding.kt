@@ -83,7 +83,7 @@ private fun Welcome(next: () -> Unit) {
 private fun Permissions(next: () -> Unit) {
     val context = LocalContext.current
     var mic by remember { mutableStateOf(Sys.hasMic(context)) }
-    var bubble by remember { mutableStateOf(Sys.bubbleEnabled(context)) }
+    var bubble by remember { mutableStateOf(Sys.keyboardEnabled(context)) }
     val micLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { mic = it }
     val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
@@ -93,7 +93,7 @@ private fun Permissions(next: () -> Unit) {
         val obs = LifecycleEventObserver { _, e ->
             if (e == Lifecycle.Event.ON_RESUME) {
                 mic = Sys.hasMic(context)
-                bubble = Sys.bubbleEnabled(context)
+                bubble = Sys.keyboardEnabled(context)
             }
         }
         owner.lifecycle.addObserver(obs)
@@ -104,7 +104,7 @@ private fun Permissions(next: () -> Unit) {
         Text("Two quick permissions", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(8.dp))
         Text(
-            "PromptFlow only listens while the bubble is lit, and shows a notification whenever it does.",
+            "PromptFlow only listens while you're dictating, and shows a notification whenever it does.",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(28.dp))
@@ -118,10 +118,10 @@ private fun Permissions(next: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         PermissionRow(
-            title = "PromptFlow bubble",
-            body = "Settings → Accessibility → PromptFlow bubble → On. It shows the bubble next to text fields and types your words in. Password fields are skipped.",
+            title = "PromptFlow keyboard",
+            body = "Turn on \"PromptFlow voice keyboard\" in the list that opens. In any app, switch to it with the keyboard button. It never needs Accessibility, so banking apps stay happy, and it turns itself off in password fields.",
             granted = bubble,
-        ) { Sys.openAccessibilitySettings(context) }
+        ) { Sys.openKeyboardSettings(context) }
         Spacer(Modifier.height(36.dp))
         GradientButton(if (mic && bubble) "Continue" else "Continue anyway", onClick = next)
     }

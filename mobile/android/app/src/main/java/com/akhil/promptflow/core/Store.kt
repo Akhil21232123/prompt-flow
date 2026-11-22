@@ -33,6 +33,15 @@ class Store(context: Context) {
         get() = prefs.getBoolean("haptics", true)
         set(v) = prefs.edit().putBoolean("haptics", v).apply()
 
+    /** The style a double-tap writes in. */
+    var stylePreset: StylePreset
+        get() = StylePreset.from(prefs.getString("style_preset", null))
+        set(v) = prefs.edit().putString("style_preset", v.wire).apply()
+
+    var customStyle: String
+        get() = prefs.getString("custom_style", "") ?: ""
+        set(v) = prefs.edit().putString("custom_style", v).apply()
+
     var bubbleY: Int
         get() = prefs.getInt("bubble_y", -1)
         set(v) = prefs.edit().putInt("bubble_y", v).apply()

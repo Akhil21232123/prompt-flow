@@ -38,6 +38,37 @@ class Dictation(private val api: Api, private val store: Store) {
 
     val isListening get() = _state.value is DictationState.Listening
 
+    /** The mode the current recording will be processed in. */
+    val currentMode get() = mode
+
+    /** A tap right after starting a Prompt recording: the double-tap. */
+    fun isDoubleTap(): Boolean {
+        val s = _state.value
+        return s is DictationState.Listening && s.mode == Mode.Engineer &&
+            System.currentTimeMillis() - s.startedAt < Gestures.DOUBLE_TAP_MS
+    }
+
+    /** Switch what the current recording will do, keeping the audio so far. */
+    fun retarget(m: Mode) {
+        val s = _state.value as? DictationState.Listening ?: return
+        mode = m
+        _state.value = s.copy(mode = m)
+    }
+
+    /**
+     * The one gesture rule for every surface. Tap: start a Prompt recording,
+     * or stop. A second tap right after the first turns it into styled
+     * dictation. Returns what happened so callers can give feedback.
+     */
+    fun tap(stop: () -> Unit, start: (Mode) -> Unit): TapResult = when {
+        isDoubleTap() -> { retarget(Mode.Dictate); TapResult.SwitchedToStyle }
+        isListening -> { stop(); TapResult.Stopped }
+        _state.value is DictationState.Working -> TapResult.Ignored
+        else -> { start(Mode.Engineer); TapResult.Started }
+    }
+
+    enum class TapResult { Started, SwitchedToStyle, Stopped, Ignored }
+
     fun start(mode: Mode): Boolean {
         if (isListening) return true
         job?.cancel()

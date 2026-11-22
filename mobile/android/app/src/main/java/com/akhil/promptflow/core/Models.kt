@@ -13,6 +13,26 @@ enum class Mode(val wire: String, val label: String) {
     }
 }
 
+/** How a double-tap dictation is written (single tap always engineers a prompt). */
+enum class StylePreset(val wire: String, val label: String, val hint: String) {
+    Clean("clean", "Clean", "Your words, tidied: no fillers, fixed grammar."),
+    Formal("formal", "Formal", "Professional and polished."),
+    Short("short", "Short & punchy", "Straight to the point, half the length."),
+    Casual("casual", "Casual", "Relaxed and friendly."),
+    Bullets("bullets", "Bullets", "A tight bulleted list."),
+    Custom("custom", "Custom", "Your own instruction, set in Settings.");
+
+    companion object {
+        fun from(wire: String?) = entries.firstOrNull { it.wire == wire } ?: Clean
+    }
+}
+
+/** Gesture timings shared by the keyboard, the bubble and the in-app orb. */
+object Gestures {
+    const val DOUBLE_TAP_MS = 350L
+    const val HOLD_MS = 450L
+}
+
 data class Session(
     val accessToken: String,
     val refreshToken: String,

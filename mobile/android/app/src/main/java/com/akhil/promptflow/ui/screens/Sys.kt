@@ -22,4 +22,18 @@ object Sys {
     fun openAccessibilitySettings(context: Context) {
         context.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+
+    /** Is the PromptFlow keyboard enabled in system settings? */
+    fun keyboardEnabled(context: Context): Boolean =
+        com.akhil.promptflow.service.PromptFlowKeyboard.isEnabled(context)
+
+    /** Settings → Keyboards, where the PromptFlow keyboard is switched on. */
+    fun openKeyboardSettings(context: Context) {
+        context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    /** The system keyboard picker, to switch to PromptFlow. */
+    fun showKeyboardPicker(context: Context) {
+        context.getSystemService(android.view.inputmethod.InputMethodManager::class.java).showInputMethodPicker()
+    }
 }
