@@ -49,6 +49,7 @@ function errorResponse(e: unknown): Response {
   if (e instanceof BadRequest)
     return json({ error: e.message, code: "bad_request" }, 400);
   if (e instanceof ProviderError) {
+    console.error(`provider error: ${e.message}`);
     const status = e.status === 429 ? 429 : 502;
     return json(
       { error: e.message, code: status === 429 ? "rate_limited" : "provider" },
