@@ -239,3 +239,34 @@ describe("categories, snippets, learning", () => {
     expect(learnFromEdit("ping dayof", "ping Dayoph", ["dayoph"])).toEqual([]);
   });
 });
+
+test("rewrites with Groq until a Claude key is added", async () => {
+  const { chatProvider } = await import(
+    "../supabase/functions/_shared/providers.ts"
+  );
+  const seen: string[] = [];
+  const fakeFetch = (async (url: string, init: RequestInit) => {
+    seen.push(String(url));
+    const body = JSON.parse(String(init.body));
+    seen.push(body.model);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "Hi." } }] }),
+    );
+  }) as unknown as typeof fetch;
+  const groqOnly = chatProvider(
+    { get: (k: string) => (k === "GROQ_API_KEY" ? "g" : undefined) },
+    fakeFetch,
+  );
+  expect(groqOnly.name).toBe("groq");
+  expect(await groqOnly.complete("sys", "hi", { model: groqOnly.fast })).toBe(
+    "Hi.",
+  );
+  expect(seen).toEqual([
+    "https://api.groq.com/openai/v1/chat/completions",
+    "llama-3.3-70b-versatile",
+  ]);
+  const withClaude = chatProvider({
+    get: (k: string) => (k === "ANTHROPIC_API_KEY" ? "a" : "g"),
+  });
+  expect(withClaude.name).toBe("claude");
+});

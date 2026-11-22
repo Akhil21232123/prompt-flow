@@ -63,6 +63,79 @@ export function anthropic(env: Env, fetchImpl: Fetch = fetch): Complete {
   };
 }
 
+/** Groq's free text models, used until a Claude key is added. */
+export const GROQ_FAST_MODEL = "llama-3.3-70b-versatile";
+export const GROQ_SMART_MODEL = "openai/gpt-oss-120b";
+
+/** OpenAI-compatible chat on Groq. */
+export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
+  const key = env.get("GROQ_API_KEY");
+  return async (system, user, opts = {}) => {
+    if (!key) throw new ProviderError("GROQ_API_KEY is not set", 503);
+    const model = opts.model ?? GROQ_FAST_MODEL;
+    const res = await fetchImpl(
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${key}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          max_tokens: opts.maxTokens ?? 2048,
+          temperature: 0.2,
+          ...(model.startsWith("openai/gpt-oss")
+            ? { reasoning_effort: "low", reasoning_format: "hidden" }
+            : {}),
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+        }),
+        signal: AbortSignal.timeout(45_000),
+      },
+    );
+    if (!res.ok)
+      throw new ProviderError(
+        `Groq returned ${res.status}: ${await readError(res)}`,
+        res.status,
+      );
+    const data = (await res.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+    const text = data.choices?.[0]?.message?.content ?? "";
+    if (!text.trim())
+      throw new ProviderError("Groq returned an empty reply", 502);
+    return text;
+  };
+}
+
+/** Which model family rewrites text: Claude when its key is set, else Groq. */
+export function chatProvider(
+  env: Env,
+  fetchImpl: Fetch = fetch,
+): {
+  name: "claude" | "groq";
+  complete: Complete;
+  fast: string;
+  smart: string;
+} {
+  if (env.get("ANTHROPIC_API_KEY"))
+    return {
+      name: "claude",
+      complete: anthropic(env, fetchImpl),
+      fast: env.get("CLAUDE_FAST_MODEL") ?? DEFAULT_FAST_MODEL,
+      smart: env.get("CLAUDE_SMART_MODEL") ?? DEFAULT_SMART_MODEL,
+    };
+  return {
+    name: "groq",
+    complete: groqChat(env, fetchImpl),
+    fast: env.get("GROQ_FAST_MODEL") ?? GROQ_FAST_MODEL,
+    smart: env.get("GROQ_SMART_MODEL") ?? GROQ_SMART_MODEL,
+  };
+}
+
 const STT = {
   groq: {
     url: "https://api.groq.com/openai/v1/audio/transcriptions",
