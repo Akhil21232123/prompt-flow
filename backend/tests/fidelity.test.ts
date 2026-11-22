@@ -115,3 +115,23 @@ test("punctuation ends a spoken number", () => {
   const said = "budget fifteen hundred, two thousand twenty six plan";
   expect(findInventions(said, "Budget: 1,500. 2026 plan.")).toEqual([]);
 });
+
+test("silence that Whisper filled with vocabulary words is dropped", async () => {
+  const { isPromptEcho } = await import(
+    "../supabase/functions/_shared/hallucination.ts"
+  );
+  const { isSilent } = await import(
+    "../supabase/functions/_shared/providers.ts"
+  );
+  expect(isPromptEcho("Wispr.", "PromptFlow, Wispr Flow")).toBe(true);
+  expect(isPromptEcho("PromptFlow", "PromptFlow, Wispr Flow")).toBe(true);
+  expect(isPromptEcho("Wispr Flow is slow", "PromptFlow, Wispr Flow")).toBe(
+    false,
+  );
+  expect(isSilent([{ no_speech_prob: 0.9 }])).toBe(true);
+  expect(isSilent([{ no_speech_prob: 0.4, avg_logprob: -1.2 }])).toBe(true);
+  expect(isSilent([{ no_speech_prob: 0.9 }, { no_speech_prob: 0.05 }])).toBe(
+    false,
+  );
+  expect(isSilent(undefined)).toBe(false);
+});

@@ -52,7 +52,15 @@ fun HomeScreen() {
     var mode by rememberSaveable { mutableStateOf(Mode.Dictate) }
     var pad by rememberSaveable { mutableStateOf("") }
     var bubbleOn by remember { mutableStateOf(Sys.bubbleEnabled(context)) }
-    LaunchedEffect(Unit) { bubbleOn = Sys.bubbleEnabled(context) }
+    // Re-check whenever the user comes back (e.g. from Accessibility settings).
+    val owner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    androidx.compose.runtime.DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e ->
+            if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) bubbleOn = Sys.bubbleEnabled(context)
+        }
+        owner.lifecycle.addObserver(obs)
+        onDispose { owner.lifecycle.removeObserver(obs) }
+    }
 
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -92,16 +100,24 @@ fun HomeScreen() {
                 Stat("${(words / 40.0 - words / 150.0).toInt()} min", "saved vs typing")
             }
         }
-        if (!bubbleOn) {
-            Spacer(Modifier.height(12.dp))
-            Card {
-                Column {
-                    Text("Turn on the bubble", style = MaterialTheme.typography.titleMedium)
+        Spacer(Modifier.height(12.dp))
+        Card {
+            Column {
+                if (bubbleOn) {
+                    Text("● Bubble is on", style = MaterialTheme.typography.titleMedium, color = androidx.compose.ui.graphics.Color(0xFF4ADE80))
                     Text(
-                        "Dictate into WhatsApp, Gmail, ChatGPT and every other app.",
+                        "Open any app and tap a text box: the bubble appears just above your keyboard.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    TextButton(onClick = { Sys.openAccessibilitySettings(context) }) { Text("Open settings") }
+                } else {
+                    Text("Turn on the bubble", style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        "It's what lets you dictate into WhatsApp, Gmail, ChatGPT and every other app. " +
+                            "Settings → Accessibility → Installed apps → PromptFlow → On.\n\n" +
+                            "Greyed out? Settings → Apps → PromptFlow → ⋮ → Allow restricted settings, then try again.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    TextButton(onClick = { Sys.openAccessibilitySettings(context) }) { Text("Open Accessibility settings") }
                 }
             }
         }

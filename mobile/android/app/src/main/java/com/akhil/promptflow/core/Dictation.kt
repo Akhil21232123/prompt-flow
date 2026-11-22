@@ -62,6 +62,12 @@ class Dictation(private val api: Api, private val store: Store) {
             _state.value = DictationState.Idle
             return
         }
+        // Nothing but silence or room noise: don't send it, or speech models
+        // invent words ("Thank you", or names from your dictionary).
+        if (recorder.speechSeconds < MIN_SPEECH_SECONDS) {
+            fail("Didn't hear anything. Try again a little closer to the mic.")
+            return
+        }
         val m = mode
         _state.value = DictationState.Working(m)
         job = scope.launch {
@@ -98,5 +104,9 @@ class Dictation(private val api: Api, private val store: Store) {
             delay(3500)
             if (_state.value is DictationState.Failed) _state.value = DictationState.Idle
         }
+    }
+
+    companion object {
+        const val MIN_SPEECH_SECONDS = 0.3
     }
 }

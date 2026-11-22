@@ -180,7 +180,10 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
         "model",
         env.get(`${name.toUpperCase()}_STT_MODEL`) ?? p.model,
       );
-      form.append("response_format", "json");
+      // Whisper's verbose output says how likely each segment is to be
+      // silence; gpt-4o-transcribe only does plain json.
+      const verbose = name === "groq";
+      form.append("response_format", verbose ? "verbose_json" : "json");
       form.append("temperature", "0");
       if (opts.language && opts.language !== "auto")
         form.append("language", opts.language);
@@ -197,8 +200,15 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
             `${name} returned ${res.status}: ${await readError(res)}`,
             res.status,
           );
-        const data = (await res.json()) as { text?: string };
-        return { text: (data.text ?? "").trim(), provider: name };
+        const data = (await res.json()) as {
+          text?: string;
+          segments?: Array<{ no_speech_prob?: number; avg_logprob?: number }>;
+        };
+        return {
+          text: (data.text ?? "").trim(),
+          provider: name,
+          silent: isSilent(data.segments),
+        };
       } catch (e) {
         lastError = e;
       }
@@ -210,6 +220,24 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
 }
 
 /** Whisper's prompt biases spelling toward these words; it's capped near 224 tokens. */
+/**
+ * Whisper marks segments it thinks are not speech. When every segment is
+ * likely silence (or noise decoded with very low confidence), the text is
+ * invented and gets dropped.
+ */
+export function isSilent(
+  segments:
+    | Array<{ no_speech_prob?: number; avg_logprob?: number }>
+    | undefined,
+): boolean {
+  if (!segments || segments.length === 0) return false;
+  return segments.every(
+    (s) =>
+      (s.no_speech_prob ?? 0) > 0.6 ||
+      ((s.no_speech_prob ?? 0) > 0.3 && (s.avg_logprob ?? 0) < -0.9),
+  );
+}
+
 export function vocabularyPrompt(
   words: string[],
   maxChars = 600,

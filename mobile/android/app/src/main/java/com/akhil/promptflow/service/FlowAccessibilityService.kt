@@ -3,6 +3,7 @@ package com.akhil.promptflow.service
 import android.accessibilityservice.AccessibilityService
 import android.content.pm.PackageManager
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -10,6 +11,7 @@ import android.view.HapticFeedbackConstants
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import com.akhil.promptflow.PromptFlowApp
 import com.akhil.promptflow.core.AppContext
 import com.akhil.promptflow.core.DictationState
@@ -21,8 +23,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * Shows the PromptFlow bubble whenever a text field is focused in any app,
- * and types the result into that field. Works alongside whatever keyboard
+ * Shows the PromptFlow bubble whenever the keyboard is up (or a text field is
+ * focused) in any app, and types the result into that field. Works alongside whatever keyboard
  * the user already has.
  *
  * Tap: dictate. Long-press: Prompt Engineer. Double-tap: Command Mode on the
@@ -61,21 +63,40 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
         // Keep the bubble on screen while a dictation is in flight, even if
         // focus flickers.
         if (app.dictation.state.value !is DictationState.Idle) return
+        val keyboard = keyboardBounds()
         val focused = findFocusedEditable()
-        if (focused != null && !focused.isPassword) {
-            target = focused
-            targetPackage = focused.packageName?.toString() ?: event.packageName?.toString()
-            showBubble()
+        // The app being typed into (events from the keyboard itself say nothing about it).
+        val pkg = (focused?.packageName ?: rootInActiveWindow?.packageName ?: event.packageName)
+            ?.toString()?.takeIf { p -> KEYBOARD_PACKAGES.none { p.startsWith(it) } }
+        // Never over passwords, and not inside PromptFlow (it has its own orb).
+        if (focused?.isPassword == true || pkg == packageName) {
+            hideBubbleSoon()
+            return
+        }
+        if (focused != null) target = focused
+        if (pkg != null) targetPackage = pkg
+        if (keyboard != null || focused != null) {
+            showBubble(keyboard)
         } else if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_WINDOWS_CHANGED ||
             event.eventType == AccessibilityEvent.TYPE_VIEW_FOCUSED
         ) {
-            if (focused == null || focused.isPassword) hideBubbleSoon()
+            hideBubbleSoon()
         }
     }
 
+    /** Where the on-screen keyboard is, or null when it's hidden. */
+    private fun keyboardBounds(): Rect? = runCatching {
+        windows.firstOrNull { it.type == AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            ?.let { w -> Rect().also { w.getBoundsInScreen(it) } }
+            ?.takeIf { it.height() > 0 }
+    }.getOrNull()
+
+    /** The focused text field in any window, not just the active one. */
     private fun findFocusedEditable(): AccessibilityNodeInfo? {
-        val node = rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) ?: return null
+        val node = runCatching { findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+            ?: rootInActiveWindow?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)
+            ?: return null
         return if (node.isEditable) node else null
     }
 
@@ -88,11 +109,27 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
         main.postDelayed(hideRunnable, 700)
     }
 
-    private fun showBubble() {
+    private fun showBubble(keyboard: Rect?) {
         main.removeCallbacks(hideRunnable)
-        if (bubble != null) return
-        val view = BubbleView(this, this)
         val metrics = resources.displayMetrics
+        val size = (56 * metrics.density).toInt()
+        val gap = (14 * metrics.density).toInt()
+        // Sit just above the keyboard unless the user parked it somewhere
+        // that's still visible.
+        fun bestY(current: Int): Int {
+            val top = keyboard?.top ?: return current
+            return if (current in 0..(top - size - gap)) current else top - size - gap
+        }
+        bubble?.let { view ->
+            val lp = params ?: return
+            val y = bestY(lp.y)
+            if (y != lp.y) {
+                lp.y = y
+                runCatching { wm.updateViewLayout(view, lp) }
+            }
+            return
+        }
+        val view = BubbleView(this, this)
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -101,9 +138,9 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
             PixelFormat.TRANSLUCENT,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            val size = (56 * metrics.density).toInt()
-            x = if (app.store.bubbleOnRight) metrics.widthPixels - size - (6 * metrics.density).toInt() else (6 * metrics.density).toInt()
-            y = app.store.bubbleY.takeIf { it >= 0 } ?: (metrics.heightPixels * 0.42f).toInt()
+            val margin = (6 * metrics.density).toInt()
+            x = if (app.store.bubbleOnRight) metrics.widthPixels - size - margin else margin
+            y = bestY(app.store.bubbleY.takeIf { it >= 0 } ?: (metrics.heightPixels * 0.42f).toInt())
         }
         runCatching {
             wm.addView(view, lp)
@@ -157,8 +194,14 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
             haptic()
             RecordingService.stop(this)
             d.finish(context = ::readContext, deliver = { result ->
-                val node = target ?: findFocusedEditable()
-                if (node != null) TextInserter.insert(this, node, result.text)
+                val node = findFocusedEditable() ?: target?.takeIf { it.refresh() }
+                if (node == null || !TextInserter.insert(this, node, result.text)) {
+                    // Some apps hide their text box from accessibility: hand
+                    // the text over by clipboard instead of losing it.
+                    val clip = getSystemService(android.content.ClipboardManager::class.java)
+                    clip.setPrimaryClip(android.content.ClipData.newPlainText("PromptFlow", result.text))
+                    android.widget.Toast.makeText(this, "Copied. Long-press the text box and tap Paste.", android.widget.Toast.LENGTH_LONG).show()
+                }
             })
             return
         }
@@ -212,5 +255,10 @@ class FlowAccessibilityService : AccessibilityService(), BubbleView.Listener {
             }
             start()
         }
+    }
+
+    private companion object {
+        /** Keyboard apps, whose own events say nothing about the target app. */
+        val KEYBOARD_PACKAGES = listOf("com.google.android.inputmethod", "com.samsung.android.honeyboard", "com.touchtype", "com.swiftkey")
     }
 }

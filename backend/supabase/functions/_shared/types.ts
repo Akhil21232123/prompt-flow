@@ -142,4 +142,9 @@ export type Complete = (
 export type Transcribe = (
   audio: Blob,
   opts: { language?: string; prompt?: string },
-) => Promise<{ text: string; provider: string }>;
+) => Promise<{
+  text: string;
+  provider: string;
+  /** The model judged the whole clip to be non-speech. */
+  silent?: boolean;
+}>;

@@ -50,3 +50,19 @@ export function isLikelyHallucination(
   // speech around it; with no duration, be conservative and keep it.
   return durationSec !== undefined && durationSec < 2.5;
 }
+
+/**
+ * True when a short transcript only repeats words from the vocabulary hint.
+ * Whisper given "PromptFlow, Wispr Flow" as a hint and no speech will often
+ * answer "Wispr" or "PromptFlow".
+ */
+export function isPromptEcho(
+  text: string,
+  prompt: string | undefined,
+): boolean {
+  if (!prompt) return false;
+  const words = normalizeForMatch(text).split(" ").filter(Boolean);
+  if (words.length === 0 || words.length > 4) return false;
+  const hint = new Set(normalizeForMatch(prompt.replace(/,/g, " ")).split(" "));
+  return words.every((w) => hint.has(w));
+}

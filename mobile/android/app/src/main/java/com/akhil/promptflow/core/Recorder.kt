@@ -20,6 +20,11 @@ class Recorder(private val onLevel: (Float) -> Unit) {
     private val pcm = ByteArrayOutputStream()
     @Volatile private var running = false
     private var startedAt = 0L
+    private val frameRms = ArrayList<Float>()
+
+    /** Seconds of the last recording that sounded like speech. */
+    var speechSeconds = 0.0
+        private set
 
     val isRecording: Boolean get() = running
 
@@ -39,6 +44,7 @@ class Recorder(private val onLevel: (Float) -> Unit) {
             return false
         }
         pcm.reset()
+        synchronized(frameRms) { frameRms.clear() }
         record = rec
         running = true
         startedAt = System.currentTimeMillis()
@@ -58,6 +64,7 @@ class Recorder(private val onLevel: (Float) -> Unit) {
                 }
                 synchronized(pcm) { pcm.write(bytes.array(), 0, n * 2) }
                 val rms = sqrt(sum / n).toFloat()
+                synchronized(frameRms) { frameRms.add(rms) }
                 onLevel((rms * 6f).coerceIn(0f, 1f))
             }
         }
@@ -76,6 +83,7 @@ class Recorder(private val onLevel: (Float) -> Unit) {
         record = null
         val data = synchronized(pcm) { pcm.toByteArray() }
         val seconds = data.size / 2.0 / RATE
+        speechSeconds = synchronized(frameRms) { voicedFrames(frameRms) } * 0.05
         onLevel(0f)
         return Wav.encode(data, RATE) to seconds
     }
@@ -87,6 +95,19 @@ class Recorder(private val onLevel: (Float) -> Unit) {
 
     companion object {
         const val RATE = 16_000
+
+        /**
+         * 50 ms frames loud enough to be speech: above an absolute floor and
+         * well above this room's own background noise.
+         */
+        fun voicedFrames(rms: List<Float>): Int {
+            if (rms.isEmpty()) return 0
+            val sorted = rms.sorted()
+            val noise = sorted[(sorted.size * 0.2).toInt().coerceAtMost(sorted.size - 1)]
+            // Capped so a clip that is speech end to end still counts.
+            val threshold = maxOf(0.012f, minOf(noise * 3f, 0.04f))
+            return rms.count { it > threshold }
+        }
     }
 }
 

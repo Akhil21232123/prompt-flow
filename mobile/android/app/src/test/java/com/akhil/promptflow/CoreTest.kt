@@ -65,4 +65,14 @@ class CoreTest {
         )
         assertEquals("Email link is invalid or has expired", bad["error_description"])
     }
+
+    @Test
+    fun silenceHasNoVoicedFrames() {
+        val room = List(40) { 0.004f + (it % 3) * 0.001f }
+        assertEquals(0, com.akhil.promptflow.core.Recorder.voicedFrames(room))
+        val speech = room + List(12) { 0.09f } + room
+        assertEquals(12, com.akhil.promptflow.core.Recorder.voicedFrames(speech))
+        val allSpeech = List(30) { 0.06f + (it % 5) * 0.03f }
+        assertTrue(com.akhil.promptflow.core.Recorder.voicedFrames(allSpeech) >= 24)
+    }
 }

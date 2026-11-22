@@ -6,7 +6,7 @@
 //   POST /learn    JSON: { original, edited }
 //   GET  /health
 
-import { isLikelyHallucination } from "./hallucination.ts";
+import { isLikelyHallucination, isPromptEcho } from "./hallucination.ts";
 import { learnFromEdit } from "./learn.ts";
 import { rewrite, type Models } from "./pipeline.ts";
 import { ProviderError, vocabularyPrompt } from "./providers.ts";
@@ -121,13 +121,15 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
       typeof meta.language === "string"
         ? meta.language
         : user.settings.language;
-    const stt = await ctx.transcribe(audio, {
-      language,
-      prompt: vocabularyPrompt(user.dictionary),
-    });
+    const vocabulary = vocabularyPrompt(user.dictionary);
+    const stt = await ctx.transcribe(audio, { language, prompt: vocabulary });
     const sttMs = Date.now() - started;
 
-    if (isLikelyHallucination(stt.text, durationSec)) {
+    if (
+      stt.silent ||
+      isLikelyHallucination(stt.text, durationSec) ||
+      isPromptEcho(stt.text, vocabulary)
+    ) {
       return json({
         raw: stt.text,
         text: "",
