@@ -149,6 +149,7 @@ final class FlowEngine: ObservableObject {
         samples.removeAll(keepingCapacity: true)
         lock.unlock()
         self.mode = mode
+        captureStartedAt = Date()
         capturing = true
         lastActivity = Date()
         lastError = nil
@@ -186,7 +187,9 @@ final class FlowEngine: ObservableObject {
         setPhase(.working)
         let wav = Wav.encode(pcm: Wav.pcm16(pcm))
         let field = delivery != nil ? inAppField : store.fieldContext
-        let mode = self.mode
+        // The keyboard may switch tap → double-tap mid-recording, so its mode
+        // is read when recording stops.
+        let mode = delivery != nil ? self.mode : store.requestedMode
         Task {
             do {
                 let result = try await API.shared.dictate(wav: wav, mode: mode, field: field, appName: nil, durationSec: seconds)
@@ -212,6 +215,20 @@ final class FlowEngine: ObservableObject {
             }
         }
     }
+
+    /// Switch what the current recording will do (double-tap after a tap).
+    func retarget(_ mode: Mode) {
+        guard capturing else { return }
+        self.mode = mode
+        store.requestedMode = mode
+        Bridge.shared.post(.changed)
+    }
+
+    /// What the current recording will do.
+    var currentMode: Mode { mode }
+
+    /// When the current recording started, for double-tap detection.
+    private(set) var captureStartedAt: Date?
 
     /// Dictation inside the app (the Home orb), delivered to a closure.
     func toggleInApp(mode: Mode, field: FieldContext?, deliver: @escaping (DictationResult) -> Void) {

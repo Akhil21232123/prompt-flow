@@ -21,6 +21,41 @@ enum Mode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// How a double-tap dictation is written. Single tap always engineers a
+/// prompt; double-tap writes your words in one of these styles instead.
+enum StylePreset: String, Codable, CaseIterable, Identifiable {
+    case clean, formal, short, casual, bullets, custom
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .clean: return "Clean"
+        case .formal: return "Formal"
+        case .short: return "Short & punchy"
+        case .casual: return "Casual"
+        case .bullets: return "Bullets"
+        case .custom: return "Custom"
+        }
+    }
+
+    var hint: String {
+        switch self {
+        case .clean: return "Your words, tidied: no fillers, fixed grammar."
+        case .formal: return "Professional and polished."
+        case .short: return "Straight to the point, half the length."
+        case .casual: return "Relaxed and friendly."
+        case .bullets: return "A tight bulleted list."
+        case .custom: return "Your own instruction, set in Settings."
+        }
+    }
+}
+
+/// Which gesture does what, shown in the keyboard and app.
+enum Gestures {
+    static let doubleTapWindow: TimeInterval = 0.35
+    static let holdAfter: TimeInterval = 0.45
+}
+
 struct AuthSession: Codable, Equatable {
     var accessToken: String
     var refreshToken: String

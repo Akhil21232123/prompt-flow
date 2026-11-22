@@ -104,6 +104,7 @@ final class API {
         if let before = field?.before, !before.isEmpty { app["surrounding_text"] = String(before.suffix(1500)) }
         if !app.isEmpty { meta["app"] = app }
         if mode == .command, let sel = field?.selection, !sel.isEmpty { meta["selection"] = sel }
+        if mode == .dictate { meta["preset"] = store.stylePreset.rawValue }
 
         let boundary = "PF\(UUID().uuidString.replacingOccurrences(of: "-", with: ""))"
         var body = Data()

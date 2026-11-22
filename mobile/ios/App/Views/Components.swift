@@ -7,6 +7,8 @@ struct Orb: View {
     var level: Double
     var size: CGFloat = 176
     var action: () -> Void
+    var onHoldStart: () -> Void = {}
+    var onHoldEnd: () -> Void = {}
 
     @State private var breathe = false
 
@@ -44,10 +46,17 @@ struct Orb: View {
         }
         .frame(width: size * 1.5, height: size * 1.5)
         .contentShape(Circle())
-        .onTapGesture {
-            UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-            action()
-        }
+        .tapHold(
+            onTap: {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                action()
+            },
+            onHoldStart: {
+                UIImpactFeedbackGenerator(style: .heavy).impactOccurred()
+                onHoldStart()
+            },
+            onHoldEnd: onHoldEnd
+        )
         .onAppear {
             withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { breathe = true }
         }

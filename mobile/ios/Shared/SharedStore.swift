@@ -79,6 +79,18 @@ final class SharedStore {
         set { defaults.set(newValue.rawValue, forKey: "requestedMode") }
     }
 
+    /// The style a double-tap writes in.
+    var stylePreset: StylePreset {
+        get { StylePreset(rawValue: defaults.string(forKey: "stylePreset") ?? "") ?? .clean }
+        set { defaults.set(newValue.rawValue, forKey: "stylePreset") }
+    }
+
+    /// The instruction behind the Custom style (also synced to the account).
+    var customStyle: String {
+        get { defaults.string(forKey: "customStyle") ?? "" }
+        set { defaults.set(newValue, forKey: "customStyle") }
+    }
+
     var fieldContext: FieldContext? {
         get { decode(FieldContext.self, "fieldContext") }
         set { encode(newValue, "fieldContext") }

@@ -81,7 +81,12 @@ final class KeyboardViewController: UIInputViewController {
 
 @MainActor
 final class KeyboardModel: ObservableObject {
-    @Published var mode: Mode = SharedStore.shared.requestedMode
+    /// What the current (or next) recording does: tap = engineer,
+    /// double-tap = dictate in `style`, hold = edit the selection.
+    @Published var mode: Mode = .engineer
+    @Published var style: StylePreset = SharedStore.shared.stylePreset {
+        didSet { store.stylePreset = style }
+    }
     @Published var phase: FlowPhase = .off
     @Published var level: Double = 0
     @Published var message: String?
@@ -113,39 +118,78 @@ final class KeyboardModel: ObservableObject {
         stopPolling()
     }
 
-    func setMode(_ m: Mode) {
-        mode = m
-        store.requestedMode = m
-    }
+    private var startedAt: Date?
+    private var holding = false
 
+    /// Tap: start a Prompt Engineer recording, or stop the current one.
+    /// A second tap right after the first switches it to your style instead.
     func micTapped() {
-        guard let c = controller else { return }
-        guard c.fullAccess else {
-            message = "Turn on Allow Full Access for PromptFlow in Settings → Keyboards."
-            return
-        }
-        message = nil
+        guard ready() else { return }
         switch phase {
         case .listening:
-            store.fieldContext = FieldContext(before: String(c.before.suffix(1500)), selection: c.selected)
-            Bridge.shared.post(.stop)
-            phase = .working
-            stopPolling()
+            if mode == .engineer, let t = startedAt, Date().timeIntervalSince(t) < Gestures.doubleTapWindow {
+                mode = .dictate
+                store.requestedMode = .dictate
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                return
+            }
+            stop()
         case .working:
             return
         default:
-            store.requestedMode = mode
-            store.fieldContext = FieldContext(before: String(c.before.suffix(1500)), selection: c.selected)
-            if store.sessionIsLive {
-                Bridge.shared.post(.start)
-                phase = .listening
-                startPolling()
-            } else if let url = URL(string: "promptflow://session?mode=\(mode.rawValue)&autostart=1") {
-                c.openApp(url)
-                message = "Starting PromptFlow… swipe back here to keep talking."
-            }
+            start(.engineer)
         }
+    }
+
+    /// Hold: talk while holding to edit the selected text (or write at the cursor).
+    func holdStarted() {
+        guard ready(), phase != .listening, phase != .working else { return }
+        holding = true
+        start(.command)
+    }
+
+    func holdEnded() {
+        guard holding else { return }
+        holding = false
+        if phase == .listening { stop() }
+    }
+
+    private func ready() -> Bool {
+        guard let c = controller else { return false }
+        guard c.fullAccess else {
+            message = "Turn on Allow Full Access for PromptFlow in Settings → Keyboards."
+            return false
+        }
+        message = nil
+        return true
+    }
+
+    private func start(_ m: Mode) {
+        guard let c = controller else { return }
+        mode = m
+        store.requestedMode = m
+        store.fieldContext = FieldContext(before: String(c.before.suffix(1500)), selection: c.selected)
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        if store.sessionIsLive {
+            Bridge.shared.post(.start)
+            phase = .listening
+            startedAt = Date()
+            startPolling()
+        } else if let url = URL(string: "promptflow://session?mode=\(m.rawValue)&autostart=1") {
+            c.openApp(url)
+            message = "Starting PromptFlow… swipe back here to keep talking."
+        }
+    }
+
+    private func stop() {
+        guard let c = controller else { return }
+        store.fieldContext = FieldContext(before: String(c.before.suffix(1500)), selection: c.selected)
+        store.requestedMode = mode
+        Bridge.shared.post(.stop)
+        phase = .working
+        startedAt = nil
+        stopPolling()
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     private func appChanged() {

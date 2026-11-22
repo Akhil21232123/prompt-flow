@@ -2,8 +2,9 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var engine: FlowEngine
-    @State private var mode: Mode = .dictate
+    @State private var style: StylePreset = SharedStore.shared.stylePreset
     @State private var pad = ""
+    @State private var holding = false
     private let store = SharedStore.shared
 
     var body: some View {
@@ -14,16 +15,16 @@ struct HomeView: View {
                     Spacer()
                     SessionToggle()
                 }
-                ModeSwitch(mode: $mode)
-                Orb(phase: engine.phase, mode: mode, level: engine.level) {
-                    engine.toggleInApp(mode: mode, field: FieldContext(before: pad, selection: mode == .command ? pad : nil)) { result in
-                        if mode == .command {
-                            pad = result.text
-                        } else {
-                            pad = [pad, result.text].filter { !$0.isEmpty }.joined(separator: pad.isEmpty ? "" : " ")
-                        }
-                    }
+                VStack(spacing: 6) {
+                    StylePicker(selection: $style)
+                        .onChange(of: style) { _, v in store.stylePreset = v }
+                    Text("Double-tap style: \(style.hint)")
+                        .font(.footnote)
+                        .foregroundStyle(Brand.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                Orb(phase: engine.phase, mode: engine.phase == .listening || engine.phase == .working ? engine.currentMode : .engineer, level: engine.level,
+                    action: tapped, onHoldStart: holdStarted, onHoldEnd: holdEnded)
                 status
                 ZStack(alignment: .topLeading) {
                     if pad.isEmpty {
@@ -57,7 +58,7 @@ struct HomeView: View {
                 }
                 CardBox {
                     Text("Using the keyboard").font(.headline)
-                    Text("Switch to PromptFlow with 🌐, tap the mic, talk, tap again. Pick Prompt to turn a ramble into an engineered prompt, or Edit to rewrite selected text.")
+                    Text("Switch to PromptFlow with 🌐 in any app.\n• Tap the mic, talk, tap again: you get an engineered prompt.\n• Double-tap: your words in the style you picked (Formal, Short & punchy…).\n• Hold: say how to change the selected text, then let go.")
                         .foregroundStyle(Brand.muted)
                         .font(.subheadline)
                 }
@@ -67,14 +68,57 @@ struct HomeView: View {
         .scrollDismissesKeyboard(.interactively)
     }
 
+    private func deliver(_ result: DictationResult) {
+        if result.mode == .command {
+            pad = result.text
+        } else {
+            pad = [pad, result.text].filter { !$0.isEmpty }.joined(separator: pad.isEmpty ? "" : " ")
+        }
+    }
+
+    private func tapped() {
+        if engine.phase == .listening {
+            if engine.currentMode == .engineer, let t = engine.captureStartedAt,
+               Date().timeIntervalSince(t) < Gestures.doubleTapWindow {
+                engine.retarget(.dictate)
+                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                return
+            }
+            engine.toggleInApp(mode: engine.currentMode, field: FieldContext(before: pad, selection: nil), deliver: deliver)
+        } else if engine.phase != .working {
+            engine.toggleInApp(mode: .engineer, field: FieldContext(before: pad, selection: nil), deliver: deliver)
+        }
+    }
+
+    private func holdStarted() {
+        guard engine.phase != .listening, engine.phase != .working else { return }
+        holding = true
+        engine.toggleInApp(mode: .command, field: FieldContext(before: pad, selection: pad.isEmpty ? nil : pad), deliver: deliver)
+    }
+
+    private func holdEnded() {
+        guard holding else { return }
+        holding = false
+        if engine.phase == .listening {
+            engine.toggleInApp(mode: .command, field: FieldContext(before: pad, selection: pad.isEmpty ? nil : pad), deliver: deliver)
+        }
+    }
+
     private var status: some View {
         let text: String = {
             switch engine.phase {
             case .listening: return "Listening…"
-            case .working: return mode == .engineer ? "Engineering your prompt…" : "Polishing…"
+            case .working:
+                switch engine.currentMode {
+                case .engineer: return "Engineering your prompt…"
+                case .dictate: return "Writing it \(style.label.lowercased())…"
+                case .command: return "Editing…"
+                }
+            case .listening where engine.currentMode == .command: return "Say what to change, then let go."
+            case .listening where engine.currentMode == .engineer: return "Listening for a prompt… double-tap for \(style.label)"
             case .done: return engine.lastResult.map { $0.dropped ? "Didn't catch anything" : "\($0.label) · \($0.totalMs) ms" } ?? "Done"
             case .failed: return engine.lastError ?? "Something went wrong"
-            default: return mode.hint
+            default: return "Tap: Prompt · Double-tap: \(style.label) · Hold: Edit what's below"
             }
         }()
         return Text(text)

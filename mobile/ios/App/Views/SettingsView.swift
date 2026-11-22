@@ -6,6 +6,8 @@ struct SettingsView: View {
     @State private var serverURL = SharedStore.shared.serverURL
     @State private var anonKey = SharedStore.shared.anonKey
     @State private var sessionMinutes = SharedStore.shared.sessionMinutes
+    @State private var stylePreset = SharedStore.shared.stylePreset
+    @State private var customStyle = SharedStore.shared.customStyle
 
     var body: some View {
         NavigationStack {
@@ -20,6 +22,26 @@ struct SettingsView: View {
                     } else {
                         AccountForm { signedIn = true }
                     }
+                }
+
+                Section {
+                    Picker("Double-tap writes it", selection: $stylePreset) {
+                        ForEach(StylePreset.allCases) { Text($0.label).tag($0) }
+                    }
+                    .onChange(of: stylePreset) { _, v in SharedStore.shared.stylePreset = v }
+                    TextField("Custom style, e.g. \"like a LinkedIn post, no emojis\"", text: $customStyle, axis: .vertical)
+                        .lineLimit(1...3)
+                    Button("Save custom style") {
+                        SharedStore.shared.customStyle = customStyle
+                        settings["custom_style"] = customStyle
+                        save()
+                        stylePreset = .custom
+                    }
+                    .disabled(customStyle.trimmingCharacters(in: .whitespaces).isEmpty)
+                } header: {
+                    Text("Gestures")
+                } footer: {
+                    Text("Tap: Prompt Engineer. Double-tap: your words in this style, never turned into a prompt. Hold: edit the selected text by voice.")
                 }
 
                 Section {
@@ -42,7 +64,6 @@ struct SettingsView: View {
                         Text("Balanced").tag("balanced")
                         Text("Max").tag("max")
                     }
-                    Toggle("Auto in AI apps", isOn: engineerBool("auto_in_ai_apps", true))
                 } header: {
                     Text("Prompt Engineer")
                 } footer: {
@@ -84,7 +105,13 @@ struct SettingsView: View {
             .scrollContentBackground(.hidden)
             .navigationTitle("Settings")
             .task(id: signedIn) {
-                if signedIn, let s = try? await API.shared.settings() { settings = s }
+                if signedIn, let s = try? await API.shared.settings() {
+                    settings = s
+                    if let c = s["custom_style"] as? String, !c.isEmpty {
+                        customStyle = c
+                        SharedStore.shared.customStyle = c
+                    }
+                }
             }
         }
     }
