@@ -41,6 +41,15 @@ export function styleFor(user: UserData, category: AppCategory): WritingStyle {
   }
 }
 
+const PRESET_LABELS = {
+  clean: "Clean",
+  formal: "Formal",
+  short: "Short & punchy",
+  casual: "Casual",
+  bullets: "Bullet points",
+  custom: "Custom",
+} as const;
+
 /** Which path a request takes after auto-detection. */
 export function resolveMode(
   req: RewriteRequest,
@@ -48,6 +57,9 @@ export function resolveMode(
   category: AppCategory,
 ): RewriteRequest["mode"] {
   if (req.mode !== "dictate") return req.mode;
+  // A style picked on purpose (double-tap) means "write it like this", not
+  // "turn it into a prompt".
+  if (req.preset) return "dictate";
   const e = user.settings.engineer;
   return e.auto_in_ai_apps &&
     isAiTarget(category) &&
@@ -87,6 +99,9 @@ async function polish(
   const system = P.polishSystem({
     category,
     style,
+    presetRule: req.preset
+      ? P.presetRule(req.preset, user.settings.custom_style)
+      : undefined,
     app: req.app,
     developerMode: user.settings.developer_mode,
     dictionary: user.dictionary,
@@ -116,7 +131,9 @@ async function polish(
     text: S.expand(out, protectedText.tokens),
     mode: "dictate",
     category,
-    label: `Smart polish · ${category} · ${style}`,
+    label: req.preset
+      ? `Style · ${PRESET_LABELS[req.preset]}`
+      : `Smart polish · ${category} · ${style}`,
     guarded,
     calls,
   };

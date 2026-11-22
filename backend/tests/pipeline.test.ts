@@ -270,3 +270,48 @@ test("rewrites with Groq until a Claude key is added", async () => {
   });
   expect(withClaude.name).toBe("claude");
 });
+
+describe("style presets (double-tap)", () => {
+  test("a preset replaces the app tone and never auto-engineers", async () => {
+    const { rewrite } = await import(
+      "../supabase/functions/_shared/pipeline.ts"
+    );
+    const { DEFAULT_SETTINGS } = await import(
+      "../supabase/functions/_shared/types.ts"
+    );
+    const systems: string[] = [];
+    const deps = {
+      complete: async (system: string) => {
+        systems.push(system);
+        return "Ship it Friday.";
+      },
+      models: { fast: "f", smart: "s" },
+    };
+    const user = {
+      settings: { ...DEFAULT_SETTINGS, custom_style: "sound like a pirate" },
+      dictionary: [],
+      snippets: [],
+    };
+    const long =
+      "so basically I think we should probably ship the thing on friday if that works for everyone";
+    const out = await rewrite(
+      {
+        text: long,
+        mode: "dictate",
+        preset: "short",
+        app: { name: "ChatGPT", bundle_id: "com.openai.chat" },
+      },
+      user,
+      deps,
+    );
+    expect(out.mode).toBe("dictate");
+    expect(out.label).toBe("Style · Short & punchy");
+    expect(systems[0]).toContain("short and punchy");
+    await rewrite(
+      { text: long, mode: "dictate", preset: "custom" },
+      user,
+      deps,
+    );
+    expect(systems[1]).toContain("sound like a pirate");
+  });
+});

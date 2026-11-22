@@ -11,6 +11,7 @@ import type {
   MissingInfoPolicy,
   PromptFormat,
   PromptTarget,
+  StylePreset,
   WritingStyle,
 } from "./types.ts";
 
@@ -39,9 +40,37 @@ const CATEGORY_RULES: Record<AppCategory, string> = {
   other: "",
 };
 
+/** What each double-tap style asks for, on top of the core cleanup rules. */
+export const PRESET_RULES: Record<Exclude<StylePreset, "custom">, string> = {
+  clean:
+    "Style: clean. Keep the speaker's own words, order and voice. Only remove fillers and false starts and fix grammar and punctuation.",
+  formal:
+    "Style: formal and professional. Complete sentences, full punctuation, no slang or contractions. Polite, precise wording, keeping every point the speaker made.",
+  short:
+    "Style: short and punchy. Lead with the point, cut every word that isn't doing work, prefer short sentences and strong verbs. Aim for about half the length or less. Keep every fact, name and number the speaker gave; never add any.",
+  casual:
+    "Style: casual and friendly. Relaxed, natural phrasing with contractions, like a message to a colleague you like.",
+  bullets:
+    "Style: a concise bulleted list. One idea per bullet, parallel phrasing, no intro sentence unless the speaker gave one.",
+};
+
+/** The rule for a preset; "custom" uses the user's saved instruction. */
+export function presetRule(
+  preset: StylePreset,
+  custom: string | undefined,
+): string {
+  if (preset !== "custom") return PRESET_RULES[preset];
+  const instruction = (custom ?? "").trim().slice(0, 400);
+  return instruction
+    ? `Style, as the user asked for it: ${instruction}. Apply it to how the text is written, never to what it says: keep every fact, name and number, and add none.`
+    : PRESET_RULES.clean;
+}
+
 export interface PolishInput {
   category: AppCategory;
   style: WritingStyle;
+  /** Overrides the per-app tone. */
+  presetRule?: string;
   app?: AppContext;
   developerMode: boolean;
   dictionary: string[];
@@ -54,7 +83,8 @@ const isTechnical = (c: AppCategory) =>
 /** System prompt for dictation cleanup. The transcript goes in the user turn. */
 export function polishSystem(p: PolishInput): string {
   const parts = [T.CORE_RULES];
-  if (!isTechnical(p.category)) parts.push(STYLE_RULES[p.style]);
+  if (p.presetRule) parts.push(p.presetRule);
+  else if (!isTechnical(p.category)) parts.push(STYLE_RULES[p.style]);
   if (CATEGORY_RULES[p.category]) parts.push(CATEGORY_RULES[p.category]);
   if (p.developerMode && isTechnical(p.category)) {
     parts.push(T.DEVELOPER_RULES);

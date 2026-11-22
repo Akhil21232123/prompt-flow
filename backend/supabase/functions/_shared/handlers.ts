@@ -17,6 +17,7 @@ import type {
   Mode,
   PromptTarget,
   RewriteRequest,
+  StylePreset,
   Transcribe,
   WritingStyle,
 } from "./types.ts";
@@ -66,6 +67,14 @@ class BadRequest extends Error {}
 
 const MODES: Mode[] = ["dictate", "engineer", "command"];
 const STYLES: WritingStyle[] = ["formal", "casual", "very_casual"];
+const PRESETS: StylePreset[] = [
+  "clean",
+  "formal",
+  "short",
+  "casual",
+  "bullets",
+  "custom",
+];
 
 function parseRequestBody(
   raw: Record<string, unknown>,
@@ -76,6 +85,9 @@ function parseRequestBody(
   const style = raw.style as WritingStyle | undefined;
   if (style && !STYLES.includes(style))
     throw new BadRequest(`unknown style "${style}"`);
+  const preset = raw.preset as StylePreset | undefined;
+  if (preset && !PRESETS.includes(preset))
+    throw new BadRequest(`unknown preset "${preset}"`);
   const app =
     raw.app && typeof raw.app === "object"
       ? (raw.app as AppContext)
@@ -91,6 +103,7 @@ function parseRequestBody(
         ? raw.selection.slice(0, 20_000)
         : undefined,
     style,
+    preset,
     target: raw.target as PromptTarget | undefined,
   };
 }

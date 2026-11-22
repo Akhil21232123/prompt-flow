@@ -5,6 +5,18 @@ export type Mode = "dictate" | "engineer" | "command";
 
 export type WritingStyle = "formal" | "casual" | "very_casual";
 
+/**
+ * A style picked for one dictation (double-tap). "clean" keeps the speaker's
+ * words and only tidies them; "custom" applies the user's own instruction.
+ */
+export type StylePreset =
+  | "clean"
+  | "formal"
+  | "short"
+  | "casual"
+  | "bullets"
+  | "custom";
+
 export type AppCategory =
   | "email"
   | "work_chat"
@@ -74,6 +86,8 @@ export interface UserSettings {
   developer_mode: boolean;
   engineer: EngineerSettings;
   store_history: boolean;
+  /** The instruction behind the "custom" style preset. */
+  custom_style: string;
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -98,6 +112,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     custom_instructions: "",
   },
   store_history: true,
+  custom_style: "",
 };
 
 /** Everything the rewrite needs to know about one dictation. */
@@ -109,6 +124,8 @@ export interface RewriteRequest {
   selection?: string;
   /** Overrides for this request only. */
   style?: WritingStyle;
+  /** A style chosen for this dictation; turns off auto Prompt Engineer. */
+  preset?: StylePreset;
   target?: PromptTarget;
 }
 
