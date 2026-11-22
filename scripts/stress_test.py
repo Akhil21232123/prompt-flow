@@ -6,7 +6,9 @@ runs them all through /functions/v1/dictate as a throwaway test user, in
 every mode and style, then in parallel. Prints a report and exits non-zero
 if any check fails.
 
-Env: PF_URL, PF_ANON (publishable key), PF_SERVICE (service-role key).
+Env: PF_URL, PF_ANON (publishable key), and optionally PF_SERVICE (a
+service-role key, to create and delete a password test user). Without it the
+test signs in anonymously, which needs anonymous sign-ins switched on.
 """
 
 import concurrent.futures as cf
@@ -28,7 +30,7 @@ import wave
 
 URL = os.environ["PF_URL"].rstrip("/")
 ANON = os.environ["PF_ANON"]
-SERVICE = os.environ["PF_SERVICE"]
+SERVICE = os.environ.get("PF_SERVICE", "")
 TMP = tempfile.mkdtemp()
 RATE = 16000
 
@@ -98,6 +100,10 @@ def duration(path):
 # ---------------------------------------------------------------- session
 
 def test_user():
+    if not SERVICE:
+        s, tok = http("POST", "/auth/v1/signup", {"data": {"stress_test": True}})
+        assert s == 200 and tok.get("access_token"), f"anonymous sign-in failed (switch it on in Auth settings): {s} {tok}"
+        return None, tok["access_token"], None
     email = f"stress-{secrets.token_hex(4)}@promptflow.test"
     password = secrets.token_urlsafe(18)
     admin = {"apikey": SERVICE, "authorization": f"Bearer {SERVICE}"}
@@ -230,7 +236,8 @@ def main():
         s, body = http("POST", "/functions/v1/rewrite", {"text": "hi", "mode": "dictate"}, headers={"authorization": "Bearer not-a-token"})
         check("bad token is refused", s == 401, f"{s}")
     finally:
-        http("DELETE", f"/auth/v1/admin/users/{uid}", headers=admin)
+        if uid and admin:
+            http("DELETE", f"/auth/v1/admin/users/{uid}", headers=admin)
 
     passed = sum(1 for _, ok, _ in results if ok)
     summary = [f"## PromptFlow live stress test: {passed}/{len(results)} passed", "", "| | Check | Detail |", "|---|---|---|"]
