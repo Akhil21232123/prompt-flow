@@ -106,7 +106,11 @@ def test_user():
         return None, tok["access_token"], None
     email = f"stress-{secrets.token_hex(4)}@promptflow.test"
     password = secrets.token_urlsafe(18)
-    admin = {"apikey": SERVICE, "authorization": f"Bearer {SERVICE}"}
+    # New-style secret keys (sb_secret_…) go only in apikey; legacy
+    # service_role JWTs also work as a Bearer token.
+    admin = {"apikey": SERVICE}
+    if SERVICE.startswith("eyJ"):
+        admin["authorization"] = f"Bearer {SERVICE}"
     s, body = http("POST", "/auth/v1/admin/users", {"email": email, "password": password, "email_confirm": True}, headers=admin)
     assert s in (200, 201), f"create user failed: {s} {body}"
     uid = body["id"]
