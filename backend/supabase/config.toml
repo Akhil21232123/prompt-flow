@@ -1,0 +1,47 @@
+# Supabase project config for PromptFlow's backend.
+# Deploy: see backend/README.md.
+project_id = "promptflow"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 17
+
+[auth]
+enabled = true
+site_url = "promptflow://auth"
+additional_redirect_urls = ["promptflow://auth", "http://localhost:3000"]
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+# Sign-in uses a 6-digit code typed into the app (no links to open on the phone).
+enable_confirmations = false
+otp_length = 6
+otp_expiry = 600
+
+[auth.external.apple]
+# Turn on in the Supabase dashboard once the Apple Services ID exists.
+enabled = false
+client_id = ""
+secret = ""
+
+[functions.dictate]
+verify_jwt = true
+
+[functions.rewrite]
+verify_jwt = true
+
+[functions.learn]
+verify_jwt = true
+
+[functions.health]
+verify_jwt = false

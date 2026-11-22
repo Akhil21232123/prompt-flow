@@ -1,0 +1,14 @@
+{
+  "name": "promptflow-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "deploy": "supabase db push && supabase functions deploy --no-verify-jwt health && supabase functions deploy dictate rewrite learn"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}
