@@ -39,6 +39,17 @@ android {
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${cfg("supabaseAnonKey")}\"")
     }
 
+    // A fixed debug key (not a secret: it's Android's standard debug identity)
+    // so each CI build installs over the last one without uninstalling.
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true

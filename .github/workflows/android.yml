@@ -7,6 +7,9 @@ on:
   pull_request:
     paths: ["mobile/android/**"]
 
+permissions:
+  contents: write
+
 concurrency:
   group: android-${{ github.ref }}
   cancel-in-progress: true
@@ -36,3 +39,14 @@ jobs:
           name: PromptFlow-android-debug
           path: mobile/android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
+      - name: Publish to the android-latest release
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk PromptFlow.apk
+          gh release view android-latest >/dev/null 2>&1 || \
+            gh release create android-latest --prerelease --title "PromptFlow for Android (latest build)" \
+              --notes "Built from main on every change. Install PromptFlow.apk, then turn on PromptFlow under Settings → Accessibility."
+          gh release upload android-latest PromptFlow.apk --clobber
+          git tag -f android-latest && git push -f origin android-latest
