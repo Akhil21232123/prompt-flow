@@ -11,6 +11,8 @@
 pub mod app_context;
 pub mod cloud_stt;
 pub mod command_mode;
+pub mod fidelity;
+pub mod hallucination;
 pub mod llm;
 pub mod polish;
 pub mod prompt_engineer;
@@ -167,6 +169,15 @@ pub async fn run_special(
             if !outcome.issues.is_empty() {
                 log::debug!("Prompt critic issues: {:?}", outcome.issues);
             }
+            let source = trusted_source(&protected.text, settings, input);
+            let invented = fidelity::find_inventions(&source, &outcome.prompt);
+            if !invented.is_empty() {
+                log::warn!(
+                    "Prompt Engineer added facts you didn't say ({}); using normal cleanup",
+                    invented.join(", ")
+                );
+                return None;
+            }
             Some(SpecialOutput {
                 text: snippets::expand(&outcome.prompt, &protected.tokens),
                 label: outcome.summary(),
@@ -178,6 +189,20 @@ pub async fn run_special(
             None
         }
     }
+}
+
+/// What a rewrite may draw facts from: what was said plus the context the
+/// user trusts (dictionary, snippet triggers, selected text, the app).
+pub fn trusted_source(transcript: &str, settings: &AppSettings, input: &FlowInput) -> String {
+    let mut parts = vec![transcript.to_string()];
+    parts.extend(settings.custom_words.iter().cloned());
+    if let Some(sel) = &input.selection {
+        parts.push(sel.clone());
+    }
+    if let Some(app) = &input.app {
+        parts.push(format!("{app:?}"));
+    }
+    parts.join("\n")
 }
 
 async fn run_command(

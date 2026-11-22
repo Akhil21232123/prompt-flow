@@ -110,3 +110,8 @@ describe("hallucination filter", () => {
     expect(isLikelyHallucination("Thank you.", undefined)).toBe(false);
   });
 });
+
+test("punctuation ends a spoken number", () => {
+  const said = "budget fifteen hundred, two thousand twenty six plan";
+  expect(findInventions(said, "Budget: 1,500. 2026 plan.")).toEqual([]);
+});

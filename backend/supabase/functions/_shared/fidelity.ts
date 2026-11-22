@@ -88,9 +88,11 @@ export function spokenNumbers(text: string): Set<string> {
       if (p) out.add(p);
     }
   }
+  // Punctuation ends a spoken number: "fifteen hundred, two thousand".
   const words = text
     .toLowerCase()
-    .replace(/[^a-z\s-]/g, " ")
+    .replace(/[.,;:!?]+(\s|$)/g, " | ")
+    .replace(/[^a-z\s|-]/g, " ")
     .split(/[\s-]+/)
     .filter(Boolean);
   let current = 0;

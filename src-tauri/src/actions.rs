@@ -500,6 +500,18 @@ pub(crate) async fn process_flow_output(
         settings.clone()
     };
     let mut out = process_with_settings(run_settings, &protected.text, post_process).await;
+    if let Some(polished) = &out.post_processed_text {
+        let source = crate::flow::trusted_source(&protected.text, &settings, &input);
+        let invented = crate::flow::fidelity::find_inventions(&source, polished);
+        if !invented.is_empty() {
+            warn!(
+                "Cleanup added facts you didn't say ({}); pasting the transcript instead",
+                invented.join(", ")
+            );
+            out.final_text = protected.text.clone();
+            out.post_processed_text = None;
+        }
+    }
     out.final_text = crate::flow::snippets::expand(&out.final_text, &protected.tokens);
     out.post_processed_text = out
         .post_processed_text
@@ -924,6 +936,19 @@ impl ShortcutAction for TranscribeAction {
                     }
 
                     match transcription_result {
+                        Ok(Transcription { text, .. })
+                            if crate::flow::hallucination::is_likely_hallucination(
+                                &text,
+                                sample_count as f32
+                                    / crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as f32,
+                            ) =>
+                        {
+                            debug!(
+                                "Dropped a stock phrase from a short clip: '{}'",
+                                utils::redact_text(&text)
+                            );
+                            finish_without_text(&ah, input_silent, sample_count, stop_time);
+                        }
                         Ok(Transcription {
                             text: transcription,
                             language,
