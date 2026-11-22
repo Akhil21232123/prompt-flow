@@ -207,7 +207,7 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
         return {
           text: (data.text ?? "").trim(),
           provider: name,
-          silent: isSilent(data.segments),
+          ...(isSilent(data.segments) ? { silent: true } : {}),
         };
       } catch (e) {
         lastError = e;
