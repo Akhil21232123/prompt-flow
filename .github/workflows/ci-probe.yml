@@ -1,0 +1,9 @@
+name: ci-probe
+on:
+  push:
+    paths: [".github/workflows/ci-probe.yml"]
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "PromptFlow CI is wired"
