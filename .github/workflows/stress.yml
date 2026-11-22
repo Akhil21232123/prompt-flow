@@ -1,0 +1,39 @@
+name: stress test
+# Runs real speech, silence and noise through the deployed backend as a
+# throwaway user (deleted afterwards). Manual, and after each deploy.
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["deploy backend"]
+    types: [completed]
+
+jobs:
+  live:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: macos-15
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.2.0
+      - name: Keys
+        run: |
+          supabase projects api-keys --project-ref "$REF" -o json > keys.json
+          python3 - <<'PY' >> "$GITHUB_ENV"
+          import json
+          keys = json.load(open("keys.json"))
+          by = {k.get("name"): k.get("api_key") for k in keys}
+          pub = next((k["api_key"] for k in keys if str(k.get("api_key", "")).startswith("sb_publishable")), by.get("anon"))
+          svc = by.get("service_role") or next(k["api_key"] for k in keys if str(k.get("api_key", "")).startswith("sb_secret"))
+          print(f"PF_ANON={pub}")
+          print(f"PF_SERVICE={svc}")
+          PY
+          rm keys.json
+          echo "::add-mask::$(grep PF_SERVICE "$GITHUB_ENV" | cut -d= -f2)"
+      - name: Stress test
+        env:
+          PF_URL: https://${{ env.REF }}.supabase.co
+        run: python3 scripts/stress_test.py
