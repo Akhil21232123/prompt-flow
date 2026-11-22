@@ -11,6 +11,29 @@ ideas and pieces adapted from [OpenTypeless](https://github.com/tover0314-w/open
 [OpenWhispr](https://github.com/HeroTools/open-wispr) (all MIT). See
 [NOTICE.md](NOTICE.md).
 
+## Apps
+
+| Platform    | How you use it                                                                                                                                               | Code                 |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------- |
+| **Mac**     | Global shortcuts in every app. Runs local Whisper or cloud STT                                                                                               | `src/`, `src-tauri/` |
+| **iPhone**  | The PromptFlow keyboard, in any app. Turn on a Flow Session once; after that, tap the mic on the keyboard, talk, and the text lands. Also a Shortcuts action | `mobile/ios/`        |
+| **Android** | A floating bubble over every app. Tap to dictate, long-press for Prompt Engineer, double-tap for Command Mode, drag to move                                  | `mobile/android/`    |
+| **Cloud**   | Supabase: sign-in, synced dictionary, snippets and styles, plus the Claude + Whisper pipeline                                                                | `backend/`           |
+
+The phone apps sign in by email code and share one account, so a word you
+add on your phone also works on your Mac. To deploy the cloud, see
+[backend/README.md](backend/README.md).
+
+**Install on Android:** download `PromptFlow-android-debug` from the latest
+[android workflow run](../../actions/workflows/android.yml), install the
+APK, and turn on PromptFlow under Settings → Accessibility.
+
+**Install on iPhone:** on a Mac with Xcode, run `brew install xcodegen`,
+then `cd mobile/ios && xcodegen` and open `PromptFlow.xcodeproj`. In both
+targets, set Signing to your Apple ID, then run on your phone. A free Apple
+ID re-signs every 7 days; a $99/yr developer account lasts a year and adds
+TestFlight.
+
 ## What it does
 
 | Shortcut (macOS default)    | What happens                                                                                                                               |
