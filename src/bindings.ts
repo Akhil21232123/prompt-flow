@@ -1205,12 +1205,25 @@ export type CategoryStyles = { email?: WritingStyle; work_chat?: WritingStyle; p
 export type CloudSttProvider = "groq" | "openai"
 export type CloudSttSettings = { enabled?: boolean; provider?: CloudSttProvider; model?: string; fallback_to_local?: boolean }
 export type EngineerQuality = "fast" | "balanced" | "max"
-export type FlowSettings = { smart_polish?: boolean; polish_main_shortcut?: boolean; app_aware?: boolean; styles?: CategoryStyles; developer_mode?: boolean; snippets?: Snippet[]; app_overrides?: AppCategoryOverride[]; prompt_engineer?: PromptEngineerSettings; cloud_stt?: CloudSttSettings; local_ai_defaults_applied?: boolean }
+export type FlowSettings = { smart_polish?: boolean; polish_main_shortcut?: boolean; app_aware?: boolean; styles?: CategoryStyles; developer_mode?: boolean; snippets?: Snippet[]; app_overrides?: AppCategoryOverride[]; prompt_engineer?: PromptEngineerSettings; cloud_stt?: CloudSttSettings; local_ai_defaults_applied?: boolean; 
+/**
+ * None: tone follows the app (Smart polish). Some: always this style.
+ */
+style_preset?: StylePreset | null; 
+/**
+ * The instruction behind StylePreset::Custom.
+ */
+custom_style?: string }
 export type MissingInfoPolicy = "state_assumptions" | "ask_first"
 export type PromptEngineerSettings = { quality?: EngineerQuality; target?: PromptTarget; missing_info?: MissingInfoPolicy; format?: PromptFormat; min_score?: number; max_rounds?: number; provider_id?: string | null; model?: string | null; auto_in_ai_apps?: boolean; auto_min_words?: number; custom_instructions?: string }
 export type PromptFormat = "auto" | "xml" | "markdown" | "plain"
 export type PromptTarget = "auto" | "coding_agent" | "chat_assistant" | "research" | "writing" | "image_generation" | "data_analysis"
 export type Snippet = { id: string; trigger: string; expansion: string }
+/**
+ * A style the main dictation shortcut writes in, chosen on purpose. Unlike
+ * the per-app tone, it never auto-converts the dictation into a prompt.
+ */
+export type StylePreset = "clean" | "formal" | "short" | "casual" | "bullets" | "custom"
 export type WritingStyle = "formal" | "casual" | "very_casual"
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"

@@ -96,6 +96,32 @@ impl CategoryStyles {
 }
 
 /// A voice shortcut: say the trigger, get the expansion (Wispr "Snippets").
+/// A style the main dictation shortcut writes in, chosen on purpose. Unlike
+/// the per-app tone, it never auto-converts the dictation into a prompt.
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum StylePreset {
+    Clean,
+    Formal,
+    Short,
+    Casual,
+    Bullets,
+    Custom,
+}
+
+impl StylePreset {
+    pub fn label(self) -> &'static str {
+        match self {
+            StylePreset::Clean => "Clean",
+            StylePreset::Formal => "Formal",
+            StylePreset::Short => "Short & punchy",
+            StylePreset::Casual => "Casual",
+            StylePreset::Bullets => "Bullet points",
+            StylePreset::Custom => "Custom",
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
 pub struct Snippet {
     pub id: String,
@@ -325,6 +351,12 @@ pub struct FlowSettings {
     /// Set once the first-run switch to local Ollama has been considered.
     #[serde(default)]
     pub local_ai_defaults_applied: bool,
+    /// None: tone follows the app (Smart polish). Some: always this style.
+    #[serde(default)]
+    pub style_preset: Option<StylePreset>,
+    /// The instruction behind StylePreset::Custom.
+    #[serde(default)]
+    pub custom_style: String,
 }
 
 impl Default for FlowSettings {
@@ -340,6 +372,8 @@ impl Default for FlowSettings {
             prompt_engineer: PromptEngineerSettings::default(),
             cloud_stt: CloudSttSettings::default(),
             local_ai_defaults_applied: false,
+            style_preset: None,
+            custom_style: String::new(),
         }
     }
 }

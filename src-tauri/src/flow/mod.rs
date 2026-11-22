@@ -76,6 +76,10 @@ pub fn smart_polish_settings(
     let prompt = polish::build_prompt(&polish::PolishContext {
         category,
         style: style_for(settings, category),
+        preset: settings
+            .flow
+            .style_preset
+            .map(|p| polish::preset_rule(p, &settings.flow.custom_style)),
         app: if settings.flow.app_aware { app } else { None },
         developer_mode: settings.flow.developer_mode,
         dictionary: &settings.custom_words,
@@ -109,7 +113,9 @@ pub fn should_auto_engineer(
     transcript: &str,
 ) -> bool {
     let pe = &settings.flow.prompt_engineer;
-    pe.auto_in_ai_apps
+    // A style picked on purpose means "write it like this", not a prompt.
+    settings.flow.style_preset.is_none()
+        && pe.auto_in_ai_apps
         && category.is_ai_target()
         && word_count(transcript) >= pe.auto_min_words as usize
 }

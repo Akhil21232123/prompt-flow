@@ -1051,6 +1051,34 @@
         "app": "Bundle id or app name",
         "add": "Add app",
         "remove": "Remove"
+      },
+      "quick": {
+        "title": "Fast cloud mode (Groq)",
+        "description": "One free key from console.groq.com runs speech-to-text (Whisper large v3) and the AI (GPT-OSS 120B): the same setup as the phone apps. Paste it and click away; PromptFlow sets the rest.",
+        "key": {
+          "title": "Groq API key",
+          "description": "Stored on this Mac only. Used for transcription, cleanup, styles and Prompt Engineer."
+        },
+        "active": "On: Groq transcribes and writes. Paste a new key to replace it.",
+        "inactive": "Off: using the local model and the AI picked in Post Process."
+      },
+      "stylePreset": {
+        "title": "Dictation style",
+        "description": "How your main dictation shortcut writes. Auto follows the app (formal in email, casual in chat). Any other choice always writes in that style and never turns into a prompt. Prompt Engineer has its own shortcut.",
+        "options": {
+          "auto": "Auto by app",
+          "clean": "Clean",
+          "formal": "Formal",
+          "short": "Short & punchy",
+          "casual": "Casual",
+          "bullets": "Bullet points",
+          "custom": "Custom"
+        },
+        "custom": {
+          "title": "Custom style",
+          "description": "Your own instruction, for example: like a LinkedIn post, no emojis.",
+          "placeholder": "like a LinkedIn post, no emojis"
+        }
       }
     }
   },

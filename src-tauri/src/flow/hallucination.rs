@@ -50,6 +50,28 @@ pub fn is_likely_hallucination(text: &str, duration_sec: f32) -> bool {
     !norm.is_empty() && STOCK.contains(&norm.as_str()) && duration_sec < 2.5
 }
 
+/// True when a short transcript only repeats dictionary words. Whisper gets
+/// the dictionary as a spelling hint, and on silence it often echoes it back.
+pub fn is_prompt_echo(text: &str, dictionary: &[String]) -> bool {
+    let words: Vec<String> = normalize(text)
+        .split_whitespace()
+        .map(String::from)
+        .collect();
+    if words.is_empty() || words.len() > 4 || dictionary.is_empty() {
+        return false;
+    }
+    let hint: std::collections::HashSet<String> = dictionary
+        .iter()
+        .flat_map(|w| {
+            normalize(w)
+                .split_whitespace()
+                .map(String::from)
+                .collect::<Vec<_>>()
+        })
+        .collect();
+    words.iter().all(|w| hint.contains(w))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -66,5 +88,14 @@ mod tests {
         assert!(!is_likely_hallucination("Thank you.", 3.0));
         assert!(!is_likely_hallucination("Thank you for the update", 1.5));
         assert!(!is_likely_hallucination("", 1.0));
+    }
+
+    #[test]
+    fn drops_dictionary_echoes() {
+        let dict = vec!["PromptFlow".to_string(), "Wispr Flow".to_string()];
+        assert!(is_prompt_echo("Wispr.", &dict));
+        assert!(is_prompt_echo("PromptFlow", &dict));
+        assert!(!is_prompt_echo("Wispr Flow is slow", &dict));
+        assert!(!is_prompt_echo("Wispr", &[]));
     }
 }

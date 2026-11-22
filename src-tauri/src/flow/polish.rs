@@ -7,11 +7,13 @@
 //! request modes (structured system+user, or a single substituted prompt).
 
 use super::app_context::{supports_file_tags, AppContext};
-use super::settings::{AppCategory, WritingStyle};
+use super::settings::{AppCategory, StylePreset, WritingStyle};
 
 pub struct PolishContext<'a> {
     pub category: AppCategory,
     pub style: WritingStyle,
+    /// A chosen style; replaces the per-app tone.
+    pub preset: Option<String>,
     pub app: Option<&'a AppContext>,
     pub developer_mode: bool,
     pub dictionary: &'a [String],
@@ -83,6 +85,26 @@ Developer formatting:
 const FILE_TAG_RULES: &str = "\
 This editor attaches files to its AI chat with @-mentions. When the speaker says \"at file app dot tsx\", \"tag app.tsx\" or \"at app dot tsx\", write @app.tsx.";
 
+/// What a chosen style asks for, on top of the core cleanup rules. Mirrors
+/// PRESET_RULES in backend/supabase/functions/_shared/prompts.ts.
+pub fn preset_rule(preset: StylePreset, custom: &str) -> String {
+    match preset {
+        StylePreset::Clean => "Style: clean. Keep the speaker's own words, order and voice. Only remove fillers and false starts and fix grammar and punctuation.".into(),
+        StylePreset::Formal => "Style: formal and professional. Complete sentences, full punctuation, no slang or contractions. Polite, precise wording, keeping every point the speaker made.".into(),
+        StylePreset::Short => "Style: short and punchy. Lead with the point, cut every word that isn't doing work, prefer short sentences and strong verbs. Aim for about half the length or less. Keep every fact, name and number the speaker gave; never add any.".into(),
+        StylePreset::Casual => "Style: casual and friendly. Relaxed, natural phrasing with contractions, like a message to a colleague you like.".into(),
+        StylePreset::Bullets => "Style: a concise bulleted list. One idea per bullet, parallel phrasing, no intro sentence unless the speaker gave one.".into(),
+        StylePreset::Custom => {
+            let instruction: String = custom.trim().chars().take(400).collect();
+            if instruction.is_empty() {
+                preset_rule(StylePreset::Clean, "")
+            } else {
+                format!("Style, as the user asked for it: {instruction}. Apply it to how the text is written, never to what it says: keep every fact, name and number, and add none.")
+            }
+        }
+    }
+}
+
 pub fn build_prompt(ctx: &PolishContext) -> String {
     let mut sections: Vec<String> = vec![CORE_RULES.to_string()];
 
@@ -90,7 +112,9 @@ pub fn build_prompt(ctx: &PolishContext) -> String {
         ctx.category,
         AppCategory::Code | AppCategory::Terminal | AppCategory::AiChat
     );
-    if !is_technical {
+    if let Some(rule) = &ctx.preset {
+        sections.push(rule.clone());
+    } else if !is_technical {
         sections.push(style_rules(ctx.style).to_string());
     }
     let cat = category_rules(ctx.category);
@@ -147,6 +171,7 @@ mod tests {
         PolishContext {
             category,
             style,
+            preset: None,
             app: None,
             developer_mode: true,
             dictionary: dict,
@@ -198,5 +223,17 @@ mod tests {
         let p = build_prompt(&c);
         assert!(p.contains("Akhil, Dayoph"));
         assert!(p.contains("[[SNIPPET_1]]"));
+    }
+
+    #[test]
+    fn a_chosen_style_replaces_the_app_tone() {
+        let mut ctx = base(AppCategory::Email, WritingStyle::Formal, &[]);
+        ctx.preset = Some(preset_rule(StylePreset::Short, ""));
+        let p = build_prompt(&ctx);
+        assert!(p.contains("short and punchy"));
+        assert!(!p.contains(style_rules(WritingStyle::Formal)));
+        let custom = preset_rule(StylePreset::Custom, "like a LinkedIn post");
+        assert!(custom.contains("like a LinkedIn post"));
+        assert!(preset_rule(StylePreset::Custom, "  ").contains("Style: clean"));
     }
 }
