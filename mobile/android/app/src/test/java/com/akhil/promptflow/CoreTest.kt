@@ -53,4 +53,16 @@ class CoreTest {
         assertEquals(3, "  one two\nthree ".wordCount())
         assertEquals(0, "   ".wordCount())
     }
+
+    @Test
+    fun signInLinkParams() {
+        val ok = com.akhil.promptflow.core.Api.linkParams(
+            "promptflow://auth#access_token=a&expires_in=3600&refresh_token=r1&type=magiclink",
+        )
+        assertEquals("r1", ok["refresh_token"])
+        val bad = com.akhil.promptflow.core.Api.linkParams(
+            "promptflow://auth#error=access_denied&error_description=Email+link+is+invalid+or+has+expired",
+        )
+        assertEquals("Email link is invalid or has expired", bad["error_description"])
+    }
 }

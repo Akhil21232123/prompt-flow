@@ -24,7 +24,46 @@ final class API {
     // MARK: Auth
 
     func sendCode(email: String) async throws {
-        _ = try await request("POST", "/auth/v1/otp", json: ["email": email.trimmed, "create_user": true], auth: false)
+        // The email carries a link back to promptflow://auth (and a code when
+        // the project's template includes one).
+        _ = try await request("POST", "/auth/v1/otp?redirect_to=promptflow%3A%2F%2Fauth",
+                              json: ["email": email.trimmed, "create_user": true], auth: false)
+    }
+
+    /// Finishes sign-in from the emailed link: promptflow://auth#access_token=…&refresh_token=…
+    @discardableResult
+    func completeLink(_ url: URL) async throws -> AuthSession {
+        let params = API.linkParams(url)
+        if let message = params["error_description"] {
+            throw APIError(message: message, code: "auth")
+        }
+        guard let refresh = params["refresh_token"] else {
+            throw APIError(message: "That sign-in link is incomplete. Ask for a new one.", code: "auth")
+        }
+        // Trade the link's refresh token for a full session (it includes the user).
+        let data = try await request("POST", "/auth/v1/token?grant_type=refresh_token",
+                                     json: ["refresh_token": refresh], auth: false)
+        guard let obj = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let session = AuthSession.from(json: obj) else {
+            throw APIError(message: "Unexpected sign-in response")
+        }
+        store.session = session
+        NotificationCenter.default.post(name: .promptflowSignedIn, object: nil)
+        return session
+    }
+
+    /// Key/value pairs from a link's fragment and query, form-decoded.
+    static func linkParams(_ url: URL) -> [String: String] {
+        var out: [String: String] = [:]
+        for part in [url.query, url.fragment].compactMap({ $0 }) {
+            for pair in part.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard kv.count == 2 else { continue }
+                let value = kv[1].replacingOccurrences(of: "+", with: " ")
+                out[kv[0]] = value.removingPercentEncoding ?? value
+            }
+        }
+        return out
     }
 
     @discardableResult
@@ -36,6 +75,7 @@ final class API {
             throw APIError(message: "Unexpected sign-in response")
         }
         store.session = session
+        NotificationCenter.default.post(name: .promptflowSignedIn, object: nil)
         return session
     }
 
@@ -160,8 +200,13 @@ final class API {
         req.httpMethod = method
         req.setValue(store.anonKey, forHTTPHeaderField: "apikey")
         req.setValue("promptflow-ios/0.1", forHTTPHeaderField: "x-client-info")
-        let token = auth ? try await validSession().accessToken : store.anonKey
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        // Signed-out calls send only the apikey: new-style publishable keys
+        // (sb_publishable_…) aren't JWTs and are refused as a Bearer token.
+        if auth {
+            req.setValue("Bearer \(try await validSession().accessToken)", forHTTPHeaderField: "Authorization")
+        } else if store.anonKey.hasPrefix("eyJ") {
+            req.setValue("Bearer \(store.anonKey)", forHTTPHeaderField: "Authorization")
+        }
         if let prefer { req.setValue(prefer, forHTTPHeaderField: "Prefer") }
         if let json {
             req.httpBody = try JSONSerialization.data(withJSONObject: json)
@@ -185,4 +230,10 @@ final class API {
 private extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
     var urlEncoded: String { addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? self }
+}
+
+extension Notification.Name {
+    static let promptflowSignedIn = Notification.Name("promptflowSignedIn")
+    /// object: the error message (String)
+    static let promptflowSignInFailed = Notification.Name("promptflowSignInFailed")
 }

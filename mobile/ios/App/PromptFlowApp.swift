@@ -11,7 +11,18 @@ struct PromptFlowApp: App {
                 .environmentObject(engine)
                 .preferredColorScheme(.dark)
                 .tint(Brand.violet)
-                .onOpenURL { engine.handle(url: $0) }
+                .onOpenURL { url in
+                    if url.host == "auth" {
+                        Task {
+                            do { try await API.shared.completeLink(url) } catch {
+                                NotificationCenter.default.post(name: .promptflowSignInFailed,
+                                                                object: error.localizedDescription)
+                            }
+                        }
+                    } else {
+                        engine.handle(url: url)
+                    }
+                }
         }
     }
 }

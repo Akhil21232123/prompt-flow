@@ -53,4 +53,11 @@ final class SharedTests: XCTestCase {
         store.heartbeat = Date().addingTimeInterval(-10)
         XCTAssertFalse(store.sessionIsLive)
     }
+
+    func testSignInLinkParams() {
+        let ok = URL(string: "promptflow://auth#access_token=a&expires_in=3600&refresh_token=r1&token_type=bearer&type=magiclink")!
+        XCTAssertEqual(API.linkParams(ok)["refresh_token"], "r1")
+        let bad = URL(string: "promptflow://auth#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired")!
+        XCTAssertEqual(API.linkParams(bad)["error_description"], "Email link is invalid or has expired")
+    }
 }

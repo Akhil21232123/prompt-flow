@@ -169,15 +169,26 @@ fun AccountForm(onSignedIn: () -> Unit) {
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
+    LaunchedEffect(Unit) {
+        api.authEvents.collect { failure ->
+            if (failure == null) onSignedIn() else error = failure
+        }
+    }
+
     Column {
         OutlinedTextField(
             email, { email = it }, Modifier.fillMaxWidth(), label = { Text("Email") }, singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email), shape = RoundedCornerShape(14.dp),
         )
         if (sent) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Check your email on this phone and tap the link. PromptFlow opens signed in.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
-                code, { code = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("6-digit code") }, singleLine = true,
+                code, { code = it.filter(Char::isDigit).take(6) }, Modifier.fillMaxWidth(), label = { Text("Or the code, if your email has one") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), shape = RoundedCornerShape(14.dp),
             )
         }
@@ -187,7 +198,7 @@ fun AccountForm(onSignedIn: () -> Unit) {
         }
         Spacer(Modifier.height(12.dp))
         GradientButton(
-            if (!sent) "Email me a code" else "Sign in",
+            if (!sent) "Email me a sign-in link" else "Sign in with code",
             enabled = !busy && email.contains("@") && (!sent || code.length == 6),
         ) {
             busy = true
@@ -199,7 +210,6 @@ fun AccountForm(onSignedIn: () -> Unit) {
                         sent = true
                     } else {
                         api.verifyCode(email, code)
-                        onSignedIn()
                     }
                 } catch (e: Exception) {
                     error = e.message ?: "Couldn't sign in"

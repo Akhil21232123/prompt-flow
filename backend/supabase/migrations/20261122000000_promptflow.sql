@@ -55,6 +55,13 @@ alter table public.dictionary_words enable row level security;
 alter table public.snippets enable row level security;
 alter table public.dictations enable row level security;
 
+-- Newer projects don't expose new tables to the API by default; signed-in
+-- users get access here, and the policies below limit them to their rows.
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on
+  public.user_settings, public.dictionary_words, public.snippets, public.dictations
+  to authenticated;
+
 do $$
 declare t text;
 begin

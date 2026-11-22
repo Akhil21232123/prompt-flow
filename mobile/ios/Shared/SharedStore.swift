@@ -17,12 +17,12 @@ final class SharedStore {
     // MARK: Server and account
 
     var serverURL: String {
-        get { nonEmpty(defaults.string(forKey: "serverURL")) ?? Self.bundleValue("PromptFlowSupabaseURL") }
+        get { nonEmpty(defaults.string(forKey: "serverURL")) ?? nonEmpty(Self.bundleValue("PromptFlowSupabaseURL")) ?? Self.hostedURL }
         set { defaults.set(newValue.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "/")), forKey: "serverURL") }
     }
 
     var anonKey: String {
-        get { nonEmpty(defaults.string(forKey: "anonKey")) ?? Self.bundleValue("PromptFlowSupabaseAnonKey") }
+        get { nonEmpty(defaults.string(forKey: "anonKey")) ?? nonEmpty(Self.bundleValue("PromptFlowSupabaseAnonKey")) ?? Self.hostedKey }
         set { defaults.set(newValue.trimmingCharacters(in: .whitespaces), forKey: "anonKey") }
     }
 
@@ -121,6 +121,11 @@ final class SharedStore {
         guard let s, !s.isEmpty else { return nil }
         return s
     }
+
+    /// The hosted PromptFlow backend. Public by design: the key only allows
+    /// what row-level security permits.
+    static let hostedURL = "https://fhslwvrspzdcvokajvno.supabase.co"
+    static let hostedKey = "sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss"
 
     private static func bundleValue(_ key: String) -> String {
         (Bundle.main.object(forInfoDictionaryKey: key) as? String) ?? ""

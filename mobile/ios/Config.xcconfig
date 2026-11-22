@@ -1,5 +1,6 @@
-// Backend address for builds. Copy to Config.local.xcconfig to keep keys out
-// of git; values can also be entered in the app under Settings → Server.
-PROMPTFLOW_SUPABASE_URL =
-PROMPTFLOW_SUPABASE_ANON_KEY =
+// The hosted PromptFlow backend. Both values are public by design (the key
+// only allows what row-level security permits). Override in
+// Config.local.xcconfig or in the app under Settings → Server.
+PROMPTFLOW_SUPABASE_URL = https:/$()/fhslwvrspzdcvokajvno.supabase.co
+PROMPTFLOW_SUPABASE_ANON_KEY = sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss
 #include? "Config.local.xcconfig"

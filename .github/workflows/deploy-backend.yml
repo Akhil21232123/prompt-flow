@@ -19,7 +19,7 @@ jobs:
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
       SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      REF: ${{ vars.SUPABASE_PROJECT_REF }}
+      REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
     defaults:
       run:
         working-directory: backend
@@ -43,8 +43,9 @@ jobs:
       - name: Deploy functions
         if: env.SKIP != '1'
         run: |
-          supabase functions deploy health --project-ref "$REF" --no-verify-jwt
-          supabase functions deploy dictate rewrite learn --project-ref "$REF"
+          # The functions check the user's token themselves (via /auth/v1/user),
+          # which works with both legacy and new JWT signing keys.
+          supabase functions deploy health dictate rewrite learn --project-ref "$REF" --no-verify-jwt
       - name: Health check
         if: env.SKIP != '1'
         run: curl -fsS "https://$REF.supabase.co/functions/v1/health"

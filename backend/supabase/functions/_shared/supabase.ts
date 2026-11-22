@@ -27,7 +27,18 @@ export interface Db {
 
 function base(env: Env): { url: string; anon: string } {
   const url = env.get("SUPABASE_URL");
-  const anon = env.get("SUPABASE_ANON_KEY");
+  // Legacy anon key if present, else the project's first publishable key.
+  let anon = env.get("SUPABASE_ANON_KEY");
+  if (!anon) {
+    try {
+      const keys = JSON.parse(env.get("SUPABASE_PUBLISHABLE_KEYS") ?? "{}");
+      anon = Object.values(keys).find((k) => typeof k === "string") as
+        | string
+        | undefined;
+    } catch {
+      anon = undefined;
+    }
+  }
   if (!url || !anon)
     throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be set");
   return { url: url.replace(/\/$/, ""), anon };

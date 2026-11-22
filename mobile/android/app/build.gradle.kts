@@ -14,8 +14,16 @@ val local = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
+// The hosted PromptFlow backend. Both values are public by design (the key
+// only allows what row-level security permits).
+val defaults = mapOf(
+    "supabaseUrl" to "https://fhslwvrspzdcvokajvno.supabase.co",
+    "supabaseAnonKey" to "sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss",
+)
+
 fun cfg(name: String): String =
-    (local.getProperty("promptflow.$name") ?: System.getenv("PROMPTFLOW_${name.uppercase()}") ?: "")
+    listOf(local.getProperty("promptflow.$name"), System.getenv("PROMPTFLOW_${name.uppercase()}"))
+        .firstOrNull { !it.isNullOrBlank() } ?: defaults[name].orEmpty()
 
 android {
     namespace = "com.akhil.promptflow"

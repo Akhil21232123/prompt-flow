@@ -1,6 +1,9 @@
 package com.akhil.promptflow.ui
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -45,6 +48,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         val app = application as PromptFlowApp
+        handleLink(intent)
         setContent {
             PromptFlowTheme {
                 var onboarded by remember { mutableStateOf(app.store.onboarded) }
@@ -56,6 +60,20 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleLink(intent)
+    }
+
+    /** promptflow://auth#… from the sign-in email. */
+    private fun handleLink(intent: Intent?) {
+        val uri = intent?.data ?: return
+        if (uri.scheme != "promptflow" || uri.host != "auth") return
+        val app = application as PromptFlowApp
+        lifecycleScope.launch { runCatching { app.api.completeLink(uri.toString()) } }
+        intent.data = null
     }
 }
 

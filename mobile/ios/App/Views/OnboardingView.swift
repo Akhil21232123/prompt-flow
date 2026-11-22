@@ -112,7 +112,12 @@ struct AccountForm: View {
                 .padding(14)
                 .background(RoundedRectangle(cornerRadius: 14).fill(Brand.surfaceHigh))
             if sent {
-                TextField("6-digit code", text: $code)
+                Label("Check your email on this phone and tap the link. PromptFlow opens signed in.",
+                      systemImage: "envelope.open.fill")
+                    .font(.subheadline)
+                    .foregroundStyle(Brand.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                TextField("Or enter the code, if your email has one", text: $code)
                     .textContentType(.oneTimeCode)
                     .keyboardType(.numberPad)
                     .padding(14)
@@ -120,7 +125,7 @@ struct AccountForm: View {
                     .onChange(of: code) { _, v in code = String(v.filter(\.isNumber).prefix(6)) }
             }
             if let error { Text(error).font(.footnote).foregroundStyle(.red) }
-            GradientButton(title: sent ? "Sign in" : "Email me a code",
+            GradientButton(title: sent ? "Sign in with code" : "Email me a sign-in link",
                            enabled: !busy && email.contains("@") && (!sent || code.count == 6)) {
                 busy = true
                 error = nil
@@ -129,7 +134,6 @@ struct AccountForm: View {
                     do {
                         if sent {
                             try await API.shared.verifyCode(email: email, code: code)
-                            onSignedIn()
                         } else {
                             try await API.shared.sendCode(email: email)
                             withAnimation { sent = true }
@@ -139,6 +143,12 @@ struct AccountForm: View {
                     }
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptflowSignedIn)) { _ in
+            onSignedIn()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .promptflowSignInFailed)) { note in
+            error = note.object as? String
         }
     }
 }

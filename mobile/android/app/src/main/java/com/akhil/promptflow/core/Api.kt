@@ -1,6 +1,8 @@
 package com.akhil.promptflow.core
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,8 +27,37 @@ class Api(private val store: Store) {
 
     // ---------------------------------------------------------------- auth
 
+    /** Sign-in results from the emailed link: null = signed in, else the error message. */
+    private val _authEvents = MutableSharedFlow<String?>(extraBufferCapacity = 4)
+    val authEvents: SharedFlow<String?> = _authEvents
+
+    /** Emails a sign-in link back to promptflow://auth (plus a code when the template has one). */
     suspend fun sendCode(email: String) {
-        request("POST", "/auth/v1/otp", JSONObject().put("email", email.trim()).put("create_user", true), auth = false)
+        request(
+            "POST", "/auth/v1/otp?redirect_to=" + URLEncoder.encode("promptflow://auth", "UTF-8"),
+            JSONObject().put("email", email.trim()).put("create_user", true), auth = false,
+        )
+    }
+
+    /** Finishes sign-in from promptflow://auth#access_token=…&refresh_token=… */
+    suspend fun completeLink(link: String): Session {
+        try {
+            val params = linkParams(link)
+            params["error_description"]?.let { throw ApiException(it, 401, "auth") }
+            val refresh = params["refresh_token"]
+                ?: throw ApiException("That sign-in link is incomplete. Ask for a new one.", 401, "auth")
+            val res = request(
+                "POST", "/auth/v1/token?grant_type=refresh_token",
+                JSONObject().put("refresh_token", refresh), auth = false,
+            )
+            return Session.fromAuthResponse(JSONObject(res)).also {
+                store.session = it
+                _authEvents.tryEmit(null)
+            }
+        } catch (e: Exception) {
+            _authEvents.tryEmit(e.message ?: "Couldn't sign in")
+            throw e
+        }
     }
 
     suspend fun verifyCode(email: String, code: String): Session {
@@ -35,7 +66,10 @@ class Api(private val store: Store) {
             JSONObject().put("type", "email").put("email", email.trim()).put("token", code.trim()),
             auth = false,
         )
-        return Session.fromAuthResponse(JSONObject(res), email.trim()).also { store.session = it }
+        return Session.fromAuthResponse(JSONObject(res), email.trim()).also {
+            store.session = it
+            _authEvents.tryEmit(null)
+        }
     }
 
     fun signOut() {
@@ -157,9 +191,11 @@ class Api(private val store: Store) {
         auth: Boolean = true,
         prefer: String? = null,
     ): String = withContext(Dispatchers.IO) {
-        val token = if (auth) validSession().accessToken else anon
         val conn = open(method, path)
-        conn.setRequestProperty("Authorization", "Bearer $token")
+        // Signed-out calls send only the apikey: new-style publishable keys
+        // (sb_publishable_…) aren't JWTs and are refused as a Bearer token.
+        if (auth) conn.setRequestProperty("Authorization", "Bearer ${validSession().accessToken}")
+        else if (anon.startsWith("eyJ")) conn.setRequestProperty("Authorization", "Bearer $anon")
         prefer?.let { conn.setRequestProperty("Prefer", it) }
         if (body != null) {
             conn.doOutput = true
@@ -212,6 +248,18 @@ class Api(private val store: Store) {
             return text
         } finally {
             conn.disconnect()
+        }
+    }
+
+    companion object {
+        /** Key/value pairs from a link's query and fragment, form-decoded. */
+        fun linkParams(link: String): Map<String, String> {
+            val parts = link.substringAfter('?', "").substringBefore('#') + "&" + link.substringAfter('#', "")
+            return parts.split('&').mapNotNull { pair ->
+                val i = pair.indexOf('=')
+                if (i <= 0) null
+                else pair.substring(0, i) to java.net.URLDecoder.decode(pair.substring(i + 1), "UTF-8")
+            }.toMap()
         }
     }
 }
