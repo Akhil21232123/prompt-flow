@@ -2,7 +2,12 @@
 // security applies: a user only ever reads and writes their own rows.
 
 import type { Env } from "./providers.ts";
-import { DEFAULT_SETTINGS, type Snippet, type UserData, type UserSettings } from "./types.ts";
+import {
+  DEFAULT_SETTINGS,
+  type Snippet,
+  type UserData,
+  type UserSettings,
+} from "./types.ts";
 
 type Fetch = typeof fetch;
 
@@ -23,11 +28,16 @@ export interface Db {
 function base(env: Env): { url: string; anon: string } {
   const url = env.get("SUPABASE_URL");
   const anon = env.get("SUPABASE_ANON_KEY");
-  if (!url || !anon) throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be set");
+  if (!url || !anon)
+    throw new Error("SUPABASE_URL and SUPABASE_ANON_KEY must be set");
   return { url: url.replace(/\/$/, ""), anon };
 }
 
-export async function authenticate(req: Request, env: Env, fetchImpl: Fetch = fetch): Promise<Session> {
+export async function authenticate(
+  req: Request,
+  env: Env,
+  fetchImpl: Fetch = fetch,
+): Promise<Session> {
   const header = req.headers.get("authorization") ?? "";
   const token = header.replace(/^Bearer\s+/i, "").trim();
   if (!token) throw new AuthError("Sign in to use PromptFlow");
@@ -43,7 +53,9 @@ export async function authenticate(req: Request, env: Env, fetchImpl: Fetch = fe
 
 /** Deep-merge stored settings over the defaults so old rows stay valid. */
 export function mergeSettings(stored: unknown): UserSettings {
-  const s = (stored && typeof stored === "object" ? stored : {}) as Partial<UserSettings>;
+  const s = (
+    stored && typeof stored === "object" ? stored : {}
+  ) as Partial<UserSettings>;
   return {
     ...DEFAULT_SETTINGS,
     ...s,
@@ -52,7 +64,11 @@ export function mergeSettings(stored: unknown): UserSettings {
   };
 }
 
-export function database(session: Session, env: Env, fetchImpl: Fetch = fetch): Db {
+export function database(
+  session: Session,
+  env: Env,
+  fetchImpl: Fetch = fetch,
+): Db {
   const { url, anon } = base(env);
   const headers = {
     authorization: `Bearer ${session.token}`,
@@ -68,8 +84,12 @@ export function database(session: Session, env: Env, fetchImpl: Fetch = fetch): 
     session,
     async loadUserData() {
       const [settings, words, snippets] = await Promise.all([
-        get<Array<{ settings: unknown }>>("user_settings?select=settings&limit=1"),
-        get<Array<{ word: string }>>("dictionary_words?select=word&order=created_at.desc&limit=500"),
+        get<Array<{ settings: unknown }>>(
+          "user_settings?select=settings&limit=1",
+        ),
+        get<Array<{ word: string }>>(
+          "dictionary_words?select=word&order=created_at.desc&limit=500",
+        ),
         get<Snippet[]>("snippets?select=trigger,expansion&limit=200"),
       ]);
       return {
@@ -87,11 +107,19 @@ export function database(session: Session, env: Env, fetchImpl: Fetch = fetch): 
     },
     async addWords(words, source) {
       if (!words.length) return;
-      await fetchImpl(`${url}/rest/v1/dictionary_words?on_conflict=user_id,word_key`, {
-        method: "POST",
-        headers: { ...headers, prefer: "resolution=ignore-duplicates,return=minimal" },
-        body: JSON.stringify(words.map((word) => ({ user_id: session.userId, word, source }))),
-      });
+      await fetchImpl(
+        `${url}/rest/v1/dictionary_words?on_conflict=user_id,word_key`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            prefer: "resolution=ignore-duplicates,return=minimal",
+          },
+          body: JSON.stringify(
+            words.map((word) => ({ user_id: session.userId, word, source })),
+          ),
+        },
+      );
     },
   };
 }

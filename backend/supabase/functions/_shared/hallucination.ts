@@ -39,7 +39,10 @@ export function normalizeForMatch(text: string): string {
  * True when a transcript is probably invented from silence: empty, or a
  * stock phrase from a clip too short to have said it deliberately.
  */
-export function isLikelyHallucination(text: string, durationSec: number | undefined): boolean {
+export function isLikelyHallucination(
+  text: string,
+  durationSec: number | undefined,
+): boolean {
   const norm = normalizeForMatch(text);
   if (!norm) return true;
   if (!STOCK.has(norm)) return false;

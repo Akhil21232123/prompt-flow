@@ -45,13 +45,20 @@ export function anthropic(env: Env, fetchImpl: Fetch = fetch): Complete {
       }),
       signal: AbortSignal.timeout(45_000),
     });
-    if (!res.ok) throw new ProviderError(`Claude returned ${res.status}: ${await readError(res)}`, res.status);
-    const data = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+    if (!res.ok)
+      throw new ProviderError(
+        `Claude returned ${res.status}: ${await readError(res)}`,
+        res.status,
+      );
+    const data = (await res.json()) as {
+      content?: Array<{ type: string; text?: string }>;
+    };
     const text = (data.content ?? [])
       .filter((b) => b.type === "text")
       .map((b) => b.text ?? "")
       .join("");
-    if (!text.trim()) throw new ProviderError("Claude returned an empty reply", 502);
+    if (!text.trim())
+      throw new ProviderError("Claude returned an empty reply", 502);
     return text;
   };
 }
@@ -74,7 +81,10 @@ export type SttName = keyof typeof STT;
 /** Configured STT providers, preferred first. */
 export function sttOrder(env: Env): SttName[] {
   const preferred = (env.get("STT_PROVIDER") ?? "groq") as SttName;
-  const all: SttName[] = [preferred, ...(Object.keys(STT) as SttName[]).filter((n) => n !== preferred)];
+  const all: SttName[] = [
+    preferred,
+    ...(Object.keys(STT) as SttName[]).filter((n) => n !== preferred),
+  ];
   return all.filter((n) => n in STT && env.get(STT[n].key));
 }
 
@@ -82,17 +92,24 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
   return async (audio, opts) => {
     const order = sttOrder(env);
     if (order.length === 0) {
-      throw new ProviderError("No speech-to-text key is set (GROQ_API_KEY or OPENAI_API_KEY)", 503);
+      throw new ProviderError(
+        "No speech-to-text key is set (GROQ_API_KEY or OPENAI_API_KEY)",
+        503,
+      );
     }
     let lastError: unknown;
     for (const name of order) {
       const p = STT[name];
       const form = new FormData();
       form.append("file", audio, "audio.wav");
-      form.append("model", env.get(`${name.toUpperCase()}_STT_MODEL`) ?? p.model);
+      form.append(
+        "model",
+        env.get(`${name.toUpperCase()}_STT_MODEL`) ?? p.model,
+      );
       form.append("response_format", "json");
       form.append("temperature", "0");
-      if (opts.language && opts.language !== "auto") form.append("language", opts.language);
+      if (opts.language && opts.language !== "auto")
+        form.append("language", opts.language);
       if (opts.prompt) form.append("prompt", opts.prompt);
       try {
         const res = await fetchImpl(p.url, {
@@ -101,19 +118,28 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
           body: form,
           signal: AbortSignal.timeout(30_000),
         });
-        if (!res.ok) throw new ProviderError(`${name} returned ${res.status}: ${await readError(res)}`, res.status);
+        if (!res.ok)
+          throw new ProviderError(
+            `${name} returned ${res.status}: ${await readError(res)}`,
+            res.status,
+          );
         const data = (await res.json()) as { text?: string };
         return { text: (data.text ?? "").trim(), provider: name };
       } catch (e) {
         lastError = e;
       }
     }
-    throw lastError instanceof Error ? lastError : new ProviderError(String(lastError), 502);
+    throw lastError instanceof Error
+      ? lastError
+      : new ProviderError(String(lastError), 502);
   };
 }
 
 /** Whisper's prompt biases spelling toward these words; it's capped near 224 tokens. */
-export function vocabularyPrompt(words: string[], maxChars = 600): string | undefined {
+export function vocabularyPrompt(
+  words: string[],
+  maxChars = 600,
+): string | undefined {
   let out = "";
   for (const w of words.map((x) => x.trim()).filter(Boolean)) {
     if (out.length + w.length + 2 > maxChars) break;

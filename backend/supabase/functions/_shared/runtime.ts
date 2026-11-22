@@ -1,7 +1,13 @@
 // Wires handlers to the real Supabase and model providers inside Deno.
 
 import type { Ctx } from "./handlers.ts";
-import { anthropic, DEFAULT_FAST_MODEL, DEFAULT_SMART_MODEL, type Env, speechToText } from "./providers.ts";
+import {
+  anthropic,
+  DEFAULT_FAST_MODEL,
+  DEFAULT_SMART_MODEL,
+  type Env,
+  speechToText,
+} from "./providers.ts";
 import { authenticate, database } from "./supabase.ts";
 
 declare const Deno: { env: { get(name: string): string | undefined } };

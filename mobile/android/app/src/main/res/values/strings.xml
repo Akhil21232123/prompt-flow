@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PromptFlow</string>
+    <string name="accessibility_label">PromptFlow bubble</string>
+    <string name="accessibility_description">Shows the PromptFlow bubble next to text fields so you can dictate into any app. PromptFlow reads the focused text field only to insert what you say and, for Command Mode, the text you selected. Password fields are skipped.</string>
+    <string name="listening_channel">Dictation</string>
+    <string name="listening_notification">PromptFlow is listening</string>
+</resources>

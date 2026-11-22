@@ -150,7 +150,10 @@ function matches(rule: string, id: string): boolean {
 
 function containsWord(haystack: string, needle: string): boolean {
   const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, "u").test(haystack);
+  return new RegExp(
+    `(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+    "u",
+  ).test(haystack);
 }
 
 /** Server-side category; trusts the client's guess only when the app is unknown. */

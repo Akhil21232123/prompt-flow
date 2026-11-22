@@ -19,3 +19,8 @@ src-tauri/src/catalog/catalog.json
 # Misc
 .DS_Store
 *.log
+
+# Native mobile projects (formatted by their own tools)
+mobile/
+# Generated from the Rust prompts
+backend/supabase/functions/_shared/prompt_texts.ts

@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { extractFacts, findInventions, spokenNumbers } from "../supabase/functions/_shared/fidelity.ts";
+import {
+  extractFacts,
+  findInventions,
+  spokenNumbers,
+} from "../supabase/functions/_shared/fidelity.ts";
 import { isLikelyHallucination } from "../supabase/functions/_shared/hallucination.ts";
 
 // The real transcript from the first test on Akhil's Mac (22 Nov 2026).
@@ -15,7 +19,12 @@ const LLAMA_PROMPT = `Develop a comprehensive report detailing why our current m
 describe("fidelity guard", () => {
   test("catches every number llama3.1 invented in the live test", () => {
     const problems = findInventions(AKHIL_TRANSCRIPT, LLAMA_PROMPT);
-    expect(problems).toEqual(["number 99", "number 10", "number 2", "number 95"]);
+    expect(problems).toEqual([
+      "number 99",
+      "number 10",
+      "number 2",
+      "number 95",
+    ]);
   });
 
   test("V1 is spoken, so its 1 is allowed", () => {
@@ -23,8 +32,14 @@ describe("fidelity guard", () => {
   });
 
   test("spoken numbers in words are allowed in digits", () => {
-    const said = "meet at five thirty, bring twenty five percent of the budget and two hundred and fifty chairs";
-    expect(findInventions(said, "Meet at 5:30. Bring 25% of the budget and 250 chairs.")).toEqual([]);
+    const said =
+      "meet at five thirty, bring twenty five percent of the budget and two hundred and fifty chairs";
+    expect(
+      findInventions(
+        said,
+        "Meet at 5:30. Bring 25% of the budget and 250 chairs.",
+      ),
+    ).toEqual([]);
   });
 
   test("self-correction to a spoken number is fine; a new number is not", () => {
@@ -35,20 +50,37 @@ describe("fidelity guard", () => {
 
   test("list markers added by formatting are not facts", () => {
     const said = "three things apples bananas and oranges";
-    expect(findInventions(said, "Three things:\n1. Apples\n2. Bananas\n3. Oranges")).toEqual([]);
-    expect(findInventions("first wash second dry", "1. Wash\n2. Dry")).toEqual([]);
+    expect(
+      findInventions(said, "Three things:\n1. Apples\n2. Bananas\n3. Oranges"),
+    ).toEqual([]);
+    expect(findInventions("first wash second dry", "1. Wash\n2. Dry")).toEqual(
+      [],
+    );
   });
 
   test("years and hundreds spoken in words", () => {
     expect(findInventions("in twenty twenty six", "In 2026")).toEqual([]);
-    expect(findInventions("about fifteen hundred users", "About 1500 users")).toEqual([]);
+    expect(
+      findInventions("about fifteen hundred users", "About 1500 users"),
+    ).toEqual([]);
     expect(findInventions("two lakh rupees", "200000 rupees")).toEqual([]);
   });
 
   test("emails, links, files and mentions must come from speech", () => {
-    const said = "email john at gmail dot com and check auth dot ts and ping at sam";
-    expect(findInventions(said, "Email john@gmail.com and check `auth.ts`, ping @sam.")).toEqual([]);
-    expect(findInventions(said, "Email jane@gmail.com about login.tsx at https://evil.example")).toEqual([
+    const said =
+      "email john at gmail dot com and check auth dot ts and ping at sam";
+    expect(
+      findInventions(
+        said,
+        "Email john@gmail.com and check `auth.ts`, ping @sam.",
+      ),
+    ).toEqual([]);
+    expect(
+      findInventions(
+        said,
+        "Email jane@gmail.com about login.tsx at https://evil.example",
+      ),
+    ).toEqual([
       "email jane@gmail.com",
       "link https://evil.example",
       "file login.tsx",

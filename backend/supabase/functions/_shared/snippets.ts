@@ -46,7 +46,8 @@ export function expand(text: string, tokens: Array<[string, string]>): string {
   for (const [t, expansion] of tokens) {
     const loose = t.replace(/^\[+|\]+$/g, "");
     if (out.includes(t)) out = out.split(t).join(expansion);
-    else if (out.includes(`[${loose}]`)) out = out.split(`[${loose}]`).join(expansion);
+    else if (out.includes(`[${loose}]`))
+      out = out.split(`[${loose}]`).join(expansion);
     else if (out.includes(loose)) out = out.split(loose).join(expansion);
     else out = (out && !/\s$/.test(out) ? out + " " : out) + expansion;
   }

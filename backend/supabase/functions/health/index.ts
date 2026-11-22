@@ -3,7 +3,9 @@ import { json } from "../_shared/handlers.ts";
 import { sttOrder } from "../_shared/providers.ts";
 import { env } from "../_shared/runtime.ts";
 
-declare const Deno: { serve(handler: (req: Request) => Response | Promise<Response>): void };
+declare const Deno: {
+  serve(handler: (req: Request) => Response | Promise<Response>): void;
+};
 
 Deno.serve(() =>
   json({

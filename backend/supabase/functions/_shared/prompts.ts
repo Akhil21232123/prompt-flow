@@ -30,8 +30,7 @@ const CATEGORY_RULES: Record<AppCategory, string> = {
     'Destination: a work chat message (Slack, Teams). Keep it concise and skimmable; prefer short paragraphs or bullets over long blocks. Turn "at Sam" into "@Sam" when they are clearly mentioning someone.',
   personal_chat:
     "Destination: a personal chat message. Keep it short and natural; don't add a greeting or sign-off that wasn't said.",
-  code:
-    "Destination: a code editor or its AI chat panel. Technical terms, library names and identifiers must be spelled the way developers write them.",
+  code: "Destination: a code editor or its AI chat panel. Technical terms, library names and identifiers must be spelled the way developers write them.",
   terminal:
     'Destination: a terminal, usually a command-line AI agent or a shell. Write commands, flags and paths exactly ("dash dash force" → "--force"). No trailing full stop after a bare command.',
   ai_chat:
@@ -49,7 +48,8 @@ export interface PolishInput {
   hasSnippetTokens: boolean;
 }
 
-const isTechnical = (c: AppCategory) => c === "code" || c === "terminal" || c === "ai_chat";
+const isTechnical = (c: AppCategory) =>
+  c === "code" || c === "terminal" || c === "ai_chat";
 
 /** System prompt for dictation cleanup. The transcript goes in the user turn. */
 export function polishSystem(p: PolishInput): string {
@@ -68,12 +68,18 @@ export function polishSystem(p: PolishInput): string {
     );
   }
   if (p.hasSnippetTokens) {
-    parts.push("Tokens like [[SNIPPET_1]] stand for saved text. Keep each token exactly as written, in its place.");
+    parts.push(
+      "Tokens like [[SNIPPET_1]] stand for saved text. Keep each token exactly as written, in its place.",
+    );
   }
   if (p.app) {
-    parts.push(`App in front (use it only to spell names and terms already spoken): ${describeApp(p.app)}`);
+    parts.push(
+      `App in front (use it only to spell names and terms already spoken): ${describeApp(p.app)}`,
+    );
   }
-  parts.push("The user message is the transcript. Return only the cleaned text.");
+  parts.push(
+    "The user message is the transcript. Return only the cleaned text.",
+  );
   return parts.join("\n\n");
 }
 
@@ -96,7 +102,8 @@ const FORMAT_TEXT: Record<Exclude<PromptFormat, "auto">, string> = {
   xml: "Open with the task in plain sentences. Put supporting material in descriptive XML tags such as <context>, <requirements>, <constraints>, <output_format> and <success_criteria>, using only the sections this request needs. For image_generation, ignore this and write plain prose.",
   markdown:
     "Open with the task in plain sentences. Then use short Markdown sections (bold labels or ### headings, with bullets) such as Context, Requirements, Output and Done when, using only the sections this request needs. For image_generation, ignore this and write plain prose.",
-  plain: "Plain prose paragraphs and simple numbered lists; no Markdown or XML.",
+  plain:
+    "Plain prose paragraphs and simple numbered lists; no Markdown or XML.",
 };
 
 const CATEGORY_LABEL: Record<AppCategory, string> = {
@@ -121,25 +128,44 @@ export function resolveFormat(
   category: AppCategory,
 ): Exclude<PromptFormat, "auto"> {
   if (setting !== "auto") return setting;
-  const hay = `${app?.name ?? ""} ${app?.bundle_id ?? ""} ${app?.title ?? ""}`.toLowerCase();
-  if (hay.includes("claude") || hay.includes("anthropic") || category === "code" || category === "terminal") {
+  const hay =
+    `${app?.name ?? ""} ${app?.bundle_id ?? ""} ${app?.title ?? ""}`.toLowerCase();
+  if (
+    hay.includes("claude") ||
+    hay.includes("anthropic") ||
+    category === "code" ||
+    category === "terminal"
+  ) {
     return "xml";
   }
   return "markdown";
 }
 
-function fill(template: string, s: EngineerSettings, format: Exclude<PromptFormat, "auto">, snippets: boolean): string {
+function fill(
+  template: string,
+  s: EngineerSettings,
+  format: Exclude<PromptFormat, "auto">,
+  snippets: boolean,
+): string {
   return template
     .replace("{missing_info}", MISSING_INFO[s.missing_info])
     .replace("{format}", FORMAT_TEXT[format])
     .replace("{snippets}", (snippets ? T.SNIPPET_RULE : "") + NO_NEW_NUMBERS);
 }
 
-export function architectSystem(s: EngineerSettings, format: Exclude<PromptFormat, "auto">, snippets: boolean) {
+export function architectSystem(
+  s: EngineerSettings,
+  format: Exclude<PromptFormat, "auto">,
+  snippets: boolean,
+) {
   return fill(T.ARCHITECT_SYSTEM, s, format, snippets);
 }
 
-export function criticSystem(s: EngineerSettings, format: Exclude<PromptFormat, "auto">, snippets: boolean) {
+export function criticSystem(
+  s: EngineerSettings,
+  format: Exclude<PromptFormat, "auto">,
+  snippets: boolean,
+) {
   return fill(T.CRITIC_SYSTEM, s, format, snippets);
 }
 
@@ -164,15 +190,24 @@ export function architectUser(args: {
     ctx.push(`The target is ${args.target}.`);
   }
   const custom = args.customInstructions.trim();
-  if (custom) ctx.push(`Standing context from the user (include it only where relevant): ${custom}`);
+  if (custom)
+    ctx.push(
+      `Standing context from the user (include it only where relevant): ${custom}`,
+    );
   const words = args.dictionary.map((w) => w.trim()).filter(Boolean);
   if (words.length) {
-    ctx.push(`Correct spellings of names and terms the user uses (fix misheard words to these): ${words.join(", ")}`);
+    ctx.push(
+      `Correct spellings of names and terms the user uses (fix misheard words to these): ${words.join(", ")}`,
+    );
   }
   return `<request_context>\n${ctx.join("\n")}\n</request_context>\n\n<dictation>\n${args.transcript.trim()}\n</dictation>`;
 }
 
-export function criticUser(transcript: string, target: PromptTarget, draft: string): string {
+export function criticUser(
+  transcript: string,
+  target: PromptTarget,
+  draft: string,
+): string {
   return `<target>${target}</target>\n\n<spoken_request>\n${transcript.trim()}\n</spoken_request>\n\n<prompt_to_review>\n${draft.trim()}\n</prompt_to_review>`;
 }
 
@@ -211,7 +246,8 @@ export function commandUser(args: {
   let out = args.app ? `App in front: ${describeApp(args.app)}\n` : "";
   out += `Destination: ${PLACE[args.category]}. Default tone unless the instruction says otherwise: ${TONE[args.style]}.`;
   out += `\n\n<instruction>\n${args.instruction.trim()}\n</instruction>`;
-  if (args.selection) out += `\n\n<selected_text>\n${args.selection}\n</selected_text>`;
+  if (args.selection)
+    out += `\n\n<selected_text>\n${args.selection}\n</selected_text>`;
   return out;
 }
 
@@ -244,7 +280,8 @@ export function parsePrompt(reply: string): string | undefined {
   const r = stripThink(reply);
   const tagged = extractTag(r, "prompt");
   if (tagged) return stripFences(tagged);
-  if (["<target>", "<score>", "<issues>"].some((t) => r.includes(t))) return undefined;
+  if (["<target>", "<score>", "<issues>"].some((t) => r.includes(t)))
+    return undefined;
   const bare = stripFences(r);
   return bare || undefined;
 }
@@ -261,12 +298,19 @@ export function parseIssues(reply: string): string[] {
   if (!body) return [];
   return body
     .split("\n")
-    .map((l) => l.trim().replace(/^[-*•]\s*/, "").trim())
+    .map((l) =>
+      l
+        .trim()
+        .replace(/^[-*•]\s*/, "")
+        .trim(),
+    )
     .filter((l) => l && l.toLowerCase() !== "none");
 }
 
 export function parseTarget(reply: string): PromptTarget | undefined {
-  const raw = extractTag(stripThink(reply), "target")?.toLowerCase().replace(/[\s-]+/g, "_");
+  const raw = extractTag(stripThink(reply), "target")
+    ?.toLowerCase()
+    .replace(/[\s-]+/g, "_");
   const map: Record<string, PromptTarget> = {
     coding_agent: "coding_agent",
     coding: "coding_agent",

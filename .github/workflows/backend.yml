@@ -1,0 +1,30 @@
+name: backend
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      [
+        "backend/**",
+        "src-tauri/src/flow/**",
+        "scripts/sync-prompts.py",
+        ".github/workflows/backend.yml",
+      ]
+  pull_request:
+    paths: ["backend/**"]
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - name: Prompts match the desktop app
+        working-directory: .
+        run: python3 scripts/sync-prompts.py && git diff --exit-code backend/supabase/functions/_shared/prompt_texts.ts
+      - run: bun run typecheck
+      - run: bun test

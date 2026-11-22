@@ -8,23 +8,67 @@
 // trusted context (dictionary, snippets, app, selection, standing context).
 
 const SMALL: Record<string, number> = {
-  zero: 0, oh: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7,
-  eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14,
-  fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
-  twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
-  eighty: 80, ninety: 90,
+  zero: 0,
+  oh: 0,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
 };
 const ORDINALS: Record<string, number> = {
-  first: 1, second: 2, third: 3, fourth: 4, fifth: 5, sixth: 6, seventh: 7,
-  eighth: 8, ninth: 9, tenth: 10,
+  first: 1,
+  second: 2,
+  third: 3,
+  fourth: 4,
+  fifth: 5,
+  sixth: 6,
+  seventh: 7,
+  eighth: 8,
+  ninth: 9,
+  tenth: 10,
 };
 const SCALES: Record<string, number> = {
-  hundred: 100, thousand: 1_000, lakh: 100_000, million: 1_000_000,
-  crore: 10_000_000, billion: 1_000_000_000,
+  hundred: 100,
+  thousand: 1_000,
+  lakh: 100_000,
+  million: 1_000_000,
+  crore: 10_000_000,
+  billion: 1_000_000_000,
 };
 const ALSO: Record<string, number[]> = {
-  half: [0.5, 50], quarter: [0.25, 25], couple: [2], dozen: [12], pair: [2],
-  double: [2], twice: [2], triple: [3], single: [1], once: [1],
+  half: [0.5, 50],
+  quarter: [0.25, 25],
+  couple: [2],
+  dozen: [12],
+  pair: [2],
+  double: [2],
+  twice: [2],
+  triple: [3],
+  single: [1],
+  once: [1],
 };
 
 function normalizeNumber(raw: string): string | undefined {
@@ -44,7 +88,11 @@ export function spokenNumbers(text: string): Set<string> {
       if (p) out.add(p);
     }
   }
-  const words = text.toLowerCase().replace(/[^a-z\s-]/g, " ").split(/[\s-]+/).filter(Boolean);
+  const words = text
+    .toLowerCase()
+    .replace(/[^a-z\s-]/g, " ")
+    .split(/[\s-]+/)
+    .filter(Boolean);
   let current = 0;
   let total = 0;
   let inNumber = false;
@@ -58,7 +106,8 @@ export function spokenNumbers(text: string): Set<string> {
     if (w in SMALL) {
       out.add(String(SMALL[w]));
       // "five thirty" is two numbers, "thirty five" is one.
-      if (inNumber && current % 10 === 0 && current >= 20 && SMALL[w] < 10) current += SMALL[w];
+      if (inNumber && current % 10 === 0 && current >= 20 && SMALL[w] < 10)
+        current += SMALL[w];
       else if (inNumber && current > 0 && current < 100 && SMALL[w] >= 0) {
         flush();
         current = SMALL[w];
@@ -99,16 +148,23 @@ export interface Facts {
 const URL_RE = /\bhttps?:\/\/[^\s<>()"']+|\bwww\.[^\s<>()"']+/gi;
 const EMAIL_RE = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 const HANDLE_RE = /(?<![\w@])@[A-Za-z][\w.-]{1,}/g;
-const FILE_RE = /\b[\w-]+\.(?:ts|tsx|js|jsx|py|rs|go|java|kt|swift|rb|php|css|html|json|yaml|yml|toml|md|sql|sh|c|cpp|h)\b/gi;
+const FILE_RE =
+  /\b[\w-]+\.(?:ts|tsx|js|jsx|py|rs|go|java|kt|swift|rb|php|css|html|json|yaml|yml|toml|md|sql|sh|c|cpp|h)\b/gi;
 
 export function extractFacts(text: string): Facts {
   const body = stripListMarkers(text);
   const emails = [...body.matchAll(EMAIL_RE)].map((m) => m[0].toLowerCase());
-  const urls = [...body.matchAll(URL_RE)].map((m) => m[0].replace(/[.,;:!?]+$/, "").toLowerCase());
+  const urls = [...body.matchAll(URL_RE)].map((m) =>
+    m[0].replace(/[.,;:!?]+$/, "").toLowerCase(),
+  );
   const noLinks = body.replace(URL_RE, " ").replace(EMAIL_RE, " ");
-  const handles = [...noLinks.matchAll(HANDLE_RE)].map((m) => m[0].slice(1).toLowerCase());
+  const handles = [...noLinks.matchAll(HANDLE_RE)].map((m) =>
+    m[0].slice(1).toLowerCase(),
+  );
   const files = [...noLinks.matchAll(FILE_RE)].map((m) => m[0].toLowerCase());
-  const numbers = [...noLinks.replace(FILE_RE, " ").matchAll(/\d[\d,]*(?:\.\d+)?/g)]
+  const numbers = [
+    ...noLinks.replace(FILE_RE, " ").matchAll(/\d[\d,]*(?:\.\d+)?/g),
+  ]
     .map((m) => normalizeNumber(m[0]))
     .filter((n): n is string => n !== undefined);
   return { numbers, urls, emails, handles, files };
@@ -132,29 +188,48 @@ export function findInventions(source: string, rawOutput: string): string[] {
   for (const n of new Set(facts.numbers)) {
     if (allowedNumbers.has(n)) continue;
     // "2026" spoken as "twenty twenty six"
-    if (/^\d{4}$/.test(n) && allowedNumbers.has(n.slice(0, 2)) && allowedNumbers.has(String(Number(n.slice(2))))) continue;
+    if (
+      /^\d{4}$/.test(n) &&
+      allowedNumbers.has(n.slice(0, 2)) &&
+      allowedNumbers.has(String(Number(n.slice(2))))
+    )
+      continue;
     // "1,500" spoken as "fifteen hundred"
-    if (Number(n) % 100 === 0 && allowedNumbers.has(String(Number(n) / 100))) continue;
+    if (Number(n) % 100 === 0 && allowedNumbers.has(String(Number(n) / 100)))
+      continue;
     problems.push(`number ${n}`);
   }
   // Spoken links come out as words ("john at gmail dot com"), so compare
   // with everything but letters and digits removed.
   for (const e of new Set(facts.emails)) {
-    const spoken = [e, e.replace("@", "at"), e.replace("@", "at").replace(/\./g, "dot")].map(squash);
-    if (!spoken.some((v) => sourceSquashed.includes(v))) problems.push(`email ${e}`);
+    const spoken = [
+      e,
+      e.replace("@", "at"),
+      e.replace("@", "at").replace(/\./g, "dot"),
+    ].map(squash);
+    if (!spoken.some((v) => sourceSquashed.includes(v)))
+      problems.push(`email ${e}`);
   }
   for (const u of new Set(facts.urls)) {
     const core = u.replace(/^https?:\/\//, "").replace(/^www\./, "");
-    if (!sourceSquashed.includes(squash(core)) && !sourceSquashed.includes(squash(core.replace(/\./g, "dot")))) {
+    if (
+      !sourceSquashed.includes(squash(core)) &&
+      !sourceSquashed.includes(squash(core.replace(/\./g, "dot")))
+    ) {
       problems.push(`link ${u}`);
     }
   }
   for (const h of new Set(facts.handles)) {
-    if (!sourceLower.includes(h) && !sourceSquashed.includes(squash(h))) problems.push(`mention @${h}`);
+    if (!sourceLower.includes(h) && !sourceSquashed.includes(squash(h)))
+      problems.push(`mention @${h}`);
   }
   for (const f of new Set(facts.files)) {
     const stem = f.replace(/\.[^.]+$/, "");
-    if (!sourceSquashed.includes(squash(f)) && !sourceSquashed.includes(squash(f.replace(".", "dot"))) && !sourceSquashed.includes(squash(stem))) {
+    if (
+      !sourceSquashed.includes(squash(f)) &&
+      !sourceSquashed.includes(squash(f.replace(".", "dot"))) &&
+      !sourceSquashed.includes(squash(stem))
+    ) {
       problems.push(`file ${f}`);
     }
   }
