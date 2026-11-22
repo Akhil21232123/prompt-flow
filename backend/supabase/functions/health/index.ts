@@ -30,7 +30,29 @@ Deno.serve(async (req) => {
     models: { fast: chat.fast, smart: chat.smart },
     speech_to_text: sttOrder(env),
   };
-  if (new URL(req.url).searchParams.get("check") === "1")
+  if (new URL(req.url).searchParams.get("check") === "1") {
     body.groq_models = await groqModels();
+    // One tiny live call per model, so a retired model shows up here first.
+    for (const [role, model] of Object.entries({
+      fast: chat.fast,
+      smart: chat.smart,
+    })) {
+      const started = Date.now();
+      try {
+        const reply = await chat.complete("Reply with exactly: OK", "ping", {
+          model,
+          maxTokens: 300,
+        });
+        body[`${role}_test`] = {
+          reply: reply.trim().slice(0, 40),
+          ms: Date.now() - started,
+        };
+      } catch (e) {
+        body[`${role}_test`] = {
+          error: e instanceof Error ? e.message : String(e),
+        };
+      }
+    }
+  }
   return json(body);
 });

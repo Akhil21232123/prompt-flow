@@ -263,7 +263,7 @@ test("rewrites with Groq until a Claude key is added", async () => {
   );
   expect(seen).toEqual([
     "https://api.groq.com/openai/v1/chat/completions",
-    "llama-3.3-70b-versatile",
+    "openai/gpt-oss-120b",
   ]);
   const withClaude = chatProvider({
     get: (k: string) => (k === "ANTHROPIC_API_KEY" ? "a" : "g"),

@@ -64,7 +64,7 @@ export function anthropic(env: Env, fetchImpl: Fetch = fetch): Complete {
 }
 
 /** Groq's free text models, used until a Claude key is added. */
-export const GROQ_FAST_MODEL = "llama-3.3-70b-versatile";
+export const GROQ_FAST_MODEL = "openai/gpt-oss-120b";
 export const GROQ_SMART_MODEL = "openai/gpt-oss-120b";
 
 /** OpenAI-compatible chat on Groq. */
@@ -72,10 +72,8 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
   const key = env.get("GROQ_API_KEY");
   return async (system, user, opts = {}) => {
     if (!key) throw new ProviderError("GROQ_API_KEY is not set", 503);
-    const model = opts.model ?? GROQ_FAST_MODEL;
-    const res = await fetchImpl(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
+    const call = (model: string) =>
+      fetchImpl("https://api.groq.com/openai/v1/chat/completions", {
         method: "POST",
         headers: {
           authorization: `Bearer ${key}`,
@@ -86,7 +84,7 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
           max_tokens: opts.maxTokens ?? 2048,
           temperature: 0.2,
           ...(model.startsWith("openai/gpt-oss")
-            ? { reasoning_effort: "low", reasoning_format: "hidden" }
+            ? { reasoning_effort: "low" }
             : {}),
           messages: [
             { role: "system", content: system },
@@ -94,8 +92,11 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
           ],
         }),
         signal: AbortSignal.timeout(45_000),
-      },
-    );
+      });
+    let res = await call(opts.model ?? GROQ_FAST_MODEL);
+    // Groq retires models often; fall back to one that's always served.
+    if (res.status === 404 && opts.model && opts.model !== GROQ_SMART_MODEL)
+      res = await call(GROQ_SMART_MODEL);
     if (!res.ok)
       throw new ProviderError(
         `Groq returned ${res.status}: ${await readError(res)}`,
