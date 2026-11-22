@@ -1,0 +1,5 @@
+// Backend address for builds. Copy to Config.local.xcconfig to keep keys out
+// of git; values can also be entered in the app under Settings → Server.
+PROMPTFLOW_SUPABASE_URL =
+PROMPTFLOW_SUPABASE_ANON_KEY =
+#include? "Config.local.xcconfig"

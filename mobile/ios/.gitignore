@@ -1,0 +1,5 @@
+PromptFlow.xcodeproj/
+Config.local.xcconfig
+build/
+DerivedData/
+*.xcuserstate

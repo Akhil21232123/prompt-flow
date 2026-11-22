@@ -4,3 +4,4 @@
 # looking for its tray icon). Bump together with tauri-build.
 channel = "1.97.0"
 profile = "minimal"
+components = ["rustfmt", "clippy"]
