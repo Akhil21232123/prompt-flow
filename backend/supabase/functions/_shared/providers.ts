@@ -231,7 +231,8 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
  */
 export function isSilent(
   segments:
-    Array<{ no_speech_prob?: number; avg_logprob?: number }> | undefined,
+    | Array<{ no_speech_prob?: number; avg_logprob?: number }>
+    | undefined,
 ): boolean {
   if (!segments || segments.length === 0) return false;
   return segments.every(

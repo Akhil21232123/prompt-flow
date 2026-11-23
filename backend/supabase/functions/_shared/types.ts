@@ -10,7 +10,12 @@ export type WritingStyle = "formal" | "casual" | "very_casual";
  * words and only tidies them; "custom" applies the user's own instruction.
  */
 export type StylePreset =
-  "clean" | "formal" | "short" | "casual" | "bullets" | "custom";
+  | "clean"
+  | "formal"
+  | "short"
+  | "casual"
+  | "bullets"
+  | "custom";
 
 export type AppCategory =
   | "email"

@@ -5,7 +5,12 @@ import { classify } from "./categories.ts";
 import type { AppContext, PromptTarget } from "./types.ts";
 
 export type TargetFamily =
-  "chat" | "search" | "coding" | "app_builder" | "image" | "music";
+  | "chat"
+  | "search"
+  | "coding"
+  | "app_builder"
+  | "image"
+  | "music";
 
 export interface AiTarget {
   /** Stable id returned to clients as `target`. */

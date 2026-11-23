@@ -426,7 +426,9 @@ describe("languages", () => {
   });
 
   test("Indian-language numbers are traced by the fidelity guard", () => {
-    expect(spokenNumbers("मुझे पांच सौ शब्दों का निबंध चाहिए")).toContain("500");
+    expect(spokenNumbers("मुझे पांच सौ शब्दों का निबंध चाहिए")).toContain(
+      "500",
+    );
     expect(spokenNumbers("३ बजे")).toContain("3");
     expect(spokenNumbers("ఐదుగురు కోసం")).toContain("5");
     expect(

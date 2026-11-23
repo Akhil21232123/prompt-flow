@@ -102,7 +102,8 @@ function base(env: Env): { url: string; anon: string } {
     try {
       const keys = JSON.parse(env.get("SUPABASE_PUBLISHABLE_KEYS") ?? "{}");
       anon = Object.values(keys).find((k) => typeof k === "string") as
-        string | undefined;
+        | string
+        | undefined;
     } catch {
       anon = undefined;
     }

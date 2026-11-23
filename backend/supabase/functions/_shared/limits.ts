@@ -51,7 +51,9 @@ export function limitsFrom(env: {
 /** Reads consume_usage's JSON. Anything unexpected lets the request through. */
 export function parseUsageDecision(raw: unknown): UsageDecision {
   const r = (Array.isArray(raw) ? raw[0] : raw) as
-    Record<string, unknown> | null | undefined;
+    | Record<string, unknown>
+    | null
+    | undefined;
   const today = typeof r?.today === "number" ? r.today : 0;
   if (!r || r.allowed !== false) return { allowed: true, today };
   const code = r.code === "quota" ? "quota" : "rate_limited";
@@ -84,7 +86,7 @@ export function wavSeconds(
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   // Walk the chunks: "fmt " gives the byte rate, "data" the length.
   let byteRate = 0;
-  for (let o = 12; o + 8 <= bytes.length;) {
+  for (let o = 12; o + 8 <= bytes.length; ) {
     const id = tag(o);
     const size = view.getUint32(o + 4, true);
     if (id === "fmt " && o + 16 <= bytes.length)

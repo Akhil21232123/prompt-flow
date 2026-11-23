@@ -225,3 +225,6 @@ end $$;
 
 revoke all on function public.merge_settings(jsonb) from public, anon;
 grant execute on function public.merge_settings(jsonb) to authenticated;
+
+-- Let the API see the new tables and functions right away.
+notify pgrst, 'reload schema';

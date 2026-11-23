@@ -253,8 +253,9 @@ describe("categories, snippets, learning", () => {
 });
 
 test("rewrites with Groq until a Claude key is added", async () => {
-  const { chatProvider } =
-    await import("../supabase/functions/_shared/providers.ts");
+  const { chatProvider } = await import(
+    "../supabase/functions/_shared/providers.ts"
+  );
   const seen: string[] = [];
   const fakeFetch = (async (url: string, init: RequestInit) => {
     seen.push(String(url));
@@ -284,10 +285,12 @@ test("rewrites with Groq until a Claude key is added", async () => {
 
 describe("style presets (double-tap)", () => {
   test("a preset replaces the app tone and never auto-engineers", async () => {
-    const { rewrite } =
-      await import("../supabase/functions/_shared/pipeline.ts");
-    const { DEFAULT_SETTINGS } =
-      await import("../supabase/functions/_shared/types.ts");
+    const { rewrite } = await import(
+      "../supabase/functions/_shared/pipeline.ts"
+    );
+    const { DEFAULT_SETTINGS } = await import(
+      "../supabase/functions/_shared/types.ts"
+    );
     const systems: string[] = [];
     const deps = {
       complete: async (system: string) => {
