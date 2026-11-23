@@ -5,9 +5,10 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "deploy": "supabase db push && supabase functions deploy --no-verify-jwt health && supabase functions deploy dictate rewrite learn"
+    "deploy": "supabase db push && supabase functions deploy health dictate rewrite learn check usage delete_account --no-verify-jwt"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.17",
     "@types/bun": "latest",
     "typescript": "^5.9.0"
   }

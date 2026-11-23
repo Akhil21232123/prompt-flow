@@ -1,0 +1,12 @@
+Sign in to PromptFlow
+
+Your sign-in code: {{ .Token }}
+
+Type it in the PromptFlow app. It works once and expires in 10 minutes.
+
+Or open this link on the device you want to use:
+{{ .ConfirmationURL }}
+
+Didn't ask to sign in? You can ignore this email; nobody can sign in without it.
+
+PromptFlow

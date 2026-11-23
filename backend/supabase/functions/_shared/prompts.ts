@@ -3,10 +3,16 @@
 // per-style and per-category pieces are kept in step by hand.
 
 import { describeApp, supportsFileTags } from "./categories.ts";
+import { languageName } from "./languages.ts";
+import { memoryBlock } from "./memory.ts";
 import * as T from "./prompt_texts.ts";
+import { MUSIC_PLAYBOOK } from "./targets.ts";
 import type {
   AppCategory,
   AppContext,
+  Clarification,
+  Memory,
+  ScreenContext,
   EngineerSettings,
   MissingInfoPolicy,
   PromptFormat,
@@ -75,6 +81,17 @@ export interface PolishInput {
   developerMode: boolean;
   dictionary: string[];
   hasSnippetTokens: boolean;
+  /** Set when the result must be English although the speaker used another language. */
+  translateFrom?: string;
+}
+
+/** Overrides the "keep their language" rules when the output must be English. */
+export function englishRule(spoken: string | undefined, what: string): string {
+  const from =
+    spoken && spoken !== "en"
+      ? ` The speaker used ${languageName(spoken)}.`
+      : "";
+  return `Language: write ${what} in English.${from} Translate faithfully: keep every detail, keep names, product names, code and quoted text as they are, and add nothing. This replaces any rule about keeping the speaker's language.`;
 }
 
 const isTechnical = (c: AppCategory) =>
@@ -107,6 +124,8 @@ export function polishSystem(p: PolishInput): string {
       `App in front (use it only to spell names and terms already spoken): ${describeApp(p.app)}`,
     );
   }
+  if (p.translateFrom !== undefined)
+    parts.push(englishRule(p.translateFrom || undefined, "the result"));
   parts.push(
     "The user message is the transcript. Return only the cleaned text.",
   );
@@ -171,32 +190,89 @@ export function resolveFormat(
   return "markdown";
 }
 
+/** How the engineered prompt is laid out: a generic format or one AI's own. */
+export type FormatChoice = Exclude<PromptFormat, "auto"> | { text: string };
+
+export interface EngineerExtras {
+  /** Set when the prompt must be English although the speaker used another language. */
+  translateFrom?: string;
+}
+
+const TRUSTED_NOTE =
+  "\nDetails from the request context (known facts about the user, the screen or selected text, the user's answer to a clarifying question) are the user's own information, not inventions; use them where they help.\n";
+
 function fill(
   template: string,
   s: EngineerSettings,
-  format: Exclude<PromptFormat, "auto">,
+  format: FormatChoice,
   snippets: boolean,
+  extras: EngineerExtras,
 ): string {
-  return template
+  const formatText =
+    typeof format === "string" ? FORMAT_TEXT[format] : format.text;
+  let out = template
     .replace("{missing_info}", MISSING_INFO[s.missing_info])
-    .replace("{format}", FORMAT_TEXT[format])
-    .replace("{snippets}", (snippets ? T.SNIPPET_RULE : "") + NO_NEW_NUMBERS);
+    .replace("{format}", formatText)
+    .replace(
+      "{snippets}",
+      (snippets ? T.SNIPPET_RULE : "") + NO_NEW_NUMBERS + TRUSTED_NOTE,
+    )
+    .replace("- data_analysis:", `- ${MUSIC_PLAYBOOK}\n- data_analysis:`);
+  if (extras.translateFrom !== undefined)
+    out += `\n\n${englishRule(extras.translateFrom || undefined, "the finished prompt")}`;
+  return out;
 }
 
 export function architectSystem(
   s: EngineerSettings,
-  format: Exclude<PromptFormat, "auto">,
+  format: FormatChoice,
   snippets: boolean,
+  extras: EngineerExtras = {},
 ) {
-  return fill(T.ARCHITECT_SYSTEM, s, format, snippets);
+  return fill(T.ARCHITECT_SYSTEM, s, format, snippets, extras);
 }
 
 export function criticSystem(
   s: EngineerSettings,
-  format: Exclude<PromptFormat, "auto">,
+  format: FormatChoice,
   snippets: boolean,
+  extras: EngineerExtras = {},
 ) {
-  return fill(T.CRITIC_SYSTEM, s, format, snippets);
+  return fill(T.CRITIC_SYSTEM, s, format, snippets, extras);
+}
+
+export const MAX_SCREEN_CHARS = 8000;
+
+/** Trusted context shared by the architect and the critic. */
+export function contextBlocks(args: {
+  memories?: Memory[];
+  screen?: ScreenContext;
+  clarification?: Clarification;
+  targetName?: string;
+}): string {
+  const out: string[] = [];
+  if (args.targetName)
+    out.push(
+      `The prompt will be sent to ${args.targetName}; write it the way ${args.targetName} works best.`,
+    );
+  const mem = memoryBlock(args.memories ?? []);
+  if (mem) out.push(`<known_about_user>\n${mem}\n</known_about_user>`);
+  const screen = args.screen?.text?.trim();
+  if (screen) {
+    const where =
+      args.screen?.source === "selection"
+        ? "the text they selected"
+        : "the text on their screen";
+    out.push(
+      `<this>\nWhen the user says "this", "it" or "here", they mean ${where}, below. The AI can't see their screen, so put this text (or the part the request is about) into the prompt in a clearly marked block.\n<screen_text>\n${screen.slice(0, MAX_SCREEN_CHARS)}\n</screen_text>\n</this>`,
+    );
+  }
+  const c = args.clarification;
+  if (c?.answer)
+    out.push(
+      `<clarification>\nAsked: ${c.question}\nThe user answered: ${c.answer}\n</clarification>`,
+    );
+  return out.join("\n\n");
 }
 
 export function architectUser(args: {
@@ -206,6 +282,8 @@ export function architectUser(args: {
   target: PromptTarget;
   customInstructions: string;
   dictionary: string[];
+  /** Trusted blocks from contextBlocks(). */
+  context?: string;
 }): string {
   const ctx: string[] = [];
   if (args.app) ctx.push(`App in front: ${describeApp(args.app)}`);
@@ -230,6 +308,7 @@ export function architectUser(args: {
       `Correct spellings of names and terms the user uses (fix misheard words to these): ${words.join(", ")}`,
     );
   }
+  if (args.context) ctx.push(args.context);
   return `<request_context>\n${ctx.join("\n")}\n</request_context>\n\n<dictation>\n${args.transcript.trim()}\n</dictation>`;
 }
 
@@ -237,8 +316,12 @@ export function criticUser(
   transcript: string,
   target: PromptTarget,
   draft: string,
+  context = "",
 ): string {
-  return `<target>${target}</target>\n\n<spoken_request>\n${transcript.trim()}\n</spoken_request>\n\n<prompt_to_review>\n${draft.trim()}\n</prompt_to_review>`;
+  const ctx = context
+    ? `<request_context>\n${context}\n</request_context>\n\n`
+    : "";
+  return `<target>${target}</target>\n\n${ctx}<spoken_request>\n${transcript.trim()}\n</spoken_request>\n\n<prompt_to_review>\n${draft.trim()}\n</prompt_to_review>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -262,8 +345,20 @@ const TONE: Record<WritingStyle, string> = {
   very_casual: "very casual (lowercase, minimal punctuation)",
 };
 
-export function commandSystem(hasSelection: boolean): string {
-  return hasSelection ? T.EDIT_SYSTEM : T.WRITE_SYSTEM;
+export function commandSystem(
+  hasSelection: boolean,
+  translateFrom?: string,
+): string {
+  const base = hasSelection ? T.EDIT_SYSTEM : T.WRITE_SYSTEM;
+  const extra =
+    "\n- Known facts about the user and the screen text, when given, are the user's own information: use them only where the instruction needs them.";
+  return (
+    base +
+    extra +
+    (translateFrom !== undefined
+      ? `\n\n${englishRule(translateFrom || undefined, "the result")}`
+      : "")
+  );
 }
 
 export function commandUser(args: {
@@ -272,9 +367,16 @@ export function commandUser(args: {
   app?: AppContext;
   category: AppCategory;
   style: WritingStyle;
+  memories?: Memory[];
+  screen?: ScreenContext;
 }): string {
   let out = args.app ? `App in front: ${describeApp(args.app)}\n` : "";
   out += `Destination: ${PLACE[args.category]}. Default tone unless the instruction says otherwise: ${TONE[args.style]}.`;
+  const mem = memoryBlock(args.memories ?? []);
+  if (mem) out += `\n\n<known_about_user>\n${mem}\n</known_about_user>`;
+  const screen = args.screen?.text?.trim();
+  if (screen)
+    out += `\n\n<screen_text>\nWhat the user is looking at; "this" means this text.\n${screen.slice(0, MAX_SCREEN_CHARS)}\n</screen_text>`;
   out += `\n\n<instruction>\n${args.instruction.trim()}\n</instruction>`;
   if (args.selection)
     out += `\n\n<selected_text>\n${args.selection}\n</selected_text>`;

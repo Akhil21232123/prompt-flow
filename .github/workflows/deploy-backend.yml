@@ -45,7 +45,13 @@ jobs:
         run: |
           # The functions check the user's token themselves (via /auth/v1/user),
           # which works with both legacy and new JWT signing keys.
-          supabase functions deploy health dictate rewrite learn --project-ref "$REF" --no-verify-jwt --use-api --yes
+          supabase functions deploy health dictate rewrite learn check usage delete_account --project-ref "$REF" --no-verify-jwt --use-api --yes
       - name: Health check
         if: env.SKIP != '1'
-        run: curl -fsS "https://$REF.supabase.co/functions/v1/health"
+        run: |
+          curl -fsS "https://$REF.supabase.co/functions/v1/health" | tee health.json
+          # The v2 tables come from a migration run by hand when there's no
+          # DB password; say so instead of failing the deploy.
+          if ! grep -q '"memories":true' health.json; then
+            echo "::warning::v2 tables not found. Run backend/supabase/migrations/20261123000000_v2.sql in the Supabase SQL editor."
+          fi

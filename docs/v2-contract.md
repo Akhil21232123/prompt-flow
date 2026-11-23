@@ -45,7 +45,7 @@ the 6-digit code as well, since people often read email on another device.
 ## POST /functions/v1/dictate
 
 Multipart: `audio` (WAV, 16 kHz mono PCM16) and `meta` (JSON). `audio` may be
-omitted only when answering an ask-back with `answer_text`.
+omitted only when answering an ask-back (`clarify_session`) with `answer_text` or `skip_clarify: true`.
 
 ```jsonc
 // meta

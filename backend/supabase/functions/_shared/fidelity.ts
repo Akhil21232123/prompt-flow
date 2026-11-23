@@ -71,14 +71,239 @@ const ALSO: Record<string, number[]> = {
   once: [1],
 };
 
+// Number words in the Indian languages PromptFlow transcribes, so a prompt
+// translated into English may write "5" for "पांच" or "ఐదు". Best effort:
+// the common words, not every compound.
+const INDIC: Record<string, number> = {
+  // Hindi / Marathi (Devanagari)
+  शून्य: 0,
+  एक: 1,
+  दो: 2,
+  तीन: 3,
+  चार: 4,
+  पांच: 5,
+  पाँच: 5,
+  पाच: 5,
+  छह: 6,
+  छः: 6,
+  छे: 6,
+  सहा: 6,
+  सात: 7,
+  आठ: 8,
+  नौ: 9,
+  नऊ: 9,
+  दस: 10,
+  दहा: 10,
+  ग्यारह: 11,
+  बारह: 12,
+  तेरह: 13,
+  चौदह: 14,
+  पंद्रह: 15,
+  पन्द्रह: 15,
+  सोलह: 16,
+  सत्रह: 17,
+  अठारह: 18,
+  उन्नीस: 19,
+  बीस: 20,
+  पच्चीस: 25,
+  तीस: 30,
+  चालीस: 40,
+  पचास: 50,
+  साठ: 60,
+  सत्तर: 70,
+  अस्सी: 80,
+  नब्बे: 90,
+  सौ: 100,
+  शंभर: 100,
+  हज़ार: 1000,
+  हजार: 1000,
+  लाख: 100000,
+  करोड़: 10000000,
+  करोड: 10000000,
+  आधा: 0.5,
+  डेढ़: 1.5,
+  ढाई: 2.5,
+  दर्जन: 12,
+  पहला: 1,
+  पहली: 1,
+  दूसरा: 2,
+  दूसरी: 2,
+  तीसरा: 3,
+  तीसरी: 3,
+  चौथा: 4,
+  // Telugu
+  సున్నా: 0,
+  ఒకటి: 1,
+  ఒక: 1,
+  రెండు: 2,
+  మూడు: 3,
+  నాలుగు: 4,
+  ఐదు: 5,
+  ఆరు: 6,
+  ఏడు: 7,
+  ఎనిమిది: 8,
+  తొమ్మిది: 9,
+  పది: 10,
+  ఇరవై: 20,
+  ముప్పై: 30,
+  నలభై: 40,
+  యాభై: 50,
+  వంద: 100,
+  వందల: 100,
+  వెయ్యి: 1000,
+  వేల: 1000,
+  లక్ష: 100000,
+  కోటి: 10000000,
+  // Tamil
+  ஒன்று: 1,
+  ஒரு: 1,
+  இரண்டு: 2,
+  மூன்று: 3,
+  நான்கு: 4,
+  ஐந்து: 5,
+  ஆறு: 6,
+  ஏழு: 7,
+  எட்டு: 8,
+  ஒன்பது: 9,
+  பத்து: 10,
+  இருபது: 20,
+  நூறு: 100,
+  ஆயிரம்: 1000,
+  லட்சம்: 100000,
+  கோடி: 10000000,
+  // Kannada
+  ಒಂದು: 1,
+  ಎರಡು: 2,
+  ಮೂರು: 3,
+  ನಾಲ್ಕು: 4,
+  ಐದು: 5,
+  ಆರು: 6,
+  ಏಳು: 7,
+  ಎಂಟು: 8,
+  ಒಂಬತ್ತು: 9,
+  ಹತ್ತು: 10,
+  ಇಪ್ಪತ್ತು: 20,
+  ನೂರು: 100,
+  ಸಾವಿರ: 1000,
+  // Malayalam
+  ഒന്ന്: 1,
+  ഒരു: 1,
+  രണ്ട്: 2,
+  മൂന്ന്: 3,
+  നാല്: 4,
+  അഞ്ച്: 5,
+  ആറ്: 6,
+  ഏഴ്: 7,
+  എട്ട്: 8,
+  ഒമ്പത്: 9,
+  പത്ത്: 10,
+  നൂറ്: 100,
+  ആയിരം: 1000,
+  // Bengali
+  এক: 1,
+  দুই: 2,
+  তিন: 3,
+  চার: 4,
+  পাঁচ: 5,
+  ছয়: 6,
+  সাত: 7,
+  আট: 8,
+  নয়: 9,
+  দশ: 10,
+  বিশ: 20,
+  একশো: 100,
+  শো: 100,
+  হাজার: 1000,
+  // Gujarati
+  એક: 1,
+  બે: 2,
+  ત્રણ: 3,
+  ચાર: 4,
+  પાંચ: 5,
+  છ: 6,
+  સાત: 7,
+  આઠ: 8,
+  નવ: 9,
+  દસ: 10,
+  વીસ: 20,
+  સો: 100,
+  હજાર: 1000,
+  // Punjabi (Gurmukhi)
+  ਇੱਕ: 1,
+  ਦੋ: 2,
+  ਤਿੰਨ: 3,
+  ਚਾਰ: 4,
+  ਪੰਜ: 5,
+  ਛੇ: 6,
+  ਸੱਤ: 7,
+  ਅੱਠ: 8,
+  ਨੌਂ: 9,
+  ਦਸ: 10,
+  ਵੀਹ: 20,
+  ਸੌ: 100,
+  ਹਜ਼ਾਰ: 1000,
+  // Urdu
+  ایک: 1,
+  دو: 2,
+  تین: 3,
+  چار: 4,
+  پانچ: 5,
+  چھ: 6,
+  سات: 7,
+  آٹھ: 8,
+  نو: 9,
+  دس: 10,
+  بیس: 20,
+  سو: 100,
+  ہزار: 1000,
+  لاکھ: 100000,
+};
+const INDIC_SCALES = new Set([100, 1000, 100000, 10000000]);
+// Dravidian languages add suffixes ("ఐదుగురు", five people), so longer
+// words also match as prefixes.
+const INDIC_PREFIXES = Object.entries(INDIC).filter(([w]) => w.length >= 3);
+
+function indicValue(word: string): number | undefined {
+  if (word in INDIC) return INDIC[word];
+  for (const [w, v] of INDIC_PREFIXES) if (word.startsWith(w)) return v;
+  return undefined;
+}
+
+/** Any script's decimal digits (०-९, ౦-౯, ٠-٩…) as ASCII digits. */
+export function asciiDigits(text: string): string {
+  return text.replace(/\p{Nd}/gu, (d) => {
+    const code = d.codePointAt(0)!;
+    // Unicode decimal digits come in runs of ten starting at a zero.
+    for (let zero = code; zero > code - 10; zero--) {
+      if (!/\p{Nd}/u.test(String.fromCodePoint(zero - 1)))
+        return String(code - zero);
+    }
+    return d;
+  });
+}
+
+function addIndicNumbers(text: string, out: Set<string>) {
+  const words = text.match(/[\p{L}\p{M}]+/gu) ?? [];
+  for (let i = 0; i < words.length; i++) {
+    const v = indicValue(words[i]);
+    if (v === undefined) continue;
+    out.add(String(v));
+    const next = i + 1 < words.length ? indicValue(words[i + 1]) : undefined;
+    if (next !== undefined && INDIC_SCALES.has(next) && next > v)
+      out.add(String(v * next));
+  }
+}
+
 function normalizeNumber(raw: string): string | undefined {
   const n = Number(raw.replace(/,/g, ""));
   return Number.isFinite(n) ? String(n) : undefined;
 }
 
 /** Every number a transcript mentions, in digits or words. */
-export function spokenNumbers(text: string): Set<string> {
+export function spokenNumbers(rawText: string): Set<string> {
   const out = new Set<string>();
+  const text = asciiDigits(rawText);
+  if (/[^\p{Script=Latin}\P{L}]/u.test(text)) addIndicNumbers(text, out);
   for (const m of text.matchAll(/\d[\d,]*(?:\.\d+)?/g)) {
     const n = normalizeNumber(m[0]);
     if (n) out.add(n);

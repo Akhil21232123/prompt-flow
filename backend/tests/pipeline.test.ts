@@ -107,12 +107,24 @@ describe("prompt engineer", () => {
       deps,
     );
     expect(out.mode).toBe("engineer");
-    expect(out.label).toBe(
-      "Prompt Engineer · coding_agent · 1 critique round(s) · score 9/10",
-    );
+    expect(out.label).toBe("Prompt · for Claude");
+    expect(out.target).toBe("claude");
+    expect(calls[0].system).toContain("This prompt is for Claude");
     expect(out.text).toContain("vitest");
     expect(calls.every((c) => c.model === "smart-model")).toBe(true);
     expect(calls[0].system).toContain("Never add numbers");
+  });
+
+  test("without a known AI the label names the playbook and score", async () => {
+    const { deps } = fakeModel([
+      "<target>coding_agent</target><prompt>Fix auth.ts</prompt>",
+      "<score>9</score><issues>- none</issues><prompt>Fix the crash in `auth.ts` when the password is empty. Add a vitest test.</prompt>",
+    ]);
+    const out = await rewrite({ text: long, mode: "engineer" }, user(), deps);
+    expect(out.label).toBe(
+      "Prompt Engineer · coding_agent · 1 critique round(s) · score 9/10",
+    );
+    expect(out.target).toBeUndefined();
   });
 
   test("short replies in AI apps are only polished", async () => {
