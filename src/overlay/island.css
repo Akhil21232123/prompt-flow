@@ -1,0 +1,593 @@
+@import "../styles/promptflow.css";
+
+/* The Dynamic Island. Always black, like the notch it grows out of, whatever
+   the app's theme. The card is sized by a JS spring (Island.tsx); content is
+   laid out at the target size and clipped while the card catches up. */
+
+:root {
+  --i-black: #000;
+  --i-text: #f5f4fb;
+  --i-muted: rgba(245, 244, 251, 0.62);
+  --i-faint: rgba(245, 244, 251, 0.38);
+  --i-line: rgba(255, 255, 255, 0.09);
+  --i-fill: rgba(255, 255, 255, 0.08);
+  --i-fill-hover: rgba(255, 255, 255, 0.14);
+  --i-font:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto,
+    sans-serif;
+}
+
+html,
+body {
+  background: transparent !important;
+}
+
+.i-stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  font-family: var(--i-font);
+  color: var(--i-text);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+.island {
+  background: var(--i-black);
+  color: var(--i-text);
+  box-sizing: border-box;
+}
+
+/* The off-screen copy that measures the next size. */
+.island.measure {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: max-content;
+  max-width: 560px;
+  visibility: hidden;
+  pointer-events: none;
+}
+.island.measure.expanded {
+  width: 460px;
+}
+
+.island.live {
+  position: relative;
+  overflow: hidden;
+  will-change: width, height, transform, opacity;
+  transform-origin: top center;
+  box-shadow:
+    0 18px 40px -18px rgba(0, 0, 0, 0.7),
+    0 0 0 0.5px rgba(255, 255, 255, 0.04);
+}
+
+/* Notch: flush with the top edge, square on top so it merges with the
+   housing, round below. Small concave "ears" blend the corners. */
+.notch .island.live {
+  border-radius: 0 0 22px 22px;
+}
+.notch .island.live.expanded {
+  border-radius: 0 0 28px 28px;
+}
+.notch .island.live::before,
+.notch .island.live::after {
+  content: none;
+}
+
+/* No notch: a floating pill under the menu bar. */
+.floating .island.live {
+  border-radius: 22px;
+}
+.floating .island.live.expanded {
+  border-radius: 24px;
+}
+
+.island.live.entering {
+  animation: i-pop 520ms var(--pf-spring) both;
+}
+.notch .island.live.entering {
+  animation-name: i-drop;
+}
+.island.live.leaving {
+  animation: i-leave 320ms var(--pf-ease-out) both;
+}
+@keyframes i-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.82);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* From the notch: grows down out of it rather than fading in. */
+@keyframes i-drop {
+  from {
+    opacity: 0.4;
+    transform: scaleX(0.7) scaleY(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes i-leave {
+  to {
+    opacity: 0;
+    transform: scaleX(0.72) scaleY(0.5);
+  }
+}
+
+.i-inner {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  animation: i-content-in 260ms var(--pf-ease-out) both;
+}
+.island.measure .i-inner,
+.island.measure > * {
+  position: static;
+  transform: none;
+  animation: none;
+}
+@keyframes i-content-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+  }
+}
+
+/* ---- rows ------------------------------------------------------------ */
+
+.i-wings {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.i-wing {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  min-width: 0;
+}
+.i-wing.left {
+  justify-content: flex-start;
+  padding-left: 14px;
+}
+.i-wing.right {
+  justify-content: flex-end;
+  padding-right: 14px;
+}
+
+.i-row.pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 40px;
+  padding: 0 14px 0 10px;
+  white-space: nowrap;
+}
+
+.i-body {
+  padding: 12px 18px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.floating .i-body {
+  padding-top: 14px;
+}
+.i-body.tight {
+  padding: 0 14px 10px;
+  gap: 6px;
+}
+.floating .i-body.tight {
+  padding-top: 0;
+}
+.i-body.center {
+  align-items: center;
+}
+.i-body.clickable {
+  cursor: pointer;
+}
+
+.i-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+}
+.i-spacer {
+  flex: 1;
+}
+
+.i-eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.i-mode-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--i-muted);
+}
+
+/* ---- glyphs ---------------------------------------------------------- */
+
+.i-glyph {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: #fff;
+  background: var(--i-fill);
+}
+.i-glyph.mode-dictate,
+.i-glyph.mode-command {
+  background: var(--pf-gradient);
+}
+.i-glyph.mode-engineer,
+.i-glyph.mode-this {
+  background: var(--pf-blue);
+}
+.i-glyph.mode-autopilot,
+.i-glyph.good {
+  background: var(--pf-mint);
+  color: #06261a;
+}
+.i-glyph.done {
+  background: var(--pf-gradient);
+}
+.tone-prompt .i-glyph.done {
+  background: var(--pf-blue);
+}
+.i-glyph.warn {
+  background: var(--pf-amber);
+  color: #2b1a00;
+}
+.i-glyph.error {
+  background: var(--pf-red);
+}
+
+/* ---- listening ------------------------------------------------------- */
+
+.i-wave {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 18px;
+}
+.i-wave i {
+  display: block;
+  width: 3px;
+  height: 18px;
+  border-radius: 2px;
+  background: var(--pf-gradient);
+  transform-origin: center;
+  transition: transform 90ms linear;
+}
+.i-wave.arming i {
+  opacity: 0.45;
+  animation: i-arming 1.1s ease-in-out infinite;
+}
+.i-wave.arming i:nth-child(2n) {
+  animation-delay: 160ms;
+}
+@keyframes i-arming {
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+
+.i-timer {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--i-muted);
+}
+
+.i-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--i-fill);
+  color: var(--i-muted);
+  white-space: nowrap;
+}
+
+.i-context {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--i-muted);
+  white-space: nowrap;
+}
+.i-context svg {
+  color: var(--pf-blue);
+}
+.i-context-src {
+  color: var(--i-faint);
+}
+
+/* ---- working --------------------------------------------------------- */
+
+.i-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.16);
+  border-top-color: var(--pf-violet);
+  animation: i-spin 800ms linear infinite;
+}
+@keyframes i-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.i-shimmer {
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: linear-gradient(
+    100deg,
+    var(--i-muted) 0%,
+    var(--i-muted) 40%,
+    #fff 50%,
+    var(--i-muted) 60%,
+    var(--i-muted) 100%
+  );
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation:
+    i-shimmer 1.6s linear infinite,
+    i-content-in 240ms var(--pf-ease-out) both;
+}
+@keyframes i-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* ---- ask, done, verdict, errors -------------------------------------- */
+
+.i-question {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.35;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.i-preview {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--i-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.i-preview.muted {
+  color: var(--i-muted);
+}
+
+.i-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.i-option {
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--i-text);
+  background: var(--i-fill);
+  border: 1px solid var(--i-line);
+  border-radius: 999px;
+  padding: 6px 13px;
+  cursor: pointer;
+  animation: i-option-in 380ms var(--pf-spring) both;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    transform 160ms var(--pf-spring);
+}
+.i-option:hover {
+  background: color-mix(in srgb, var(--pf-blue) 28%, transparent);
+  border-color: color-mix(in srgb, var(--pf-blue) 70%, transparent);
+}
+.i-option:active {
+  transform: scale(0.96);
+}
+.i-option:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+@keyframes i-option-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.i-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+}
+.i-hint {
+  font-size: 11.5px;
+  color: var(--i-faint);
+  flex: 1;
+  min-width: 0;
+}
+
+.i-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: 999px;
+  border: 0;
+  cursor: pointer;
+  white-space: nowrap;
+  color: var(--i-text);
+  transition:
+    background 140ms ease,
+    transform 160ms var(--pf-spring);
+}
+.i-btn:active {
+  transform: scale(0.95);
+}
+.i-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.i-btn.ghost {
+  background: var(--i-fill);
+}
+.i-btn.ghost:hover {
+  background: var(--i-fill-hover);
+}
+.i-btn.primary {
+  background: var(--pf-gradient);
+  color: #fff;
+}
+.tone-warn .i-btn.primary {
+  background: var(--pf-blue);
+}
+.i-btn kbd {
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--i-faint);
+}
+
+.i-icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: var(--i-muted);
+  background: var(--i-fill);
+  cursor: pointer;
+}
+.i-icon-btn:hover {
+  background: var(--i-fill-hover);
+  color: var(--i-text);
+}
+
+.i-memory {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+.i-memory-label {
+  font-size: 11px;
+  color: var(--i-faint);
+  white-space: nowrap;
+}
+.i-chip.i-mem {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  line-height: 18px;
+  color: color-mix(in srgb, var(--pf-violet) 70%, #fff);
+  background: color-mix(in srgb, var(--pf-violet) 18%, transparent);
+}
+
+.i-issues {
+  margin: 0;
+  padding: 0 0 0 18px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--i-text);
+}
+.i-issues li + li {
+  margin-top: 3px;
+}
+.i-issues li::marker {
+  color: var(--pf-amber);
+}
+
+/* Auto-close ring: drains while the result shows; pauses on hover. */
+.i-ring {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: conic-gradient(
+    rgba(255, 255, 255, 0.55) var(--ring, 100%),
+    rgba(255, 255, 255, 0.12) 0
+  );
+  animation: i-ring 3.2s linear forwards;
+}
+.i-ring.paused {
+  animation-play-state: paused;
+}
+@property --ring {
+  syntax: "<percentage>";
+  inherits: false;
+  initial-value: 100%;
+}
+@keyframes i-ring {
+  to {
+    --ring: 0%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .island.live.entering,
+  .island.live.leaving,
+  .i-inner,
+  .i-option,
+  .i-shimmer,
+  .i-wave.arming i {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .island.live.leaving {
+    opacity: 0;
+  }
+  .i-spinner {
+    animation-duration: 2.4s;
+  }
+}

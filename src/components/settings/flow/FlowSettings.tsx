@@ -12,7 +12,6 @@ import type {
   PromptFormat,
   PromptTarget,
   Snippet,
-  StylePreset,
   WritingStyle,
 } from "@/bindings";
 import {
@@ -27,7 +26,6 @@ import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { ApiKeyField } from "../PostProcessingSettingsApi/ApiKeyField";
 import { PostProcessingToggle } from "../PostProcessingToggle";
-import { ShortcutInput } from "../ShortcutInput";
 import { useSettings } from "../../../hooks/useSettings";
 
 const DEFAULT_PE: Required<PromptEngineerSettings> = {
@@ -75,10 +73,12 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   local_ai_defaults_applied: flow?.local_ai_defaults_applied ?? true,
   style_preset: flow?.style_preset ?? null,
   custom_style: flow?.custom_style ?? "",
+  private_mode: flow?.private_mode ?? false,
+  spoken_language: flow?.spoken_language ?? "en",
+  prompts_in_english: flow?.prompts_in_english ?? true,
+  ask_back: flow?.ask_back ?? true,
+  memory_enabled: flow?.memory_enabled ?? true,
 });
-
-const GROQ_LLM = "openai/gpt-oss-120b";
-const GROQ_STT = "whisper-large-v3";
 
 const newId = () =>
   typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -114,8 +114,6 @@ export const FlowSettings: React.FC = () => {
     updateSetting,
     isUpdating,
     updatePostProcessApiKey,
-    setPostProcessProvider,
-    updatePostProcessModel,
   } = useSettings();
   const flow = withDefaults(getSetting("flow"));
   const pe = flow.prompt_engineer;
@@ -163,34 +161,6 @@ export const FlowSettings: React.FC = () => {
   const cloudProvider = flow.cloud_stt.provider;
   const cloudKeyId = cloudProvider === "groq" ? "groq" : "openai";
 
-  const groqOn =
-    !!keys.groq?.trim() &&
-    settings?.post_process_provider_id === "groq" &&
-    !!flow.cloud_stt.enabled &&
-    flow.cloud_stt.provider === "groq";
-
-  /** One key sets up Groq for transcription, cleanup and Prompt Engineer. */
-  const applyGroq = async (key: string) => {
-    const trimmed = key.trim();
-    if (!trimmed) return;
-    await updatePostProcessApiKey("groq", trimmed);
-    await setPostProcessProvider("groq");
-    await updatePostProcessModel("groq", GROQ_LLM);
-    await updateSetting("post_process_enabled", true);
-    await save({
-      cloud_stt: {
-        ...flow.cloud_stt,
-        enabled: true,
-        provider: "groq",
-        model: GROQ_STT,
-        fallback_to_local: true,
-      },
-      prompt_engineer: { ...pe, provider_id: "groq", model: GROQ_LLM },
-    });
-  };
-
-  const stylePresetValue = flow.style_preset ?? "auto";
-
   const updateSnippet = (id: string, patch: Partial<Snippet>) =>
     save({
       snippets: flow.snippets.map((s) =>
@@ -206,101 +176,7 @@ export const FlowSettings: React.FC = () => {
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
-      {!peReady && !groqOn && (
-        <Alert variant="warning">{f("setupNeeded")}</Alert>
-      )}
-
-      <SettingsGroup
-        title={f("quick.title")}
-        description={f("quick.description")}
-      >
-        <SettingContainer
-          title={f("quick.key.title")}
-          description={f("quick.key.description")}
-          descriptionMode="tooltip"
-          layout="horizontal"
-          grouped={true}
-        >
-          <ApiKeyField
-            value={keys.groq ?? ""}
-            onBlur={(v) => void applyGroq(v)}
-            disabled={false}
-            placeholder="gsk_..."
-          />
-        </SettingContainer>
-        <div className="px-4 py-2 text-sm text-mid-gray">
-          {groqOn ? `✓ ${f("quick.active")}` : f("quick.inactive")}
-        </div>
-      </SettingsGroup>
-
-      <SettingsGroup
-        title={f("stylePreset.title")}
-        description={f("stylePreset.description")}
-      >
-        <SettingContainer
-          title={f("stylePreset.title")}
-          description={f("stylePreset.description")}
-          descriptionMode="tooltip"
-          layout="horizontal"
-          grouped={true}
-        >
-          <Dropdown
-            options={opts<StylePreset | "auto">(
-              [
-                "auto",
-                "clean",
-                "formal",
-                "short",
-                "casual",
-                "bullets",
-                "custom",
-              ],
-              "stylePreset.options",
-            )}
-            selectedValue={stylePresetValue}
-            onSelect={(v) =>
-              save({ style_preset: v === "auto" ? null : (v as StylePreset) })
-            }
-          />
-        </SettingContainer>
-        {stylePresetValue === "custom" && (
-          <SettingContainer
-            title={f("stylePreset.custom.title")}
-            description={f("stylePreset.custom.description")}
-            descriptionMode="tooltip"
-            layout="horizontal"
-            grouped={true}
-          >
-            <BlurInput
-              value={flow.custom_style}
-              placeholder={f("stylePreset.custom.placeholder")}
-              onSave={(v) => save({ custom_style: v.trim() })}
-              className="w-72"
-            />
-          </SettingContainer>
-        )}
-      </SettingsGroup>
-
-      <SettingsGroup
-        title={f("shortcuts.title")}
-        description={f("shortcuts.description")}
-      >
-        <ShortcutInput
-          shortcutId="transcribe"
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-        <ShortcutInput
-          shortcutId="prompt_engineer"
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-        <ShortcutInput
-          shortcutId="command_mode"
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-      </SettingsGroup>
+      {!peReady && <Alert variant="warning">{f("setupNeeded")}</Alert>}
 
       <SettingsGroup
         title={f("engineer.title")}

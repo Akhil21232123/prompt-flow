@@ -1,0 +1,563 @@
+//! `POST /functions/v1/dictate`: the meta JSON, the WAV, and the three
+//! answers (finished text, nothing heard, a question first).
+
+use super::api::{self, ApiError};
+use crate::flow::settings::{FlowSettings, StylePreset};
+use serde::Serialize;
+use serde_json::Value;
+use specta::Type;
+use tauri::AppHandle;
+
+/// `meta.mode`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CloudMode {
+    Dictate,
+    Engineer,
+    Command,
+}
+
+impl CloudMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CloudMode::Dictate => "dictate",
+            CloudMode::Engineer => "engineer",
+            CloudMode::Command => "command",
+        }
+    }
+}
+
+#[derive(Serialize, Debug, Clone, Default, PartialEq)]
+pub struct MetaApp {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub surrounding_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+}
+
+impl MetaApp {
+    fn is_empty(&self) -> bool {
+        *self == MetaApp::default()
+    }
+}
+
+/// Where "This" got the text from.
+#[derive(Serialize, serde::Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum ScreenSource {
+    Selection,
+    Window,
+    Ocr,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct MetaScreen {
+    pub text: String,
+    pub source: ScreenSource,
+}
+
+/// The most screen text the backend takes.
+pub const SCREEN_MAX_CHARS: usize = 8000;
+/// The most text before the cursor sent as `surrounding_text`.
+pub const SURROUNDING_MAX_CHARS: usize = 1500;
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct DictateMeta {
+    pub mode: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<&'static str>,
+    pub language: String,
+    pub output_language: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub app: Option<MetaApp>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub selection: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen: Option<MetaScreen>,
+    pub ask_back: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub clarify_session: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answer_text: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub skip_clarify: bool,
+    pub device: &'static str,
+}
+
+/// How an ask-back is being answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ClarifyAnswer {
+    /// By voice: the recording is the answer.
+    Voice,
+    /// A tapped option.
+    Text(String),
+    /// "Just write it".
+    Skip,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MetaInput {
+    pub duration_sec: Option<f64>,
+    pub app: MetaApp,
+    pub selection: Option<String>,
+    pub screen: Option<MetaScreen>,
+}
+
+pub fn preset_str(p: StylePreset) -> &'static str {
+    match p {
+        StylePreset::Clean => "clean",
+        StylePreset::Formal => "formal",
+        StylePreset::Short => "short",
+        StylePreset::Casual => "casual",
+        StylePreset::Bullets => "bullets",
+        StylePreset::Custom => "custom",
+    }
+}
+
+fn clean(s: Option<String>) -> Option<String> {
+    s.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// The meta for one request, per the v2 contract.
+pub fn build_meta(
+    mode: CloudMode,
+    flow: &FlowSettings,
+    input: MetaInput,
+    clarify: Option<(String, ClarifyAnswer)>,
+) -> DictateMeta {
+    let language =
+        if crate::flow::settings::SPOKEN_LANGUAGES.contains(&flow.spoken_language.as_str()) {
+            flow.spoken_language.clone()
+        } else {
+            "auto".to_string()
+        };
+    let output_language = match mode {
+        CloudMode::Engineer if flow.prompts_in_english => "en",
+        _ => "same",
+    };
+    let app = MetaApp {
+        name: clean(input.app.name),
+        bundle_id: clean(input.app.bundle_id),
+        title: clean(input.app.title).map(|t| super::context::head_chars(&t, 300)),
+        surrounding_text: input
+            .app
+            .surrounding_text
+            .filter(|t| !t.trim().is_empty())
+            .map(|t| super::context::tail_chars(&t, SURROUNDING_MAX_CHARS)),
+        url: clean(input.app.url),
+    };
+    let screen = input.screen.and_then(|s| {
+        let text = super::context::head_chars(s.text.trim(), SCREEN_MAX_CHARS);
+        (!text.is_empty()).then_some(MetaScreen {
+            text,
+            source: s.source,
+        })
+    });
+    let (clarify_session, answer_text, skip_clarify) = match clarify {
+        Some((session, ClarifyAnswer::Voice)) => (Some(session), None, false),
+        Some((session, ClarifyAnswer::Text(t))) => (Some(session), Some(t), false),
+        Some((session, ClarifyAnswer::Skip)) => (Some(session), None, true),
+        None => (None, None, false),
+    };
+    DictateMeta {
+        mode: mode.as_str(),
+        duration_sec: input.duration_sec.map(|d| (d * 10.0).round() / 10.0),
+        preset: match mode {
+            CloudMode::Dictate => flow.style_preset.map(preset_str),
+            _ => None,
+        },
+        language,
+        output_language,
+        app: (!app.is_empty()).then_some(app),
+        selection: match mode {
+            CloudMode::Command => clean(input.selection),
+            _ => None,
+        },
+        screen,
+        ask_back: flow.ask_back && mode == CloudMode::Engineer,
+        clarify_session,
+        answer_text,
+        skip_clarify,
+        device: "mac",
+    }
+}
+
+/// A memory the backend used, shown as a chip.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct MemoryChip {
+    pub id: String,
+    pub content: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Finished {
+    pub raw: String,
+    pub text: String,
+    pub mode: String,
+    pub label: Option<String>,
+    pub target: Option<String>,
+    pub memory_used: Vec<MemoryChip>,
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Clarify {
+    pub session: String,
+    pub question: String,
+    pub options: Vec<String>,
+    pub raw: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum DictateOutcome {
+    Done(Finished),
+    /// Nothing heard: paste nothing.
+    Dropped {
+        reason: String,
+    },
+    /// Ask-back: show the question; paste nothing yet.
+    Ask(Clarify),
+}
+
+fn s(v: &Value, key: &str) -> Option<String> {
+    v.get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+pub fn parse_response(v: &Value) -> Result<DictateOutcome, ApiError> {
+    if v.get("dropped").and_then(Value::as_bool) == Some(true) {
+        return Ok(DictateOutcome::Dropped {
+            reason: s(v, "reason").unwrap_or_else(|| "silence".into()),
+        });
+    }
+    if v.get("needs_clarification").and_then(Value::as_bool) == Some(true) {
+        let session = s(v, "clarify_session").ok_or_else(|| {
+            ApiError::server("PromptFlow asked a question it can't take an answer to")
+        })?;
+        let question = s(v, "question").unwrap_or_default();
+        let options = v
+            .get("options")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|o| !o.is_empty())
+                    .take(4)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        return Ok(DictateOutcome::Ask(Clarify {
+            session,
+            question,
+            options,
+            raw: s(v, "raw").unwrap_or_default(),
+        }));
+    }
+    let text = v
+        .get("text")
+        .and_then(Value::as_str)
+        .map(|t| t.trim().to_string())
+        .ok_or_else(|| ApiError::server("PromptFlow sent an answer it couldn't read"))?;
+    if text.is_empty() {
+        return Ok(DictateOutcome::Dropped {
+            reason: "silence".into(),
+        });
+    }
+    let memory_used = v
+        .get("memory_used")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| {
+                    Some(MemoryChip {
+                        id: s(m, "id").unwrap_or_default(),
+                        content: s(m, "content")?,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok(DictateOutcome::Done(Finished {
+        raw: v
+            .get("raw")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        text,
+        mode: s(v, "mode").unwrap_or_default(),
+        label: s(v, "label"),
+        target: s(v, "target"),
+        memory_used,
+        language: s(v, "language"),
+    }))
+}
+
+/// 16 kHz mono PCM16 WAV of `samples` (f32, -1..1).
+pub fn encode_wav(samples: &[f32]) -> Vec<u8> {
+    let rate = crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
+    let data_len = (samples.len() * 2) as u32;
+    let mut out = Vec::with_capacity(44 + data_len as usize);
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&(36 + data_len).to_le_bytes());
+    out.extend_from_slice(b"WAVEfmt ");
+    out.extend_from_slice(&16u32.to_le_bytes());
+    out.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    out.extend_from_slice(&1u16.to_le_bytes()); // mono
+    out.extend_from_slice(&rate.to_le_bytes());
+    out.extend_from_slice(&(rate * 2).to_le_bytes()); // byte rate
+    out.extend_from_slice(&2u16.to_le_bytes()); // block align
+    out.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    out.extend_from_slice(b"data");
+    out.extend_from_slice(&data_len.to_le_bytes());
+    for &x in samples {
+        let v = (x.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out
+}
+
+/// Sends one request. `wav` is `None` only when answering an ask-back by
+/// tapping or skipping.
+pub async fn send(
+    app: &AppHandle,
+    meta: &DictateMeta,
+    wav: Option<&[u8]>,
+) -> Result<DictateOutcome, ApiError> {
+    let meta_json = serde_json::to_string(meta).map_err(|e| ApiError::server(e.to_string()))?;
+    let body = api::authed(app, || {
+        let mut form = reqwest::multipart::Form::new().part(
+            "meta",
+            reqwest::multipart::Part::text(meta_json.clone())
+                .mime_str("application/json")
+                .unwrap_or_else(|_| reqwest::multipart::Part::text(meta_json.clone())),
+        );
+        if let Some(wav) = wav {
+            let part = reqwest::multipart::Part::bytes(wav.to_vec()).file_name("audio.wav");
+            let part = match part.mime_str("audio/wav") {
+                Ok(p) => p,
+                Err(_) => reqwest::multipart::Part::bytes(wav.to_vec()).file_name("audio.wav"),
+            };
+            form = form.part("audio", part);
+        }
+        api::post("/functions/v1/dictate").multipart(form)
+    })
+    .await?;
+    let v: Value = serde_json::from_str(&body)
+        .map_err(|_| ApiError::server("PromptFlow sent an answer it couldn't read"))?;
+    parse_response(&v)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn flow() -> FlowSettings {
+        FlowSettings::default()
+    }
+
+    #[test]
+    fn engineer_meta_matches_the_contract() {
+        let input = MetaInput {
+            duration_sec: Some(4.24),
+            app: MetaApp {
+                name: Some("ChatGPT".into()),
+                bundle_id: Some("com.openai.chat".into()),
+                title: Some("  ".into()),
+                surrounding_text: Some("hello".into()),
+                url: None,
+            },
+            selection: Some("ignored outside command".into()),
+            screen: None,
+        };
+        let meta = build_meta(CloudMode::Engineer, &flow(), input, None);
+        let v = serde_json::to_value(&meta).unwrap();
+        assert_eq!(
+            v,
+            json!({
+                "mode": "engineer",
+                "duration_sec": 4.2,
+                "language": "en",
+                "output_language": "en",
+                "app": {"name": "ChatGPT", "bundle_id": "com.openai.chat", "surrounding_text": "hello"},
+                "ask_back": true,
+                "device": "mac"
+            })
+        );
+    }
+
+    #[test]
+    fn dictate_meta_sends_preset_and_keeps_language() {
+        let mut f = flow();
+        f.style_preset = Some(StylePreset::Bullets);
+        f.spoken_language = "te".into();
+        f.ask_back = true;
+        let meta = build_meta(CloudMode::Dictate, &f, MetaInput::default(), None);
+        assert_eq!(meta.preset, Some("bullets"));
+        assert_eq!(meta.language, "te");
+        assert_eq!(meta.output_language, "same");
+        assert!(!meta.ask_back, "ask-back is engineer only");
+        assert!(meta.app.is_none());
+    }
+
+    #[test]
+    fn engineer_can_keep_the_spoken_language() {
+        let mut f = flow();
+        f.prompts_in_english = false;
+        f.spoken_language = "klingon".into();
+        let meta = build_meta(CloudMode::Engineer, &f, MetaInput::default(), None);
+        assert_eq!(meta.output_language, "same");
+        assert_eq!(meta.language, "auto");
+    }
+
+    #[test]
+    fn command_sends_selection_and_screen_is_capped() {
+        let input = MetaInput {
+            selection: Some(" fix me ".into()),
+            screen: Some(MetaScreen {
+                text: "x".repeat(SCREEN_MAX_CHARS + 50),
+                source: ScreenSource::Ocr,
+            }),
+            ..Default::default()
+        };
+        let meta = build_meta(CloudMode::Command, &flow(), input, None);
+        assert_eq!(meta.selection.as_deref(), Some("fix me"));
+        let screen = meta.screen.unwrap();
+        assert_eq!(screen.text.chars().count(), SCREEN_MAX_CHARS);
+        let v = serde_json::to_value(screen.source).unwrap();
+        assert_eq!(v, json!("ocr"));
+    }
+
+    #[test]
+    fn clarify_answers() {
+        let tap = build_meta(
+            CloudMode::Engineer,
+            &flow(),
+            MetaInput::default(),
+            Some(("s1".into(), ClarifyAnswer::Text("Python".into()))),
+        );
+        let v = serde_json::to_value(&tap).unwrap();
+        assert_eq!(v["clarify_session"], "s1");
+        assert_eq!(v["answer_text"], "Python");
+        assert!(v.get("skip_clarify").is_none());
+        assert!(v.get("duration_sec").is_none());
+
+        let skip = build_meta(
+            CloudMode::Engineer,
+            &flow(),
+            MetaInput::default(),
+            Some(("s1".into(), ClarifyAnswer::Skip)),
+        );
+        let v = serde_json::to_value(&skip).unwrap();
+        assert_eq!(v["skip_clarify"], true);
+        assert!(v.get("answer_text").is_none());
+
+        let voice = build_meta(
+            CloudMode::Engineer,
+            &flow(),
+            MetaInput::default(),
+            Some(("s1".into(), ClarifyAnswer::Voice)),
+        );
+        let v = serde_json::to_value(&voice).unwrap();
+        assert_eq!(v["clarify_session"], "s1");
+        assert!(v.get("answer_text").is_none());
+    }
+
+    #[test]
+    fn surrounding_text_keeps_the_end() {
+        let input = MetaInput {
+            app: MetaApp {
+                surrounding_text: Some(format!("{}END", "a".repeat(3000))),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let meta = build_meta(CloudMode::Dictate, &flow(), input, None);
+        let t = meta.app.unwrap().surrounding_text.unwrap();
+        assert_eq!(t.chars().count(), SURROUNDING_MAX_CHARS);
+        assert!(t.ends_with("END"));
+    }
+
+    #[test]
+    fn parses_finished_text() {
+        let v = json!({
+            "raw": "what you said", "text": " what to paste ", "mode": "engineer",
+            "category": "ai_chat", "label": "Prompt · for Claude", "target": "claude",
+            "guarded": [], "memory_used": [{"id": "m1", "content": "Building PromptFlow"}, {"id": "m2"}],
+            "language": "te", "timing": {"stt_ms": 410, "total_ms": 1630}
+        });
+        match parse_response(&v).unwrap() {
+            DictateOutcome::Done(f) => {
+                assert_eq!(f.text, "what to paste");
+                assert_eq!(f.label.as_deref(), Some("Prompt · for Claude"));
+                assert_eq!(f.target.as_deref(), Some("claude"));
+                assert_eq!(f.memory_used.len(), 1);
+                assert_eq!(f.language.as_deref(), Some("te"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_dropped_and_empty_text() {
+        assert_eq!(
+            parse_response(&json!({"dropped": true, "raw": "", "reason": "hallucination"}))
+                .unwrap(),
+            DictateOutcome::Dropped {
+                reason: "hallucination".into()
+            }
+        );
+        assert!(matches!(
+            parse_response(&json!({"text": "  ", "raw": ""})).unwrap(),
+            DictateOutcome::Dropped { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_ask_back() {
+        let v = json!({
+            "needs_clarification": true, "clarify_session": "uuid",
+            "question": "Which language should the script use?",
+            "options": ["Python", "JavaScript", "Go", "Rust", "C"],
+            "raw": "write me a script that…"
+        });
+        match parse_response(&v).unwrap() {
+            DictateOutcome::Ask(c) => {
+                assert_eq!(c.session, "uuid");
+                assert_eq!(c.options, vec!["Python", "JavaScript", "Go", "Rust"]);
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+        assert!(parse_response(&json!({"needs_clarification": true})).is_err());
+    }
+
+    #[test]
+    fn unreadable_answers_are_errors() {
+        assert!(parse_response(&json!({"raw": "x"})).is_err());
+    }
+
+    #[test]
+    fn wav_header_is_16k_mono_pcm16() {
+        let wav = encode_wav(&[0.0, 1.0, -1.0, 2.0]);
+        assert_eq!(&wav[0..4], b"RIFF");
+        assert_eq!(&wav[8..16], b"WAVEfmt ");
+        assert_eq!(u32::from_le_bytes(wav[24..28].try_into().unwrap()), 16_000);
+        assert_eq!(u16::from_le_bytes(wav[22..24].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(wav[40..44].try_into().unwrap()), 8);
+        assert_eq!(wav.len(), 44 + 8);
+        let last = i16::from_le_bytes(wav[50..52].try_into().unwrap());
+        assert_eq!(last, i16::MAX, "out-of-range samples are clamped");
+    }
+}

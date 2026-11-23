@@ -72,6 +72,8 @@ rustfft = "6.4.0"
 strsim = "0.11.0"
 natural = "0.5.0"
 regex = "1"
+url = "2"
+base64 = "0.22"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
 whatlang = "0.16"
@@ -105,6 +107,8 @@ tauri-plugin-autostart = "2.5.1"
 tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-single-instance = "2.3.2"
 tauri-plugin-updater = "2.10.1"
+# promptflow://auth sign-in links from the email.
+tauri-plugin-deep-link = "2"
 
 [target.'cfg(windows)'.dependencies]
 # Used to reach ICoreWebView2Settings3 through the webview's controller

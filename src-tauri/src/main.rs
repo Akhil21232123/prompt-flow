@@ -31,6 +31,12 @@ fn main() {
     // Transcription worker: runs transcribe.cpp in isolation and never touches
     // Tauri, the CLI, or single-instance handling. Checked after the env setup
     // above so the worker inherits it (e.g. the Vulkan layer opt-out).
+    // On-device text recognition helper (see cloud/ocr.rs): isolated so a
+    // Vision failure can never take the app down.
+    if let Some(code) = handy_app_lib::run_ocr_helper_if_invoked() {
+        std::process::exit(code);
+    }
+
     if handy_app_lib::engine_supervisor::is_worker_invocation() {
         std::process::exit(handy_app_lib::engine_supervisor::run_worker());
     }

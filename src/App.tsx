@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
+import { listen } from "@tauri-apps/api/event";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
@@ -17,19 +18,20 @@ import SecureInputWarning from "./components/SecureInputWarning";
 import Footer from "./components/footer";
 import { OnboardingFlow } from "./components/onboarding/OnboardingFlow";
 import ModelMigration from "./components/onboarding/ModelMigration";
+import { ReplaceModel } from "./components/onboarding/StandaloneScreens";
 import {
-  ReplaceModel,
-  ReturningPermissions,
-} from "./components/onboarding/StandaloneScreens";
+  PromptFlowOnboarding,
+  clearPromptFlowOnboarding,
+} from "./components/onboarding/pf/PromptFlowOnboarding";
+import { PermissionsRecovery } from "./components/onboarding/pf/PermissionsRecovery";
+import { PrivateModeSettings } from "./components/settings/promptflow/PrivateModeSettings";
 import {
   clearOnboardingProgress,
   type OnboardingStep as OnboardingPreviewStep,
 } from "./components/onboarding/onboardingStore";
 import { DebugSettings, ModelsSettings } from "./components/settings";
-import { ErrorBoundary } from "./components/ErrorBoundary";
 import { FileDropOverlay } from "./components/FileDropOverlay";
 import { Sidebar, SidebarSection, SECTIONS_CONFIG } from "./components/Sidebar";
-import { WhatsNewGate } from "./components/whats-new";
 import { useSettings } from "./hooks/useSettings";
 import { useSettingsStore } from "./stores/settingsStore";
 import { commands } from "@/bindings";
@@ -57,6 +59,9 @@ const renderSettingsContent = (
       <ModelsSettings onChangeLanguages={() => onSectionChange("general")} />
     );
   }
+  if (section === "private") {
+    return <PrivateModeSettings onOpenSection={onSectionChange} />;
+  }
   if (section === "debug") {
     return (
       <DebugSettings
@@ -83,7 +88,7 @@ function App() {
   // is still on disk: they must update it before the app can transcribe.
   const [migrationModelId, setMigrationModelId] = useState<string | null>(null);
   const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+    useState<SidebarSection>("account");
   const showHistory = useCallback(() => setCurrentSection("history"), []);
   const { settings, updateSetting } = useSettings();
   const direction = getLanguageDirection(i18n.language);
@@ -123,6 +128,16 @@ function App() {
       refreshOutputDevices();
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
+
+  // The tray's "Check for updates" opens About, which shows the status.
+  useEffect(() => {
+    const unlisten = listen("check-for-updates", () =>
+      setCurrentSection("about"),
+    );
+    return () => {
+      unlisten.then((u) => u());
+    };
+  }, []);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -185,9 +200,10 @@ function App() {
 
       if (hasCompletedOnboarding) {
         // Returning user - check if they need to grant permissions first
-        const retiredModelId = await getMigrationModelId(
-          settingsResult.data.selected_model ?? "",
-        );
+        // Only Private mode uses a local model that could need updating.
+        const retiredModelId = settingsResult.data.flow?.private_mode
+          ? await getMigrationModelId(settingsResult.data.selected_model ?? "")
+          : null;
         setMigrationModelId(retiredModelId);
 
         if (currentPlatform === "macos") {
@@ -239,6 +255,7 @@ function App() {
   // Debug: the real onboarding from Welcome, for testing it end to end.
   const runOnboarding = () => {
     clearOnboardingProgress();
+    clearPromptFlowOnboarding();
     setOnboardingStep("flow");
   };
 
@@ -293,10 +310,18 @@ function App() {
       </>
     );
   } else if (onboardingStep === "flow") {
-    content = <OnboardingFlow onComplete={() => setOnboardingStep("done")} />;
+    content = (
+      <PromptFlowOnboarding
+        onComplete={() => {
+          setOnboardingStep("done");
+          // First stop after setup: how to use it.
+          setCurrentSection("guide");
+        }}
+      />
+    );
   } else if (onboardingStep === "permissions") {
     content = (
-      <ReturningPermissions
+      <PermissionsRecovery
         onComplete={() => finishReturningUser(migrationModelId)}
       />
     );
@@ -319,11 +344,8 @@ function App() {
     content = (
       <div
         dir={direction}
-        className="h-screen flex flex-col select-none cursor-default"
+        className="h-screen flex flex-col select-none cursor-default bg-pf-bg text-pf-text"
       >
-        <ErrorBoundary context="What's New">
-          <WhatsNewGate />
-        </ErrorBoundary>
         {/* Main content area that takes remaining space */}
         <div className="flex-1 flex overflow-hidden">
           <Sidebar
@@ -351,7 +373,9 @@ function App() {
         </div>
         {/* Fixed footer at bottom */}
         <Footer onShowHistory={showHistory} />
-        <FileDropOverlay onDropped={showHistory} />
+        {settings?.flow?.private_mode && (
+          <FileDropOverlay onDropped={showHistory} />
+        )}
       </div>
     );
   }

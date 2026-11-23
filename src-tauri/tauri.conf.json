@@ -86,6 +86,11 @@
       "endpoints": [
         "https://github.com/Akhil21232123/prompt-flow/releases/latest/download/latest.json"
       ]
+    },
+    "deep-link": {
+      "desktop": {
+        "schemes": ["promptflow"]
+      }
     }
   }
 }

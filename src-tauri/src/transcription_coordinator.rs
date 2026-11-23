@@ -579,7 +579,7 @@ pub struct TranscriptionCoordinator {
 pub fn is_transcribe_binding(id: &str) -> bool {
     matches!(
         id,
-        "transcribe" | "transcribe_with_post_process" | "prompt_engineer" | "command_mode"
+        "transcribe" | "transcribe_with_post_process" | "prompt_engineer" | "command_mode" | "this"
     )
 }
 

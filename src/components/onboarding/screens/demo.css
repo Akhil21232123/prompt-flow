@@ -1,5 +1,5 @@
 /* Demo's drawing (Demo.tsx): the recording pill is a copy of the overlay's
-   compact pill (src/overlay/RecordingOverlay.css), at full size. */
+   compact pill (the old Handy overlay), at full size. */
 .demo-pill {
   position: relative;
   display: flex;

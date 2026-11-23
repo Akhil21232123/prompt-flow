@@ -2,6 +2,7 @@
    output and made the first dev CSS compile take ~16s. */
 @import "tailwindcss" source(".");
 @import "./styles/theme.css";
+@import "./styles/promptflow.css";
 
 /* Register the shared color tokens (src/styles/theme.css) as Tailwind
    utilities */
@@ -25,6 +26,19 @@
   --color-ink-3: var(--color-ink-3);
   --color-line: var(--color-line);
   --color-line-strong: var(--color-line-strong);
+  --color-pf-bg: var(--pf-bg);
+  --color-pf-surface: var(--pf-surface);
+  --color-pf-surface-2: var(--pf-surface-2);
+  --color-pf-border: var(--pf-border);
+  --color-pf-border-strong: var(--pf-border-strong);
+  --color-pf-text: var(--pf-text);
+  --color-pf-muted: var(--pf-muted);
+  --color-pf-violet: var(--pf-violet);
+  --color-pf-pink: var(--pf-pink);
+  --color-pf-blue: var(--pf-blue);
+  --color-pf-mint: var(--pf-mint);
+  --color-pf-amber: var(--pf-amber);
+  --color-pf-red: var(--pf-red);
 }
 
 /* Noto Sans CJK subset (see src/lib/utils/cjkFont.ts): Windows' CJK fonts

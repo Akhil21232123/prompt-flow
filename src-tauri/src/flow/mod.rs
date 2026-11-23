@@ -31,6 +31,9 @@ pub enum FlowMode {
     Dictate,
     PromptEngineer,
     Command,
+    /// "This": Prompt Engineer with what's on screen. On-device (Private
+    /// mode) it runs as plain Prompt Engineer.
+    This,
 }
 
 /// Everything the output stage needs to know about one recording.
@@ -131,7 +134,7 @@ pub async fn run_special(
     let category = category_for(settings, app);
 
     let engineer = match input.mode {
-        FlowMode::PromptEngineer => true,
+        FlowMode::PromptEngineer | FlowMode::This => true,
         FlowMode::Dictate => should_auto_engineer(settings, category, transcript),
         FlowMode::Command => false,
     };

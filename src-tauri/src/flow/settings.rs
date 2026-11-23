@@ -357,6 +357,31 @@ pub struct FlowSettings {
     /// The instruction behind StylePreset::Custom.
     #[serde(default)]
     pub custom_style: String,
+    /// Run everything on this Mac (local Whisper and a local model) instead
+    /// of the PromptFlow cloud. Off by default: signed-in users use the cloud.
+    #[serde(default)]
+    pub private_mode: bool,
+    /// The language the user speaks: a code from `SPOKEN_LANGUAGES`, or "auto".
+    #[serde(default = "default_spoken_language")]
+    pub spoken_language: String,
+    /// Prompts come out in English whatever language was spoken.
+    #[serde(default = "default_true")]
+    pub prompts_in_english: bool,
+    /// A vague Prompt Engineer request may get one quick question first.
+    #[serde(default = "default_true")]
+    pub ask_back: bool,
+    /// PromptFlow remembers durable facts and adds the relevant ones to prompts.
+    #[serde(default = "default_true")]
+    pub memory_enabled: bool,
+}
+
+/// Languages the cloud understands, plus "auto".
+pub const SPOKEN_LANGUAGES: &[&str] = &[
+    "en", "hi", "te", "ta", "kn", "ml", "mr", "bn", "gu", "pa", "ur", "auto",
+];
+
+fn default_spoken_language() -> String {
+    "en".to_string()
 }
 
 impl Default for FlowSettings {
@@ -374,6 +399,11 @@ impl Default for FlowSettings {
             local_ai_defaults_applied: false,
             style_preset: None,
             custom_style: String::new(),
+            private_mode: false,
+            spoken_language: default_spoken_language(),
+            prompts_in_english: true,
+            ask_back: true,
+            memory_enabled: true,
         }
     }
 }

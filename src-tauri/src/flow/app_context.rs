@@ -45,14 +45,49 @@ impl AppContext {
 // ---------------------------------------------------------------------------
 
 static PENDING: Mutex<Option<JoinHandle<Option<AppContext>>>> = Mutex::new(None);
+/// The latest capture's result, readable without taking it.
+static LATEST: Mutex<Option<AppContext>> = Mutex::new(None);
 
 /// Start detecting the frontmost app. Call when recording starts, while the
 /// user's target app is still in front.
 pub fn begin_capture() {
-    let handle = std::thread::spawn(detect_frontmost);
+    if let Ok(mut latest) = LATEST.lock() {
+        *latest = None;
+    }
+    let handle = std::thread::spawn(|| {
+        let ctx = detect_frontmost();
+        if let Ok(mut latest) = LATEST.lock() {
+            latest.clone_from(&ctx);
+        }
+        ctx
+    });
     if let Ok(mut pending) = PENDING.lock() {
         *pending = Some(handle);
     }
+}
+
+/// The captured app's name, waiting up to `wait` for detection to finish,
+/// without taking the capture.
+pub fn peek_name(wait: std::time::Duration) -> Option<String> {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if let Some(name) = LATEST
+            .lock()
+            .ok()
+            .and_then(|l| l.as_ref().and_then(|c| c.app_name.clone()))
+        {
+            return Some(name);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(40));
+    }
+}
+
+/// Detects the frontmost app now, on the calling thread.
+pub fn detect_now() -> Option<AppContext> {
+    detect_frontmost().filter(|ctx| !ctx.is_empty())
 }
 
 /// The app captured by the last `begin_capture`, waiting for it if needed.

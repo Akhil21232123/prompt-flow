@@ -34,6 +34,7 @@ import {
 import { formatDateTime } from "@/utils/dateFormat";
 import { AudioPlayer, AudioPlayerGroup } from "../../ui/AudioPlayer";
 import { Button } from "../../ui/Button";
+import { useSettings } from "../../../hooks/useSettings";
 import { copyToClipboard } from "./clipboard";
 import {
   pickAndTranscribeFiles,
@@ -126,6 +127,8 @@ const HeaderButton: React.FC<HeaderButtonProps> = ({
 
 export const HistorySettings: React.FC = () => {
   const { t } = useTranslation();
+  // Re-transcribing and reading files use the on-device model.
+  const privateMode = useSettings().getSetting("flow")?.private_mode ?? false;
   const osType = useOsType();
   const jobs = useTranscriptionJobsStore((state) => state.jobs);
   const reads = useFileReadsStore((state) => state.reads);
@@ -334,7 +337,11 @@ export const HistorySettings: React.FC = () => {
                 onCopyText={() => copyToClipboard(entry.transcription_text)}
                 getAudioUrl={getAudioUrl}
                 deleteAudio={deleteAudioEntry}
-                retryTranscription={commands.retryHistoryEntryTranscription}
+                retryTranscription={
+                  privateMode
+                    ? commands.retryHistoryEntryTranscription
+                    : undefined
+                }
                 cancelTranscription={commands.cancelHistoryEntryTranscription}
               />
             ))}
@@ -356,11 +363,13 @@ export const HistorySettings: React.FC = () => {
             </h2>
           </div>
           <div className="flex items-center gap-2">
-            <HeaderButton
-              onClick={transcribeFile}
-              label={t("settings.history.transcribeFile")}
-              icon={FilePlus}
-            />
+            {privateMode && (
+              <HeaderButton
+                onClick={transcribeFile}
+                label={t("settings.history.transcribeFile")}
+                icon={FilePlus}
+              />
+            )}
             <HeaderButton
               onClick={openRecordingsFolder}
               label={t("settings.history.openFolder")}
@@ -383,7 +392,8 @@ interface HistoryEntryProps {
   onCopyText: () => Promise<boolean>;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
-  retryTranscription: (id: number) => Promise<void>;
+  /** Absent outside Private mode: there's no local model to re-run. */
+  retryTranscription?: (id: number) => Promise<void>;
   cancelTranscription: (id: number) => Promise<void>;
 }
 
@@ -518,12 +528,14 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
               <X width={16} height={16} />
             </IconButton>
           ) : (
-            <IconButton
-              onClick={() => retryTranscription(entry.id)}
-              title={t("settings.history.retranscribe")}
-            >
-              <RotateCcw width={16} height={16} />
-            </IconButton>
+            retryTranscription && (
+              <IconButton
+                onClick={() => retryTranscription(entry.id)}
+                title={t("settings.history.retranscribe")}
+              >
+                <RotateCcw width={16} height={16} />
+              </IconButton>
+            )
           )}
           <IconButton
             onClick={handleDeleteEntry}
