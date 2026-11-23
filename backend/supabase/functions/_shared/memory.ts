@@ -162,11 +162,7 @@ export function relevantMemories(
   const said = new Set(contentWords(transcript).filter((w) => !GENERIC.has(w)));
   // "my backend", "our app": the user's own project, so what memory knows
   // about their projects and stack is on topic.
-  const ownProject = [
-    ...lower.matchAll(/\b(?:my|our)\s+(?:\p{L}+\s+)?([\p{L}-]{3,})/gu),
-  ].some((m) => PROJECT_NOUNS.has(m[1]));
-  // A bio, a resume, "about me": who they are is the point.
-  const aboutMe = ABOUT_ME.test(lower);
+  const { ownProject, aboutMe } = ownContext(lower);
   return memories.filter((m) => {
     if (m.pinned && m.kind === "preference") return true;
     if (aboutMe && m.kind !== "preference") return true;
@@ -182,6 +178,42 @@ export function relevantMemories(
     );
   });
 }
+
+/** Does the request point at the user's own project, or at the user? */
+export function ownContext(transcript: string): {
+  ownProject: boolean;
+  aboutMe: boolean;
+} {
+  const lower = transcript.toLowerCase();
+  return {
+    ownProject: [
+      ...lower.matchAll(/\b(?:my|our)\s+(?:\p{L}+\s+)?([\p{L}-]{3,})/gu),
+    ].some((m) => PROJECT_NOUNS.has(m[1])),
+    // A bio, a resume, "about me": who they are is the point.
+    aboutMe: ABOUT_ME.test(lower),
+  };
+}
+
+/**
+ * Extra memory searches for requests about the user's own project or the
+ * user: their stack and role rarely share a word with "write a readme for
+ * my backend", so a word search alone never finds them.
+ */
+export function memorySearches(transcript: string): string[] {
+  const { ownProject, aboutMe } = ownContext(transcript);
+  const out: string[] = [];
+  if (ownProject) out.push(STACK_WORDS.join(" "));
+  if (aboutMe)
+    out.push(
+      "I am work works job role founder director engineer developer designer student manager company",
+    );
+  return out;
+}
+
+const STACK_WORDS =
+  "python typescript javascript node react nextjs vue svelte swift swiftui kotlin java golang rust flutter dart django flask fastapi rails ruby php laravel supabase firebase postgres mysql mongodb redis aws gcp azure vercel tauri electron docker kubernetes".split(
+    " ",
+  );
 
 const PROJECT_NOUNS = new Set(
   "app apps project projects backend frontend website site startup company brand product products code codebase repo service api business store".split(

@@ -118,3 +118,22 @@ describe("'my project' brings in only on-topic project memories", () => {
     ).toEqual([STACK]);
   });
 });
+
+describe("near-duplicates in different words", () => {
+  test("'automatic selection' and 'automatically selects' are one point", () => {
+    const p = dedupeParts({
+      task: "t",
+      context: "",
+      requirements: [
+        "Implement automatic selection of prompt-engineer or formal mode according to the existing prompt flow logic.",
+      ],
+      output_format: "",
+      acceptance_criteria: [
+        "The app automatically selects the appropriate prompt style (prompt-engineer or formal) based on the prompt flow.",
+      ],
+      examples: [],
+      prose: "",
+    });
+    expect(p.acceptance_criteria).toEqual([]);
+  });
+});

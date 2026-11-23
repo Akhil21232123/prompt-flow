@@ -106,6 +106,8 @@ def main():
             t = r.get("text", "") or ""
             low = t.lower()
             print(f"\n===== {cid} [{r.get('mode')}] {r.get('label')!r} {r['_ms']} ms =====")
+            if r.get("guarded"):
+                print(f"(guard flagged: {r['guarded']})")
             if r.get("fallback_reason"):
                 print(f"(fell back: {r['fallback_reason']})")
             print(t)

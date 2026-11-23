@@ -30,7 +30,7 @@ import {
   PLAN,
   wavSeconds,
 } from "./limits.ts";
-import { extractMemories } from "./memory.ts";
+import { extractMemories, memorySearches } from "./memory.ts";
 import { classify, isAiTarget } from "./categories.ts";
 import {
   MIN_PROMPT_WORDS,
@@ -381,7 +381,12 @@ async function memoriesFor(
   // Plain dictation is only cleaned up, so it never needs memory.
   if (plannedMode(request, user) === "dictate") return [];
   const query = [request.text, request.clarification?.answer ?? ""].join(" ");
-  return db.findMemories(query, RELEVANT_MEMORIES);
+  const lists = await Promise.all([
+    db.findMemories(query, RELEVANT_MEMORIES),
+    ...memorySearches(request.text).map((q) => db.findMemories(q, 4)),
+  ]);
+  const seen = new Set<string>();
+  return lists.flat().filter((m) => !seen.has(m.id) && seen.add(m.id));
 }
 
 function finished(

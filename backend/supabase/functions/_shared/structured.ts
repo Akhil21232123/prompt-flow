@@ -119,9 +119,10 @@ function partsFrom(o: Record<string, unknown>): PromptParts | undefined {
 
 const norm = (t: string) =>
   new Set(
-    (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
-      (w) => w.length > 2,
-    ),
+    (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+      .filter((w) => w.length > 2)
+      // A crude stem, so "automatic" and "automatically" count as one word.
+      .map((w) => w.slice(0, 5)),
   );
 
 /** How much of the shorter line's words the other line also has (0..1). */
@@ -142,7 +143,7 @@ function overlap(a: string, b: string): number {
 export function dedupeParts(p: PromptParts): PromptParts {
   const kept: string[] = [];
   for (const r of p.requirements)
-    if (!kept.some((k) => overlap(k, r) >= 0.8)) kept.push(r);
+    if (!kept.some((k) => overlap(k, r) >= 0.75)) kept.push(r);
   const criteria: string[] = [];
   for (const c of p.acceptance_criteria)
     if (
