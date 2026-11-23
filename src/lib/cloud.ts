@@ -9,6 +9,8 @@ export const apiErrorMessage = (t: TFunction, e: unknown): string => {
   switch (err?.code) {
     case "network":
       return t("cloud.errors.network");
+    case "timeout":
+      return t("cloud.errors.timeout");
     case "rate_limited":
       return err.retry_after_sec
         ? t("cloud.errors.rateLimitedFor", { seconds: err.retry_after_sec })

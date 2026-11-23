@@ -1144,6 +1144,11 @@ impl ShortcutAction for TranscribeAction {
                                                     });
                                                     (TranscriptionOutcome::Typed, notice)
                                                 }
+                                                // Pasting is off: the user chose
+                                                // to paste themselves.
+                                                Ok(utils::PasteOutcome::NotPasted) => {
+                                                    (TranscriptionOutcome::Typed, None)
+                                                }
                                                 Ok(utils::PasteOutcome::Blocked) => (
                                                     TranscriptionOutcome::Failed,
                                                     Some(Notice::new(

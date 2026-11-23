@@ -6,10 +6,12 @@ import {
   Copy,
   History as HistoryIcon,
   Loader2,
+  RotateCw,
   Search,
+  Trash2,
 } from "lucide-react";
 import { commands } from "@/bindings";
-import type { CloudDictation } from "@/bindings";
+import type { CloudDictation, PendingDictation } from "@/bindings";
 import { apiErrorMessage, useAccount } from "@/lib/cloud";
 import { copyToClipboard } from "../history/clipboard";
 import { PfBadge, PfPage } from "./ui";
@@ -26,6 +28,14 @@ export const CloudHistory: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const request = useRef(0);
+  const [pending, setPending] = useState<PendingDictation[]>([]);
+  const loadPending = useCallback(
+    () => commands.outboxList().then(setPending),
+    [],
+  );
+  useEffect(() => {
+    void loadPending();
+  }, [loadPending]);
 
   const load = useCallback(
     async (q: string, offset: number) => {
@@ -85,6 +95,21 @@ export const CloudHistory: React.FC = () => {
               className="flex-1 bg-transparent py-2.5 text-[14px] text-pf-text outline-none placeholder:text-pf-muted/70"
             />
           </div>
+          {pending.length > 0 && !query && (
+            <div className="pf-card divide-y divide-pf-border border-pf-amber/30">
+              {pending.map((p) => (
+                <PendingRow
+                  key={p.id}
+                  item={p}
+                  when={when(new Date(p.created_at * 1000).toISOString())}
+                  onDone={() => {
+                    void loadPending();
+                    void load(query, 0);
+                  }}
+                />
+              ))}
+            </div>
+          )}
           {error && (
             <p
               role="alert"
@@ -205,6 +230,69 @@ const Row: React.FC<{ row: CloudDictation; when: string }> = ({
           <ClipboardPaste size={15} />
         </button>
       </div>
+    </div>
+  );
+};
+
+/** A recording that couldn't be sent: Retry or Delete. */
+const PendingRow: React.FC<{
+  item: PendingDictation;
+  when: string;
+  onDone: () => void;
+}> = ({ item, when, onDone }) => {
+  const { t } = useTranslation();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const retry = async () => {
+    setBusy(true);
+    setError(null);
+    const r = await commands.outboxRetry(item.id);
+    setBusy(false);
+    if (r.status === "ok") onDone();
+    else setError(apiErrorMessage(t, r.error));
+  };
+  return (
+    <div className="px-4 py-3 flex items-center gap-3">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <PfBadge tone="amber">{t("cloudHistory.notSent")}</PfBadge>
+          <PfBadge tone={item.mode === "engineer" ? "blue" : "violet"}>
+            {t(`cloudHistory.mode.${item.mode}`, item.mode)}
+          </PfBadge>
+          {item.app_name && <PfBadge>{item.app_name}</PfBadge>}
+          <span className="text-[11.5px] text-pf-muted">{when}</span>
+        </div>
+        <p className="text-[12.5px] text-pf-muted mt-1">
+          {error ??
+            t("cloudHistory.notSentBody", {
+              seconds: Math.max(1, Math.round(item.duration_sec)),
+            })}
+        </p>
+      </div>
+      <button
+        className="pf-button-secondary"
+        disabled={busy}
+        onClick={() => void retry()}
+      >
+        {busy ? (
+          <Loader2 size={14} className="animate-spin" />
+        ) : (
+          <RotateCw size={14} />
+        )}
+        {t("cloudHistory.retry")}
+      </button>
+      <button
+        className="w-8 h-8 rounded-lg flex items-center justify-center text-pf-muted hover:text-pf-red hover:bg-pf-surface-2 cursor-pointer"
+        title={t("common.delete")}
+        aria-label={t("common.delete")}
+        disabled={busy}
+        onClick={async () => {
+          await commands.outboxDelete(item.id);
+          onDone();
+        }}
+      >
+        <Trash2 size={15} />
+      </button>
     </div>
   );
 };

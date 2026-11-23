@@ -130,6 +130,16 @@ impl Gesture {
         }
     }
 
+    /// What the keyboard says about Fn right now, from any event: a release
+    /// the tap missed (it was briefly disabled, or the up event was lost)
+    /// still ends the press.
+    pub fn on_fn_state(&mut self, now: Instant, down: bool) -> Option<Action> {
+        if down || self.state == State::Idle {
+            return None;
+        }
+        self.on_fn_up(now)
+    }
+
     /// Another key went down: Fn is part of a chord, not a talk press.
     pub fn on_other_key(&mut self) -> Option<Action> {
         self.last_tap = None;
@@ -271,6 +281,8 @@ mod platform {
     const OTHER_MODIFIERS: u64 = 0x0002_0000 | 0x0008_0000 | 0x0010_0000;
     const FIELD_KEYCODE: u32 = 9;
     const KEYCODE_FN: i64 = 63;
+    /// kCGEventSourceStateCombinedSessionState.
+    const COMBINED_SESSION_STATE: i32 = 0;
 
     #[link(name = "ApplicationServices", kind = "framework")]
     extern "C" {
@@ -285,6 +297,7 @@ mod platform {
         fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
         fn CGEventGetFlags(event: CGEventRef) -> u64;
         fn CGEventGetIntegerValueField(event: CGEventRef, field: u32) -> i64;
+        fn CGEventSourceFlagsState(state_id: i32) -> u64;
     }
 
     #[link(name = "CoreFoundation", kind = "framework")]
@@ -314,9 +327,19 @@ mod platform {
         APP.get().is_some_and(|app| get_settings(app).flow.fn_key)
     }
 
-    fn with_gesture<T>(f: impl FnOnce(&mut Gesture) -> T) -> T {
+    /// Updates the gesture and carries out what it decided while still
+    /// holding the lock, so a Start and the Stop that follows it always
+    /// reach the coordinator in that order (queuing them doesn't block).
+    fn step(f: impl FnOnce(&mut Gesture) -> Option<Action>) {
         let mut g = GESTURE.lock().unwrap_or_else(|e| e.into_inner());
-        f(g.get_or_insert_with(Gesture::default))
+        if let Some(action) = f(g.get_or_insert_with(Gesture::default)) {
+            run(action);
+        }
+    }
+
+    /// Whether Fn is held right now, asked of the keyboard state itself.
+    fn fn_held_now() -> bool {
+        unsafe { CGEventSourceFlagsState(COMBINED_SESSION_STATE) & FLAG_FN != 0 }
     }
 
     fn run(action: Action) {
@@ -327,9 +350,16 @@ mod platform {
             Action::ScheduleStart { generation, .. } => {
                 std::thread::spawn(move || {
                     std::thread::sleep(START_DELAY);
-                    if let Some(next) = with_gesture(|g| g.on_timer(generation)) {
-                        run(next);
-                    }
+                    let held = fn_held_now();
+                    step(|g| {
+                        // Released in the meantime without our seeing it:
+                        // it was a tap, not a talk press.
+                        if !held {
+                            FN_DOWN.store(false, Ordering::Relaxed);
+                            return g.on_fn_state(Instant::now(), false);
+                        }
+                        g.on_timer(generation)
+                    });
                 });
             }
             Action::Start(mode) => send(&app, mode, true),
@@ -368,41 +398,45 @@ mod platform {
             if !tap.is_null() {
                 unsafe { CGEventTapEnable(tap, true) };
             }
+            // Events were missed while the tap was off: if Fn came up
+            // meanwhile, end the press now.
+            if !fn_held_now() && FN_DOWN.swap(false, Ordering::Relaxed) {
+                step(|g| g.on_fn_state(Instant::now(), false));
+            }
             return event;
         }
         if event.is_null() || crate::cloud::is_paused() {
             return event;
         }
         let now = Instant::now();
-        let action = match kind {
+        match kind {
             FLAGS_CHANGED => {
                 let flags = unsafe { CGEventGetFlags(event) };
                 let keycode = unsafe { CGEventGetIntegerValueField(event, FIELD_KEYCODE) };
+                let fn_down = flags & FLAG_FN != 0;
                 if keycode == KEYCODE_FN {
-                    let fn_down = flags & FLAG_FN != 0;
                     let was_down = FN_DOWN.swap(fn_down, Ordering::Relaxed);
                     // The setting is read only here, on Fn itself, never on
                     // ordinary typing.
                     if fn_down && !was_down && enabled() {
-                        with_gesture(|g| g.on_fn_down(now, flags & FLAG_CONTROL != 0))
+                        step(|g| g.on_fn_down(now, flags & FLAG_CONTROL != 0));
                     } else if !fn_down && was_down {
-                        with_gesture(|g| g.on_fn_up(now))
-                    } else {
-                        None
+                        step(|g| g.on_fn_up(now));
                     }
-                } else if FN_DOWN.load(Ordering::Relaxed) && flags & OTHER_MODIFIERS != 0 {
-                    // Shift, Option or Command with Fn is a shortcut, not a
-                    // talk press. Control joining in is fine (Fn+Control).
-                    with_gesture(|g| g.on_other_key())
-                } else {
-                    None
+                } else if FN_DOWN.load(Ordering::Relaxed) {
+                    if !fn_down {
+                        // Fn's own release was missed; this event says it's up.
+                        FN_DOWN.store(false, Ordering::Relaxed);
+                        step(|g| g.on_fn_state(now, false));
+                    } else if flags & OTHER_MODIFIERS != 0 {
+                        // Shift, Option or Command with Fn is a shortcut, not a
+                        // talk press. Control joining in is fine (Fn+Control).
+                        step(|g| g.on_other_key());
+                    }
                 }
             }
-            KEY_DOWN if FN_DOWN.load(Ordering::Relaxed) => with_gesture(|g| g.on_other_key()),
-            _ => None,
-        };
-        if let Some(action) = action {
-            run(action);
+            KEY_DOWN if FN_DOWN.load(Ordering::Relaxed) => step(|g| g.on_other_key()),
+            _ => {}
         }
         event
     }
@@ -542,6 +576,35 @@ mod tests {
         g.on_timer(generation);
         assert_eq!(g.on_other_key(), Some(Action::Cancel));
         assert_eq!(g.on_fn_up(ms(t, 3000)), None);
+    }
+
+    #[test]
+    fn a_missed_release_still_ends_the_press() {
+        let t = Instant::now();
+        let mut g = Gesture::default();
+        let Some(Action::ScheduleStart { generation, .. }) = g.on_fn_down(t, false) else {
+            panic!();
+        };
+        g.on_timer(generation);
+        assert_eq!(g.on_fn_state(ms(t, 1500), true), None);
+        assert_eq!(
+            g.on_fn_state(ms(t, 1600), false),
+            Some(Action::Stop(FnMode::Write))
+        );
+        // Nothing to end when idle.
+        assert_eq!(g.on_fn_state(ms(t, 1700), false), None);
+    }
+
+    #[test]
+    fn a_release_before_the_start_never_records() {
+        // The start timer finds Fn up: treated as the release it was.
+        let t = Instant::now();
+        let mut g = Gesture::default();
+        let Some(Action::ScheduleStart { generation, .. }) = g.on_fn_down(t, false) else {
+            panic!();
+        };
+        assert_eq!(g.on_fn_up(ms(t, 150)), None);
+        assert_eq!(g.on_timer(generation), None);
     }
 
     #[test]

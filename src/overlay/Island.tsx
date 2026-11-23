@@ -582,7 +582,7 @@ const Island: React.FC = () => {
             </button>
           ))}
           <span className="i-spacer" />
-          {view.pasted && (
+          {view.pasted && !view.sent && (
             <button
               className="i-btn ghost"
               aria-label={t("island.done.undo")}
@@ -655,7 +655,9 @@ const Island: React.FC = () => {
               <span className="i-eyebrow">{label}</span>
               {!view.pasted && (
                 <span className="i-hint-inline">
-                  {t("island.done.onClipboard")}
+                  {view.sent
+                    ? t("island.done.alreadySent")
+                    : t("island.done.onClipboard")}
                 </span>
               )}
               <span className="i-spacer" />
@@ -761,18 +763,22 @@ const Island: React.FC = () => {
             <div className="i-title-row">
               {!notch && icon}
               <span className="i-eyebrow">
-                {retry ? t("island.retry.title") : title}
+                {retry && view.error !== "timeout"
+                  ? t("island.retry.title")
+                  : title}
               </span>
               <span className="i-spacer" />
               {!notch && close}
             </div>
             <p className="i-preview muted">
               {retry
-                ? retryIn !== null && retryIn > 0
-                  ? t("island.retry.inSeconds", { seconds: retryIn })
-                  : retry.next_in_sec === null
-                    ? t("island.retry.gaveUp")
-                    : t("island.retry.trying")
+                ? view.error === "timeout"
+                  ? t("island.retry.manual")
+                  : retryIn !== null && retryIn > 0
+                    ? t("island.retry.inSeconds", { seconds: retryIn })
+                    : retry.next_in_sec === null
+                      ? t("island.retry.gaveUp")
+                      : t("island.retry.trying")
                 : view.message &&
                     (view.error === "server" ||
                       view.error === "provider" ||

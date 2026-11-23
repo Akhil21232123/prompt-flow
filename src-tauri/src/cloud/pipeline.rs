@@ -5,9 +5,10 @@
 use super::api::{ApiError, ErrorCode};
 use super::context::{self, Captured};
 use super::dictate::{
-    self, ClarifyAnswer, CloudMode, DictateMeta, DictateOutcome, Finished, MetaApp, MetaInput,
-    MetaScreen, ScreenSource,
+    self, ClarifyAnswer, CloudMode, DictateOutcome, Finished, MetaApp, MetaInput, MetaScreen,
+    ScreenSource,
 };
+use super::outbox;
 use crate::flow::app_context::AppContext;
 use crate::flow::settings::StylePreset;
 use crate::flow::FlowMode;
@@ -49,23 +50,23 @@ struct LastResult {
     /// The app it was pasted into; Undo and redos only send ⌘Z there.
     bundle: Option<String>,
     pasted: bool,
+    /// The paste also pressed Return (auto-submit): the text is already sent,
+    /// so it can't be undone or replaced.
+    submitted: bool,
     /// For feedback.
     dictation_id: Option<String>,
     label: Option<String>,
 }
 
-/// A recording whose request failed for a reason that may pass.
+/// The kept recording the island is offering to retry. Its audio and meta
+/// are in the outbox.
 struct PendingRetry {
     island_id: u64,
+    request_id: String,
     attempt: u32,
-    meta: DictateMeta,
-    wav: Arc<Vec<u8>>,
-    samples: Arc<Vec<f32>>,
-    mode: FlowMode,
-    input: MetaInput,
-    target: Option<String>,
-    history: Option<(Arc<HistoryManager>, String)>,
-    sample_count: usize,
+    /// Retry by itself (network and server errors), or only when asked
+    /// (a timeout: the server may still be finishing the first try).
+    auto: bool,
 }
 
 /// The last prompt PromptFlow wrote, for Autopilot to check answers against.
@@ -129,7 +130,17 @@ pub fn island_error(e: &ApiError) -> IslandError {
         ErrorCode::RateLimited => IslandError::RateLimited,
         ErrorCode::Quota => IslandError::Quota,
         ErrorCode::Network => IslandError::Network,
+        ErrorCode::Timeout => IslandError::Timeout,
         ErrorCode::Server => IslandError::Server,
+    }
+}
+
+/// Forgets the retry the island was offering (its recording stays in the
+/// outbox and History). `Some(id)`: only if view `id` was offering it.
+pub fn clear_retry(id: Option<u64>) {
+    let mut p = lock(&PENDING_RETRY);
+    if id.is_none() || p.as_ref().map(|r| r.island_id) == id {
+        *p = None;
     }
 }
 
@@ -175,6 +186,9 @@ pub fn show_error(app: &AppHandle, error: IslandError) {
 /// question on screen, starts reading the screen, and shows the island.
 pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
     let settings = get_settings(app);
+    // A new recording takes over the island: an offered retry stops (the
+    // failed one waits in History).
+    clear_retry(None);
     let answering = {
         let mut pending = lock(&PENDING_ASK);
         let (id, view) = island::current();
@@ -366,9 +380,11 @@ where
             None,
         ),
     };
-    let meta = dictate::build_meta(cloud_mode(mode), &settings.flow, input.clone(), clarify);
+    let mut meta = dictate::build_meta(cloud_mode(mode), &settings.flow, input.clone(), clarify);
+    let request_id = dictate::new_request_id();
+    meta.request_id = Some(request_id.clone());
+    let meta_json = serde_json::to_string(&meta).unwrap_or_default();
     let wav = Arc::new(dictate::encode_wav(&rec.samples));
-    let kept_samples = Arc::new(rec.samples.clone());
 
     // History keeps the audio, like the on-device pipeline.
     let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
@@ -379,7 +395,7 @@ where
         crate::audio_toolkit::save_wav_file(&wav_path, &samples).is_ok()
     });
 
-    let result = dictate::send(app, &meta, Some(wav.as_slice())).await;
+    let result = dictate::send_json(app, &meta_json, Some(wav.as_slice())).await;
     let wav_saved = wav_saved.await.unwrap_or(false);
     if cancelled() {
         island::hide(app);
@@ -387,6 +403,9 @@ where
         return;
     }
     let history = wav_saved.then_some((hm, file_name));
+    let input_app_name = input.app.name.clone();
+    let input_bundle = input.app.bundle_id.clone();
+    let target_for_retry = target.clone();
     handle_outcome(
         app,
         result,
@@ -400,10 +419,19 @@ where
             stop_time: rec.stop_time,
             retry: Some(RetryPayload {
                 attempt: 1,
-                meta,
+                item: outbox::OutboxItem {
+                    id: request_id,
+                    created_at: chrono::Utc::now().timestamp(),
+                    mode: cloud_mode(mode).as_str().to_string(),
+                    meta_json,
+                    app_name: input_app_name.clone(),
+                    bundle_id: input_bundle.clone(),
+                    target: target_for_retry,
+                    duration_sec: duration,
+                },
                 wav,
-                samples: kept_samples,
             }),
+            verify_front: false,
         },
     )
     .await;
@@ -458,14 +486,16 @@ struct HandleContext {
     stop_time: Instant,
     /// The request, kept to retry it if it fails for a reason that may pass.
     retry: Option<RetryPayload>,
+    /// The result may arrive long after the recording (a retry): paste only
+    /// into the app it was recorded in, and only if the island is still ours.
+    verify_front: bool,
 }
 
 struct RetryPayload {
     /// This request's try number.
     attempt: u32,
-    meta: DictateMeta,
+    item: outbox::OutboxItem,
     wav: Arc<Vec<u8>>,
-    samples: Arc<Vec<f32>>,
 }
 
 async fn handle_outcome(
@@ -477,6 +507,10 @@ async fn handle_outcome(
     let owns_ui = || island::current_id() == ctx.working_id;
     match result {
         Ok(DictateOutcome::Done(finished)) => {
+            // Sent: it no longer waits in the outbox.
+            if let Some(payload) = &ctx.retry {
+                outbox::remove(app, &payload.item.id);
+            }
             if let Some((hm, file_name)) = &ctx.history {
                 if let Err(e) = hm.save_entry(
                     file_name.clone(),
@@ -498,12 +532,16 @@ async fn handle_outcome(
                     working_id: ctx.working_id,
                     sample_count: ctx.sample_count,
                     stop_time: ctx.stop_time,
+                    verify_front: ctx.verify_front,
                 },
             )
             .await;
         }
         Ok(DictateOutcome::Dropped { reason }) => {
             log::info!("Nothing to paste ({reason})");
+            if let Some(payload) = &ctx.retry {
+                outbox::remove(app, &payload.item.id);
+            }
             if owns_ui() {
                 show_error(app, IslandError::NothingHeard);
             }
@@ -516,6 +554,9 @@ async fn handle_outcome(
             );
         }
         Ok(DictateOutcome::Ask(clarify)) => {
+            if let Some(payload) = &ctx.retry {
+                outbox::remove(app, &payload.item.id);
+            }
             set_tray_state(app, TrayIconState::Idle);
             if !owns_ui() {
                 return;
@@ -550,39 +591,49 @@ async fn handle_outcome(
             if !owns_ui() {
                 return;
             }
-            match ctx.retry {
-                // Never lose what was said: keep it and try again.
-                Some(payload) if retryable(&e) => {
+            match (ctx.retry, retry_policy(&e)) {
+                // Never lose what was said: keep it on disk and try again.
+                (Some(payload), Some(auto)) => {
                     log::warn!("PromptFlow request failed ({e}); keeping the recording to retry");
+                    if let Err(err) = outbox::save(app, &payload.item, &payload.wav) {
+                        log::error!("Could not keep the recording: {err}");
+                        show_api_error(app, &e);
+                        return;
+                    }
                     offer_retry(
                         app,
                         &e,
                         PendingRetry {
                             island_id: 0,
+                            request_id: payload.item.id,
                             attempt: payload.attempt,
-                            meta: payload.meta,
-                            wav: payload.wav,
-                            samples: payload.samples,
-                            mode: ctx.mode,
-                            input: ctx.input,
-                            target: ctx.target,
-                            history: ctx.history,
-                            sample_count: ctx.sample_count,
+                            auto,
                         },
                     );
                 }
-                _ => show_api_error(app, &e),
+                (Some(payload), None) => {
+                    // A request the server refused won't work next time
+                    // either; anything else (limits, sign-in) can wait.
+                    if e.code == ErrorCode::BadRequest {
+                        outbox::remove(app, &payload.item.id);
+                    }
+                    show_api_error(app, &e);
+                }
+                (None, _) => show_api_error(app, &e),
             }
         }
     }
 }
 
-/// Failures that may pass by themselves: the network, the server, the AI.
-fn retryable(e: &ApiError) -> bool {
-    matches!(
-        e.code,
-        ErrorCode::Network | ErrorCode::Server | ErrorCode::Provider
-    )
+/// Whether a failed request is kept to retry, and whether PromptFlow retries
+/// it by itself (`Some(true)`) or only when asked (`Some(false)`: a timeout,
+/// where the server may still finish and save the first try).
+fn retry_policy(e: &ApiError) -> Option<bool> {
+    match e.code {
+        ErrorCode::Network | ErrorCode::Server | ErrorCode::Provider => Some(true),
+        ErrorCode::Timeout => Some(false),
+        _ => None,
+    }
 }
 
 /// Seconds before automatic retry `attempt + 1`, or `None` when PromptFlow
@@ -604,9 +655,14 @@ fn local_model_ready(app: &AppHandle) -> bool {
 }
 
 fn offer_retry(app: &AppHandle, e: &ApiError, mut pending: PendingRetry) {
-    let next = backoff(pending.attempt);
+    let next = if pending.auto {
+        backoff(pending.attempt)
+    } else {
+        None
+    };
     let error = match island_error(e) {
         IslandError::Network => IslandError::Network,
+        IslandError::Timeout => IslandError::Timeout,
         _ => IslandError::Server,
     };
     let island_id = island::show(
@@ -628,49 +684,86 @@ fn offer_retry(app: &AppHandle, e: &ApiError, mut pending: PendingRetry) {
         let app = app.clone();
         tauri::async_runtime::spawn(async move {
             tokio::time::sleep(Duration::from_secs(secs as u64)).await;
-            retry(&app, island_id).await;
+            // Only while the island still shows this retry: dismissed or
+            // replaced by a new recording, it waits in History instead.
+            if island::current_id() == island_id {
+                retry(&app, island_id).await;
+            }
         });
     }
 }
 
-/// Sends the kept recording shown in island view `id` again.
-pub async fn retry(app: &AppHandle, id: u64) {
+/// Takes the retry view `id` is offering, with its kept recording.
+fn take_retry(app: &AppHandle, id: u64) -> Option<(PendingRetry, outbox::OutboxItem, Vec<u8>)> {
     let pending = {
         let mut p = lock(&PENDING_RETRY);
         match p.as_ref() {
             Some(r) if r.island_id == id => p.take(),
             _ => None,
         }
+    }?;
+    let Some((item, wav)) = outbox::get(app, &pending.request_id) else {
+        // Deleted from History meanwhile.
+        island::dismiss(app, id);
+        return None;
     };
-    let Some(r) = pending else {
+    Some((pending, item, wav))
+}
+
+/// What a kept recording knows of where it was recorded.
+fn outbox_input(item: &outbox::OutboxItem) -> MetaInput {
+    MetaInput {
+        duration_sec: Some(item.duration_sec),
+        app: MetaApp {
+            name: item.app_name.clone(),
+            bundle_id: item.bundle_id.clone(),
+            ..Default::default()
+        },
+        ..Default::default()
+    }
+}
+
+fn outbox_mode(item: &outbox::OutboxItem) -> FlowMode {
+    match item.mode.as_str() {
+        "engineer" => FlowMode::PromptEngineer,
+        "command" => FlowMode::Command,
+        _ => FlowMode::Dictate,
+    }
+}
+
+/// Sends the kept recording shown in island view `id` again, with the same
+/// request id.
+pub async fn retry(app: &AppHandle, id: u64) {
+    let Some((pending, item, wav)) = take_retry(app, id) else {
         return;
     };
+    let mode = outbox_mode(&item);
     let working_id = island::show(
         app,
         IslandView::Working {
-            mode: island_mode(r.mode),
+            mode: island_mode(mode),
             step: IslandStep::Transcribing,
-            target: r.target.clone(),
+            target: item.target.clone(),
         },
     );
-    let result = dictate::send(app, &r.meta, Some(r.wav.as_slice())).await;
+    let result = dictate::send_json(app, &item.meta_json, Some(&wav)).await;
     handle_outcome(
         app,
         result,
         HandleContext {
-            mode: r.mode,
-            input: r.input,
-            target: r.target,
+            mode,
+            input: outbox_input(&item),
+            target: item.target.clone(),
             working_id,
-            history: r.history,
-            sample_count: r.sample_count,
+            history: None,
+            sample_count: (item.duration_sec * 16_000.0) as usize,
             stop_time: Instant::now(),
             retry: Some(RetryPayload {
-                attempt: r.attempt + 1,
-                meta: r.meta,
-                wav: r.wav,
-                samples: r.samples,
+                attempt: pending.attempt + 1,
+                item,
+                wav: Arc::new(wav),
             }),
+            verify_front: true,
         },
     )
     .await;
@@ -679,14 +772,7 @@ pub async fn retry(app: &AppHandle, id: u64) {
 /// Gives up on the cloud for the kept recording in view `id`: transcribes
 /// it on this Mac and pastes the words as heard.
 pub async fn paste_raw(app: &AppHandle, id: u64) {
-    let pending = {
-        let mut p = lock(&PENDING_RETRY);
-        match p.as_ref() {
-            Some(r) if r.island_id == id => p.take(),
-            _ => None,
-        }
-    };
-    let Some(r) = pending else {
+    let Some((_, item, wav)) = take_retry(app, id) else {
         return;
     };
     let working_id = island::show(
@@ -698,7 +784,8 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
         },
     );
     let handle = app.clone();
-    let samples = r.samples.as_ref().clone();
+    let samples = outbox::wav_samples(&wav);
+    let sample_count = samples.len();
     let model = get_settings(app).selected_model;
     let text = tauri::async_runtime::spawn_blocking(move || {
         let tm = handle.state::<Arc<crate::managers::transcription::TranscriptionManager>>();
@@ -714,6 +801,7 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
     .and_then(|r| r);
     match text {
         Ok(text) if !text.trim().is_empty() => {
+            outbox::remove(app, &item.id);
             let raw = text.trim().to_string();
             deliver(
                 app,
@@ -729,10 +817,11 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
                         memory_used: Vec::new(),
                         language: None,
                     },
-                    input: r.input,
+                    input: outbox_input(&item),
                     working_id,
-                    sample_count: r.sample_count,
+                    sample_count,
                     stop_time: Instant::now(),
+                    verify_front: true,
                 },
             )
             .await;
@@ -741,6 +830,34 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
         Err(e) => {
             log::warn!("On-device transcription failed: {e}");
             show_api_error(app, &ApiError::server(e));
+        }
+    }
+}
+
+/// History's "Retry" for a kept recording: sends it (never asking a
+/// question back) and returns the text, which also lands in History.
+pub async fn send_kept(app: &AppHandle, id: &str) -> Result<String, ApiError> {
+    let (item, wav) = outbox::get(app, id)
+        .ok_or_else(|| ApiError::new(ErrorCode::BadRequest, "That recording is gone"))?;
+    let mut meta: serde_json::Value =
+        serde_json::from_str(&item.meta_json).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(o) = meta.as_object_mut() {
+        o.insert("ask_back".into(), serde_json::json!(false));
+    }
+    match dictate::send_json(app, &meta.to_string(), Some(&wav)).await {
+        Ok(DictateOutcome::Done(f)) => {
+            outbox::remove(app, id);
+            Ok(f.text)
+        }
+        Ok(_) => {
+            outbox::remove(app, id);
+            Ok(String::new())
+        }
+        Err(e) => {
+            if e.code == ErrorCode::BadRequest {
+                outbox::remove(app, id);
+            }
+            Err(e)
         }
     }
 }
@@ -791,6 +908,9 @@ struct Delivery {
     working_id: u64,
     sample_count: usize,
     stop_time: Instant,
+    /// Paste only if the island is still ours and the recording's app is in
+    /// front; otherwise copy (a retried result can arrive much later).
+    verify_front: bool,
 }
 
 /// The redos offered after a result of `mode`.
@@ -811,6 +931,7 @@ async fn deliver(app: &AppHandle, d: Delivery) {
         working_id,
         sample_count,
         stop_time,
+        verify_front,
     } = d;
     let text = crate::transcription_hook::apply(app, finished.text.clone()).await;
     if text.trim().is_empty() {
@@ -826,7 +947,19 @@ async fn deliver(app: &AppHandle, d: Delivery) {
             app: finished.target.clone(),
         });
     }
-    let pasted = paste_blocking(app, text.clone(), false).await;
+    let may_paste = if verify_front {
+        let front = front_bundle().await;
+        island::current_id() == working_id
+            && same_app(input.app.bundle_id.as_deref(), front.as_deref())
+    } else {
+        true
+    };
+    let pasted = if may_paste {
+        paste_blocking(app, text.clone(), false).await
+    } else {
+        Err("a different app is in front now".to_string())
+    };
+    let submitted = pasted.is_ok() && crate::clipboard::cloud_paste_submits(app);
     set_tray_state(app, TrayIconState::Idle);
     crate::actions::emit_transcription_complete(
         app,
@@ -859,6 +992,7 @@ async fn deliver(app: &AppHandle, d: Delivery) {
             bundle: input.app.bundle_id.clone(),
             input,
             pasted: pasted_ok,
+            submitted,
             dictation_id: finished.id,
             label: finished.label,
         },
@@ -878,6 +1012,7 @@ fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::Mem
             label: result.label.clone(),
             memory,
             pasted: result.pasted,
+            sent: result.submitted,
             chips: if has_raw {
                 chips_for(result.mode)
             } else {
@@ -903,6 +1038,12 @@ async fn front_bundle() -> Option<String> {
 /// same app.
 fn same_app(pasted_into: Option<&str>, front: Option<&str>) -> bool {
     matches!((pasted_into, front), (Some(a), Some(b)) if a == b)
+}
+
+/// Whether a redo may ⌘Z the earlier paste and paste over it: it was
+/// pasted, not already sent with Return, and its app is still in front.
+fn redo_replaces(last: &LastResult, front: Option<&str>) -> bool {
+    last.pasted && !last.submitted && same_app(last.bundle.as_deref(), front)
 }
 
 /// A redo chip: the same words again, another way, replacing the paste.
@@ -956,9 +1097,10 @@ pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
         }
     };
     let text = finished.text.clone();
-    // Replace the paste only where it went; anywhere else, copy instead.
+    // Replace the paste only where it went, and only if it wasn't already
+    // sent with Return; otherwise copy instead.
     let front = front_bundle().await;
-    let replace = last.pasted && same_app(last.bundle.as_deref(), front.as_deref());
+    let replace = redo_replaces(&last, front.as_deref());
     let pasted = if replace {
         let handle = app.clone();
         let undone =
@@ -969,7 +1111,8 @@ pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
         match undone {
             Ok(()) => {
                 tokio::time::sleep(Duration::from_millis(150)).await;
-                paste_blocking(app, text.clone(), false).await.is_ok()
+                // A redo never presses Return: the user sends it.
+                paste_blocking(app, text.clone(), true).await.is_ok()
             }
             Err(e) => {
                 log::warn!("Undo before redo failed: {e}");
@@ -998,6 +1141,8 @@ pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
             input: last.input,
             bundle: last.bundle,
             pasted,
+            // An already-sent result stays "sent": its redo is on the clipboard.
+            submitted: last.submitted && !pasted,
             dictation_id: finished.id,
             label: finished.label,
         },
@@ -1012,6 +1157,9 @@ async fn paste_blocking(app: &AppHandle, text: String, never_submit: bool) -> Re
         let outcome = crate::clipboard::paste_cloud(text, handle, never_submit);
         match outcome {
             Ok(crate::clipboard::PasteOutcome::Pasted) => Ok(()),
+            Ok(crate::clipboard::PasteOutcome::NotPasted) => {
+                Err("pasting is turned off".to_string())
+            }
             Ok(crate::clipboard::PasteOutcome::Blocked) => {
                 Err("the window takes no input from PromptFlow".to_string())
             }
@@ -1079,6 +1227,7 @@ pub async fn answer(app: &AppHandle, id: u64, answer: Option<String>) {
             stop_time: Instant::now(),
             // A tapped answer has no recording to keep; it's quick to tap again.
             retry: None,
+            verify_front: false,
         },
     )
     .await;
@@ -1101,7 +1250,7 @@ pub fn undo(app: &AppHandle, id: u64) -> Result<(), String> {
     };
     island::dismiss(app, id);
     *lock(&LAST_RESULT) = None;
-    if !last.pasted {
+    if !last.pasted || last.submitted {
         return Ok(());
     }
     let handle = app.clone();
@@ -1268,6 +1417,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                     label: None,
                     memory: Vec::new(),
                     pasted: true,
+                    sent: false,
                     chips: Vec::new(),
                     rateable: false,
                 },
@@ -1280,6 +1430,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                 input: MetaInput::default(),
                 bundle: front_bundle().await,
                 pasted: true,
+                submitted: false,
                 dictation_id: None,
                 label: None,
             });
@@ -1363,10 +1514,13 @@ mod tests {
         assert_eq!(backoff(1), Some(3));
         assert_eq!(backoff(3), Some(20));
         assert_eq!(backoff(4), None);
-        assert!(retryable(&ApiError::new(ErrorCode::Network, "x")));
-        assert!(retryable(&ApiError::new(ErrorCode::Provider, "x")));
-        assert!(!retryable(&ApiError::new(ErrorCode::Quota, "x")));
-        assert!(!retryable(&ApiError::not_signed_in()));
+        let e = |code| ApiError::new(code, "x");
+        assert_eq!(retry_policy(&e(ErrorCode::Network)), Some(true));
+        assert_eq!(retry_policy(&e(ErrorCode::Provider)), Some(true));
+        // A timeout may still finish on the server: retried only when asked.
+        assert_eq!(retry_policy(&e(ErrorCode::Timeout)), Some(false));
+        assert_eq!(retry_policy(&e(ErrorCode::Quota)), None);
+        assert_eq!(retry_policy(&ApiError::not_signed_in()), None);
     }
 
     #[test]
@@ -1391,6 +1545,66 @@ mod tests {
     }
 
     #[test]
+    fn redo_never_replaces_a_sent_or_moved_paste() {
+        let mut last = LastResult {
+            island_id: 1,
+            text: "t".into(),
+            raw: "r".into(),
+            mode: FlowMode::Dictate,
+            input: MetaInput::default(),
+            bundle: Some("com.apple.Notes".into()),
+            pasted: true,
+            submitted: false,
+            dictation_id: None,
+            label: None,
+        };
+        assert!(redo_replaces(&last, Some("com.apple.Notes")));
+        assert!(!redo_replaces(&last, Some("com.apple.Safari")));
+        last.submitted = true;
+        assert!(!redo_replaces(&last, Some("com.apple.Notes")));
+        last.submitted = false;
+        last.pasted = false;
+        assert!(!redo_replaces(&last, Some("com.apple.Notes")));
+    }
+
+    #[test]
+    fn a_dismissed_or_replaced_retry_is_forgotten() {
+        let pending = |id| PendingRetry {
+            island_id: id,
+            request_id: "x".into(),
+            attempt: 1,
+            auto: true,
+        };
+        *lock(&PENDING_RETRY) = Some(pending(7));
+        clear_retry(Some(8));
+        assert!(lock(&PENDING_RETRY).is_some(), "another view's dismiss");
+        clear_retry(Some(7));
+        assert!(lock(&PENDING_RETRY).is_none());
+        *lock(&PENDING_RETRY) = Some(pending(9));
+        clear_retry(None);
+        assert!(lock(&PENDING_RETRY).is_none(), "a new recording");
+    }
+
+    #[test]
+    fn kept_recordings_know_their_app_and_mode() {
+        let item = outbox::OutboxItem {
+            id: "a".into(),
+            created_at: 0,
+            mode: "engineer".into(),
+            meta_json: "{}".into(),
+            app_name: Some("Claude".into()),
+            bundle_id: Some("com.anthropic.claudefordesktop".into()),
+            target: None,
+            duration_sec: 2.5,
+        };
+        assert_eq!(outbox_mode(&item), FlowMode::PromptEngineer);
+        assert_eq!(
+            outbox_input(&item).app.bundle_id.as_deref(),
+            Some("com.anthropic.claudefordesktop")
+        );
+    }
+
+    #[test]
     fn feedback_names_the_result() {
         let last = LastResult {
             island_id: 1,
@@ -1406,6 +1620,7 @@ mod tests {
             },
             bundle: Some("com.anthropic.claudefordesktop".into()),
             pasted: true,
+            submitted: false,
             dictation_id: Some("d1".into()),
             label: Some("Prompt · for Claude".into()),
         };

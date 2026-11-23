@@ -19,6 +19,7 @@ pub mod commands;
 pub mod context;
 pub mod dictate;
 pub mod ocr;
+pub mod outbox;
 pub mod pipeline;
 pub mod session;
 pub mod update;

@@ -882,6 +882,8 @@ fn should_send_auto_submit(auto_submit: bool, paste_method: PasteMethod) -> bool
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PasteOutcome {
     Pasted,
+    /// Pasting is turned off (paste method "None"): nothing was sent.
+    NotPasted,
     /// The focused window takes no input from Handy, so nothing arrived.
     Blocked,
 }
@@ -971,6 +973,13 @@ fn cloud_paste_settings(mut settings: AppSettings, never_submit: bool) -> AppSet
     settings
 }
 
+/// Whether a cloud paste also presses Return (auto-submit), so the text is
+/// sent as soon as it lands.
+pub fn cloud_paste_submits(app_handle: &AppHandle) -> bool {
+    let s = cloud_paste_settings(get_settings(app_handle), false);
+    should_send_auto_submit(s.auto_submit, s.paste_method)
+}
+
 /// How long a cloud paste leaves the text on the clipboard before restoring.
 const CLOUD_PASTE_RESTORE_MS: u64 = 450;
 
@@ -983,6 +992,9 @@ pub fn paste_cloud(
 ) -> Result<PasteOutcome, String> {
     let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
     let settings = cloud_paste_settings(get_settings(&app_handle), never_submit);
+    if settings.paste_method == PasteMethod::None {
+        return Ok(PasteOutcome::NotPasted);
+    }
     let blocked =
         sends_keys(settings.paste_method) && crate::utils::foreground_window_is_elevated();
     paste_as_configured(text, app_handle, settings)?;

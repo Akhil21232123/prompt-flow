@@ -1329,6 +1329,27 @@ async pasteAgain(text: string) : Promise<Result<null, string>> {
 }
 },
 /**
+ * Recordings that couldn't be sent, newest first.
+ */
+async outboxList() : Promise<PendingDictation[]> {
+    return await TAURI_INVOKE("outbox_list");
+},
+/**
+ * Sends a kept recording now. Returns what was written ("" if nothing
+ * was heard).
+ */
+async outboxRetry(id: string) : Promise<Result<string, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("outbox_retry", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async outboxDelete(id: string) : Promise<void> {
+    await TAURI_INVOKE("outbox_delete", { id });
+},
+/**
  * Opens the System Settings pane where the user allows `pane`.
  */
 async openPrivacySettings(pane: PrivacyPane) : Promise<Result<null, string>> {
@@ -1634,6 +1655,11 @@ export type ErrorCode =
  */
 "network" | 
 /**
+ * The server took too long to answer. It may still finish the work, so
+ * this is never retried automatically.
+ */
+"timeout" | 
+/**
  * Anything else the server got wrong.
  */
 "server"
@@ -1747,7 +1773,11 @@ export type IslandError = "sign_in" | "session_ended" | "nothing_heard" | "rate_
 /**
  * Paused from the menu bar.
  */
-"paused"
+"paused" | 
+/**
+ * The server took too long; it may still have finished.
+ */
+"timeout"
 export type IslandEvent = { id: number; view: IslandView; geometry: IslandGeometry }
 /**
  * Where the island sits, so the frontend can draw it into the notch.
@@ -1787,7 +1817,7 @@ export type IslandStep =
  * Autopilot is reading the answer.
  */
 "checking"
-export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; chips: Redo[]; rateable: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
 /**
  * A Handy notice from the on-device pipeline (Private mode).
  */
@@ -1958,6 +1988,10 @@ export type OverlayPosition = "top" | "bottom"
 export type OverlayStyle = "none" | "minimal" | "live"
 export type PaginatedHistory = { entries: HistoryEntry[]; has_more: boolean }
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v" | "external_script"
+/**
+ * What History shows for a recording that wasn't sent.
+ */
+export type PendingDictation = { id: string; created_at: number; mode: string; app_name: string | null; duration_sec: number }
 export type PermissionAccess = "allowed" | "denied" | "unknown"
 /**
  * Request format a post-processing endpoint speaks. Built-in providers have a
