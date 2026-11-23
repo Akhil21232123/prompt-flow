@@ -285,9 +285,6 @@ export const BASE_VOCABULARY = [
   "Gemini",
   "Perplexity",
   "Cursor",
-  "Fn key",
-  "Command",
-  "Option",
 ];
 
 export function vocabularyPrompt(

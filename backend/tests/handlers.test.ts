@@ -57,7 +57,8 @@ describe("dictate", () => {
     expect(body.text).toBe("Hello there.");
     expect(body.category).toBe("personal_chat");
     expect(sttCalls[0].language).toBe("en");
-    expect(sttCalls[0].prompt).toMatch(/^Wispr Flow, PromptFlow, Claude/);
+    // WhatsApp: only the user's own words, no product names.
+    expect(sttCalls[0].prompt).toBe("Wispr Flow");
     await settle();
     expect(saved[0].stt_provider).toBe("groq");
   });

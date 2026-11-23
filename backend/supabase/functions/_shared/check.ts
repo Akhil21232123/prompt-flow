@@ -38,6 +38,8 @@ export function checkUser(
   return out;
 }
 
+const COUNTING = /\b(?:syllables?|5-7-5|letters?|characters?)\b/i;
+
 /** Parses the reply; anything unusable is treated as "good" (no nagging). */
 export function parseCheck(reply: string): CheckResult {
   const obj = parseJsonObject(reply);
@@ -45,7 +47,11 @@ export function parseCheck(reply: string): CheckResult {
   const verdict = String(obj.verdict ?? "")
     .trim()
     .toLowerCase();
-  const issues = stringList(obj.issues, MAX_ISSUES, 200);
+  // Models can't count syllables or letters reliably; those "misses" are
+  // noise, so they never make an answer "missed" on their own.
+  const issues = stringList(obj.issues, MAX_ISSUES, 200).filter(
+    (i) => !COUNTING.test(i),
+  );
   const missed = ["missed", "miss", "bad", "fail", "failed"].includes(verdict);
   if (!missed || issues.length === 0) return { verdict: "good", issues: [] };
   let followUp = typeof obj.follow_up === "string" ? obj.follow_up.trim() : "";

@@ -1,5 +1,6 @@
 // Cases taken from real beta dictations that went wrong.
 import { describe, expect, test } from "bun:test";
+import { parseCheck } from "../supabase/functions/_shared/check.ts";
 import { autoMode } from "../supabase/functions/_shared/handlers.ts";
 import { relevantMemories } from "../supabase/functions/_shared/memory.ts";
 import {
@@ -168,5 +169,22 @@ describe("the prompt engineer's own rules stay out of the prompt", () => {
       dropEchoedRules(parts, "don't add unrelated features").requirements
         .length,
     ).toBe(3);
+  });
+});
+
+describe("Autopilot doesn't count syllables", () => {
+  test("a syllable-count 'miss' alone is good", () => {
+    expect(
+      parseCheck(
+        '{"verdict":"missed","issues":["The answer does not follow the 5-7-5 syllable structure required for a haiku."]}',
+      ).verdict,
+    ).toBe("good");
+  });
+  test("a real miss is still a miss", () => {
+    expect(
+      parseCheck(
+        '{"verdict":"missed","issues":["Written in JavaScript, not Python"]}',
+      ).verdict,
+    ).toBe("missed");
   });
 });

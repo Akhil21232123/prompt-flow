@@ -459,9 +459,13 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
       db.loadUserData(),
       pending ? Promise.resolve() : consume(ctx, db),
     ]);
+    // The product names help only where they're said: in AI apps. Elsewhere
+    // (WhatsApp in Hinglish) an English word list pulls names off ("Priya").
+    const aiApp =
+      detectTarget(base.app) !== undefined || isAiTarget(classify(base.app));
     const vocabulary = vocabularyPrompt([
       ...user.dictionary,
-      ...BASE_VOCABULARY,
+      ...(aiApp ? BASE_VOCABULARY : []),
     ]);
     const whisperLanguage = sttLanguage(
       meta.language ?? user.settings.spoken_language,
