@@ -1,0 +1,24 @@
+name: quality eval
+# Sends realistic transcripts (text, no audio) through the deployed Prompt
+# Engineer for Claude, ChatGPT, Gemini in a Safari web app, Cursor,
+# Midjourney and no known AI, and prints every prompt in full. Runs as a
+# throwaway user made with repo secret PF_SERVICE (deleted at the end).
+# Manual; takes about 10–15 minutes because of the per-minute limit.
+on:
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Quality eval
+        env:
+          PF_URL: https://${{ env.REF }}.supabase.co
+          # Public by design (shipped in the apps).
+          PF_ANON: ${{ vars.PF_ANON || 'sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss' }}
+          PF_SERVICE: ${{ secrets.PF_SERVICE }}
+        run: python3 scripts/quality_eval.py

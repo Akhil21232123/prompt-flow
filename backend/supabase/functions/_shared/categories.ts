@@ -99,6 +99,10 @@ const TITLE_RULES: Array<[string, AppCategory]> = [
   ["gemini", "ai_chat"],
   ["perplexity", "ai_chat"],
   ["grok", "ai_chat"],
+  ["deepseek", "ai_chat"],
+  ["copilot", "ai_chat"],
+  ["mistral", "ai_chat"],
+  ["le chat", "ai_chat"],
   ["lovable", "ai_chat"],
   ["github", "code"],
   ["replit", "code"],
@@ -140,6 +144,46 @@ const CATEGORIES: AppCategory[] = [
   "other",
 ];
 
+/**
+ * Site-specific browser apps: Safari's "Add to Dock" web apps
+ * (com.apple.Safari.WebApp.<UUID>) and Chromium app shims
+ * (com.google.Chrome.app.<id>, com.microsoft.edgemac.app.<id>, Brave, Arc,
+ * Dia…). They show a website, so they're read like a browser: by title/URL.
+ */
+const WEB_APP_PREFIXES = [
+  "com.apple.safari.webapp.",
+  "com.google.chrome.app.",
+  "com.google.chrome.canary.app.",
+  "com.google.chrome.beta.app.",
+  "com.microsoft.edgemac.app.",
+  "com.brave.browser.app.",
+  "company.thebrowser.browser.app.",
+  "company.thebrowser.dia.app.",
+  "com.vivaldi.vivaldi.app.",
+  "com.operasoftware.opera.app.",
+  "org.chromium.chromium.app.",
+];
+
+export function isBrowser(bundleId: string | undefined): boolean {
+  const id = (bundleId ?? "").trim().toLowerCase();
+  if (!id) return false;
+  if (BROWSERS.has(id)) return true;
+  return (
+    WEB_APP_PREFIXES.some((p) => id.startsWith(p)) || id.includes(".webapp.")
+  );
+}
+
+function hostOf(url: string | undefined): string {
+  if (!url) return "";
+  try {
+    return new URL(url.includes("://") ? url : `https://${url}`).hostname
+      .toLowerCase()
+      .replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
 function matches(rule: string, id: string): boolean {
   if (rule.endsWith(".*")) {
     const prefix = rule.slice(0, -2);
@@ -162,8 +206,12 @@ export function classify(app: AppContext | undefined): AppCategory {
   const id = (app.bundle_id ?? "").trim().toLowerCase();
   const title = (app.title ?? "").toLowerCase();
 
-  if (BROWSERS.has(id)) {
-    const hit = TITLE_RULES.find(([n]) => containsWord(title, n));
+  if (isBrowser(id)) {
+    // A web app's own name ("Gemini") is as good as a window title, unless
+    // it's the generic "Web App".
+    const name = (app.name ?? "").toLowerCase();
+    const hay = `${title} ${name === "web app" ? "" : name} ${hostOf(app.url).replace(/\./g, " ")}`;
+    const hit = TITLE_RULES.find(([n]) => containsWord(hay, n));
     return hit ? hit[1] : "other";
   }
   if (id) {

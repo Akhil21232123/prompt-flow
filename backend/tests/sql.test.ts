@@ -13,6 +13,7 @@ const MIGRATIONS = readdirSync(DIR)
   .sort()
   .map((f) => readFileSync(join(DIR, f), "utf8"));
 const V2 = readFileSync(join(DIR, "20261123000000_v2.sql"), "utf8");
+const V2_1 = readFileSync(join(DIR, "20261123120000_v2_1.sql"), "utf8");
 
 const SUPABASE_STUB = `
   create role anon nologin;
@@ -54,7 +55,11 @@ beforeAll(async () => {
   for (const m of MIGRATIONS) await db.exec(m);
   // Idempotent: the lead may run it again.
   await db.exec(V2);
-  await db.query("insert into auth.users (id) values ($1), ($2)", [ALICE, BOB]);
+  await db.exec(V2_1);
+  await db.query(
+    "insert into auth.users (id, email) values ($1, 'alice@example.com'), ($2, 'bob@example.com')",
+    [ALICE, BOB],
+  );
 });
 
 describe("v2 migration", () => {
@@ -302,19 +307,114 @@ describe("v2 migration", () => {
     ]);
   });
 
+  test("feedback: own rows, rating and note checked, dictation id optional", async () => {
+    const DICT = "00000000-0000-4000-8000-0000000000d1";
+    await as(
+      ALICE,
+      "insert into public.dictations (id, mode, raw_text, final_text, label, latency_ms) values ($1, 'engineer', 'write a prd', '<task>Write a PRD</task>', 'Prompt · for Claude', 1200)",
+      [DICT],
+    );
+    await as(
+      ALICE,
+      "insert into public.feedback (dictation_id, rating, note, app, mode) values ($1, 'up', 'great', '{\"name\": \"Claude\"}', 'engineer')",
+      [DICT],
+    );
+    await as(ALICE, "insert into public.feedback (rating) values ('down')");
+    await expect(
+      as(ALICE, "insert into public.feedback (rating) values ('meh')"),
+    ).rejects.toThrow();
+    await expect(
+      as(
+        ALICE,
+        "insert into public.feedback (rating, note) values ('up', $1)",
+        ["x".repeat(1001)],
+      ),
+    ).rejects.toThrow();
+    await expect(
+      as(
+        ALICE,
+        "insert into public.feedback (user_id, rating) values ($1, 'up')",
+        [BOB],
+      ),
+    ).rejects.toThrow();
+    expect((await as(BOB, "select * from public.feedback")).length).toBe(0);
+    expect((await as(ALICE, "select * from public.feedback")).length).toBe(2);
+  });
+
+  test("founder views: service role only, with the day's numbers", async () => {
+    await as(
+      ALICE,
+      `insert into public.dictations (mode, raw_text, final_text, label, latency_ms) values
+        ('dictate', 'hi', 'Hi.', 'Cleaned up · casual', 400),
+        ('dictate', 'make a prompt', 'make a prompt', 'Kept your words: couldn''t verify a detail', 3000),
+        ('command', 'make it formal', 'Formal.', 'Command Mode · edit selection', 800)`,
+    );
+    await expect(
+      as(ALICE, "select * from public.beta_stats_daily"),
+    ).rejects.toThrow();
+    await expect(
+      as(ALICE, "select * from public.beta_feedback_recent"),
+    ).rejects.toThrow();
+    await db.exec("set role service_role");
+    try {
+      const [today] = (
+        await db.query<Record<string, unknown>>(
+          "select * from public.beta_stats_daily order by day desc limit 1",
+        )
+      ).rows;
+      expect(today).toMatchObject({
+        active_users: 1,
+        dictations: 4,
+        dictate: 1,
+        engineer: 1,
+        command: 1,
+        engineer_fallbacks: 1,
+        thumbs_up: 1,
+        thumbs_down: 1,
+      });
+      expect(Number(today.engineer_fallback_pct)).toBe(50);
+      expect(Number(today.avg_latency_ms)).toBe(1350);
+      expect(Number(today.p90_latency_ms)).toBeGreaterThan(2000);
+      const recent = (
+        await db.query<Record<string, unknown>>(
+          "select rating, note, email, app, raw_text, label from public.beta_feedback_recent",
+        )
+      ).rows;
+      expect(recent).toContainEqual({
+        rating: "up",
+        note: "great",
+        email: "alice@example.com",
+        app: "Claude",
+        raw_text: "write a prd",
+        label: "Prompt · for Claude",
+      });
+      expect(recent.length).toBe(2);
+    } finally {
+      await db.exec("reset role");
+    }
+  });
+
   test("deleting the auth user removes every row (cascade)", async () => {
-    await db.query("delete from auth.users where id = $1", [BOB]);
-    for (const t of [
+    const tables = [
       "memories",
       "usage_daily",
       "user_settings",
       "clarifications",
-    ]) {
-      const { rows } = await db.query(
-        `select count(*)::int as n from public.${t} where user_id = $1`,
-        [BOB],
-      );
-      expect(rows).toEqual([{ n: 0 }]);
+      "feedback",
+      "dictations",
+    ];
+    const count = async (t: string, uid: string) =>
+      (
+        await db.query<{ n: number }>(
+          `select count(*)::int as n from public.${t} where user_id = $1`,
+          [uid],
+        )
+      ).rows[0].n;
+    expect(await count("feedback", ALICE)).toBeGreaterThan(0);
+    await db.query("delete from auth.users where id in ($1, $2)", [ALICE, BOB]);
+    for (const t of tables) {
+      expect(await count(t, ALICE)).toBe(0);
+      expect(await count(t, BOB)).toBe(0);
     }
   });
 });

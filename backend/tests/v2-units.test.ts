@@ -34,8 +34,9 @@ import {
 import {
   conventionsFor,
   detectTarget,
-  formatFor,
+  contentFor,
 } from "../supabase/functions/_shared/targets.ts";
+import { layoutFor } from "../supabase/functions/_shared/structured.ts";
 import { wav } from "./fakes.ts";
 
 describe("tolerant JSON", () => {
@@ -367,21 +368,30 @@ describe("AI targets", () => {
     expect(detectTarget(undefined)).toBeUndefined();
   });
 
-  test("each AI gets its own format", () => {
-    const f = (id: string) =>
-      formatFor(detectTarget({ url: `https://${id}` })!);
-    expect(formatFor(detectTarget({ name: "Claude" })!)).toContain("XML tags");
-    expect(formatFor(detectTarget({ name: "ChatGPT" })!)).toContain(
-      "### headings",
+  test("each AI gets content guidance and a layout", () => {
+    const at = (id: string) => detectTarget({ url: `https://${id}` })!;
+    const lay = (t: ReturnType<typeof detectTarget>) =>
+      layoutFor(t, "auto", "auto");
+    expect(lay(detectTarget({ name: "Claude" }))).toBe("xml");
+    for (const n of ["ChatGPT", "Gemini", "DeepSeek", "Grok", "Copilot"])
+      expect(lay(detectTarget({ name: n }))).toBe("markdown");
+    expect(lay(at("perplexity.ai"))).toBe("search");
+    expect(lay(detectTarget({ name: "Cursor" }))).toBe("coding");
+    expect(lay(at("lovable.dev"))).toBe("coding");
+    expect(lay(at("midjourney.com"))).toBe("prose");
+    expect(lay(at("suno.com"))).toBe("prose");
+    expect(lay(undefined)).toBe("markdown");
+    expect(layoutFor(undefined, "image_generation", "auto")).toBe("prose");
+    expect(layoutFor(undefined, "writing", "xml")).toBe("xml");
+    expect(contentFor(at("perplexity.ai"))).toContain("search-style question");
+    expect(contentFor(at("midjourney.com"))).toContain("--ar");
+    expect(contentFor(at("suno.com"))).toContain("[Verse]");
+    expect(contentFor(at("leonardo.ai"))).toContain("image generator");
+    expect(contentFor(at("lovable.dev"))).toContain("app builder");
+    expect(contentFor(detectTarget({ name: "Cursor" }))).toContain(
+      "acceptance_criteria",
     );
-    expect(f("perplexity.ai")).toContain("search-style question");
-    expect(f("midjourney.com")).toContain("--ar");
-    expect(f("suno.com")).toContain("[Verse]");
-    expect(f("leonardo.ai")).toContain("image generator");
-    expect(f("lovable.dev")).toContain("app builder");
-    expect(formatFor(detectTarget({ name: "Cursor" })!)).toContain(
-      "Acceptance criteria",
-    );
+    expect(contentFor(undefined)).toBe("");
   });
 
   test("Midjourney's ratio flags are allowed only when a shape was said", () => {

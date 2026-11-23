@@ -23,6 +23,7 @@ import {
 import { learnFromEdit } from "./learn.ts";
 import {
   DEFAULT_LIMITS,
+  feedbackRetryAfter,
   LimitError,
   type Limits,
   MAX_AUDIO_SEC,
@@ -38,7 +39,12 @@ import {
 } from "./pipeline.ts";
 import { MAX_SCREEN_CHARS } from "./prompts.ts";
 import { ProviderError, vocabularyPrompt } from "./providers.ts";
-import { AuthError, type ClarificationRow, type Db } from "./supabase.ts";
+import {
+  AuthError,
+  type ClarificationRow,
+  type Db,
+  isUuid,
+} from "./supabase.ts";
 import { detectTarget } from "./targets.ts";
 import type {
   AppContext,
@@ -353,8 +359,10 @@ function finished(
   result: RewriteResult,
   language: string | undefined,
   timing: Record<string, number>,
+  id?: string,
 ) {
   return {
+    ...(id ? { id } : {}),
     raw,
     text: result.text,
     mode: result.mode,
@@ -532,9 +540,13 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     const totalMs = Date.now() - started;
     const said = answer ? `${transcript}\n${answer}` : transcript;
 
-    if (user.settings.store_history) {
+    // The row's id is made here so the response can carry it (for
+    // /feedback) while the insert runs after the response.
+    const id = user.settings.store_history ? crypto.randomUUID() : undefined;
+    if (id) {
       later(ctx, () =>
         db.saveDictation({
+          id,
           mode: result.mode,
           device: typeof meta.device === "string" ? meta.device : null,
           app: request.app ?? null,
@@ -552,10 +564,13 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     learnLater(ctx, db, user, said, memories, result);
 
     return json(
-      finished(transcript, result, language, {
-        stt_ms: sttMs,
-        total_ms: totalMs,
-      }),
+      finished(
+        transcript,
+        result,
+        language,
+        { stt_ms: sttMs, total_ms: totalMs },
+        id,
+      ),
     );
   } catch (e) {
     return errorResponse(e);
@@ -591,9 +606,14 @@ export async function handleRewrite(req: Request, ctx: Ctx): Promise<Response> {
       models: ctx.models,
     });
     const totalMs = Date.now() - started;
-    if (user.settings.store_history && body.save !== false && text.trim()) {
+    const id =
+      user.settings.store_history && body.save !== false && text.trim()
+        ? crypto.randomUUID()
+        : undefined;
+    if (id) {
       later(ctx, () =>
         db.saveDictation({
+          id,
           mode: result.mode,
           app: request.app ?? null,
           category: result.category,
@@ -607,7 +627,7 @@ export async function handleRewrite(req: Request, ctx: Ctx): Promise<Response> {
     }
     if (text.trim()) learnLater(ctx, db, user, text, request.memories, result);
     return json({
-      ...finished(text, result, language, { total_ms: totalMs }),
+      ...finished(text, result, language, { total_ms: totalMs }, id),
       calls: result.calls,
     });
   } catch (e) {
@@ -661,6 +681,62 @@ export async function handleDeleteAccount(
     await db.deleteAccount();
     return json({ deleted: true });
   } catch (e) {
+    return errorResponse(e);
+  }
+}
+
+class Unavailable extends Error {}
+
+/**
+ * POST /feedback: a 👍/👎 on a result, with an optional note. Not counted in
+ * the limits; capped at 30 an hour per user.
+ */
+export async function handleFeedback(
+  req: Request,
+  ctx: Ctx,
+): Promise<Response> {
+  try {
+    const db = await ctx.db(req);
+    const body = await readJson(req);
+    const rating = body.rating;
+    if (rating !== "up" && rating !== "down")
+      throw new BadRequest('rating must be "up" or "down"');
+    const dictationId = body.dictation_id;
+    if (
+      dictationId !== undefined &&
+      dictationId !== null &&
+      !isUuid(dictationId)
+    )
+      throw new BadRequest(
+        "dictation_id must be an id from /dictate or /rewrite",
+      );
+    const wait = feedbackRetryAfter(await db.recentFeedback());
+    if (wait > 0)
+      throw new LimitError(
+        "rate_limited",
+        wait,
+        "Thanks, that's plenty of feedback for this hour.",
+      );
+    const app =
+      typeof body.app === "string"
+        ? { name: body.app.slice(0, 200) }
+        : (parseApp(body.app) ?? null);
+    const stored = await db.saveFeedback({
+      dictation_id: dictationId ?? null,
+      rating,
+      note:
+        typeof body.note === "string" && body.note.trim()
+          ? body.note.trim().slice(0, 1000)
+          : null,
+      app,
+      mode: str(body.mode, 40) ?? null,
+      label: str(body.label, 200) ?? null,
+    });
+    if (!stored) throw new Unavailable("Feedback can't be saved right now");
+    return json({ ok: true });
+  } catch (e) {
+    if (e instanceof Unavailable)
+      return json({ error: e.message, code: "provider" }, 503);
     return errorResponse(e);
   }
 }

@@ -45,7 +45,7 @@ jobs:
         run: |
           # The functions check the user's token themselves (via /auth/v1/user),
           # which works with both legacy and new JWT signing keys.
-          supabase functions deploy health dictate rewrite learn check usage delete_account --project-ref "$REF" --no-verify-jwt --use-api --yes
+          supabase functions deploy health dictate rewrite learn check usage delete_account feedback --project-ref "$REF" --no-verify-jwt --use-api --yes
       - name: Health check
         if: env.SKIP != '1'
         run: |

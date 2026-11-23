@@ -140,7 +140,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     format: "auto",
     min_score: 9,
     max_rounds: 3,
-    auto_in_ai_apps: true,
+    auto_in_ai_apps: false,
     auto_min_words: 8,
     custom_instructions: "",
   },

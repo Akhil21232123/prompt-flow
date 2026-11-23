@@ -11,10 +11,19 @@ import * as S from "./snippets.ts";
 import {
   type AiTarget,
   conventionsFor,
+  contentFor,
   detectTarget,
-  formatFor,
   playbookFor,
 } from "./targets.ts";
+import {
+  JSON_RETRY_NOTE,
+  layoutFor,
+  parseDraft,
+  parseReview,
+  partsJson,
+  type PromptParts,
+  renderPrompt,
+} from "./structured.ts";
 import type {
   AppCategory,
   Complete,
@@ -183,11 +192,35 @@ async function polish(
     category,
     label: req.preset
       ? `Style · ${PRESET_LABELS[req.preset]}`
-      : `Smart polish · ${category} · ${style}`,
+      : polishLabel(category, style),
     guarded,
     calls,
   };
 }
+
+const STYLE_WORDS: Record<WritingStyle, string> = {
+  formal: "formal",
+  casual: "casual",
+  very_casual: "very casual",
+};
+
+/** Plain words for the Mac island: "Cleaned up · formal". */
+function polishLabel(category: AppCategory, style: WritingStyle): string {
+  // Code, terminals and AI chats get no tone, only the cleanup.
+  return category === "code" ||
+    category === "terminal" ||
+    category === "ai_chat"
+    ? "Cleaned up"
+    : `Cleaned up · ${STYLE_WORDS[style]}`;
+}
+
+/**
+ * Shown in the Mac island when Prompt Engineer fell back to the user's own
+ * words. Both start "Kept your words" (the founder's stats view counts them).
+ */
+export const KEPT_WORDS_LABEL = "Kept your words: couldn't verify a detail";
+export const KEPT_WORDS_ERROR_LABEL =
+  "Kept your words: couldn't write the prompt";
 
 async function engineer(
   req: RewriteRequest,
@@ -199,13 +232,11 @@ async function engineer(
   const protectedText = S.protect(req.text, user.snippets);
   const hasTokens = protectedText.tokens.length > 0;
   const ai: AiTarget | undefined = detectTarget(req.app);
-  const format: P.FormatChoice = ai
-    ? { text: formatFor(ai) }
-    : P.resolveFormat(s.format, req.app, category);
+  const guidance = contentFor(ai);
   const output = outputLanguageFor("engineer", req, user);
   const extras = { translateFrom: translateFrom(req, output) };
-  const architect = P.architectSystem(s, format, hasTokens, extras);
-  const critic = P.criticSystem(s, format, hasTokens, extras);
+  const architect = P.architectSystem(s, guidance, hasTokens, extras);
+  const critic = P.criticSystem(s, guidance, hasTokens, extras);
   const fixedTarget: PromptTarget =
     req.target ?? (ai ? playbookFor(ai) : undefined) ?? s.target;
   const context = P.contextBlocks({
@@ -214,62 +245,76 @@ async function engineer(
     clarification: req.clarification,
     targetName: ai?.name,
   });
+  const architectInput = P.architectUser({
+    transcript: protectedText.text,
+    app: req.app,
+    category,
+    target: fixedTarget,
+    customInstructions: s.custom_instructions,
+    dictionary: user.dictionary,
+    context,
+  });
+  const smart = { model: deps.models.smart, maxTokens: 4096 };
   let calls = 0;
 
+  // The draft, as JSON parts; one stricter retry if it isn't valid JSON.
   calls++;
-  const draftReply = await deps.complete(
-    architect,
-    P.architectUser({
-      transcript: protectedText.text,
-      app: req.app,
-      category,
-      target: fixedTarget,
-      customInstructions: s.custom_instructions,
-      dictionary: user.dictionary,
-      context,
-    }),
-    { model: deps.models.smart, maxTokens: 4096 },
-  );
-  let prompt = P.parsePrompt(draftReply);
-  if (!prompt) throw new Error("the model returned no prompt");
+  let reply = await deps.complete(architect, architectInput, smart);
+  let draft = parseDraft(reply);
+  if (!draft) {
+    calls++;
+    reply = await deps.complete(
+      architect + JSON_RETRY_NOTE,
+      architectInput,
+      smart,
+    );
+    draft = parseDraft(reply);
+  }
   const target: PromptTarget =
     fixedTarget !== "auto"
       ? fixedTarget
-      : (P.parseTarget(draftReply) ??
+      : (draft?.target ??
         (category === "code" || category === "terminal"
           ? "coding_agent"
           : "chat_assistant"));
+  const layout = layoutFor(ai, target, s.format);
+  const render = (p: PromptParts) => renderPrompt(p, layout, req.screen);
 
-  const rounds =
-    s.quality === "fast"
+  let parts = draft?.parts;
+  // Still no JSON: use the reply's text as it is, unless it's broken JSON.
+  const raw = parts ? undefined : P.parsePrompt(reply);
+  if (!parts && (!raw || /^\s*[{[]/.test(raw)))
+    throw new Error("the model returned no usable prompt");
+
+  const review = (problems?: string[]) =>
+    deps.complete(
+      problems ? critic + REPAIR_NOTE(problems) : critic,
+      P.criticUser(protectedText.text, target, partsJson(parts!), context),
+      smart,
+    );
+
+  const rounds = !parts
+    ? 0
+    : s.quality === "fast"
       ? 0
       : s.quality === "balanced"
         ? 1
         : Math.min(5, Math.max(1, s.max_rounds));
-  let score: number | undefined;
-  let done = 0;
   for (let i = 0; i < rounds; i++) {
-    let review: string;
+    let r: ReturnType<typeof parseReview>;
     try {
       calls++;
-      review = await deps.complete(
-        critic,
-        P.criticUser(protectedText.text, target, prompt, context),
-        {
-          model: deps.models.smart,
-          maxTokens: 4096,
-        },
-      );
+      r = parseReview(await review());
     } catch {
       break; // keep the best prompt so far
     }
-    done++;
-    score = P.parseScore(review);
-    prompt = P.parsePrompt(review) ?? prompt;
-    if (score !== undefined && score >= s.min_score) break;
+    parts = r.parts ?? parts;
+    if (r.score !== undefined && r.score >= s.min_score) break;
   }
+  let prompt = parts ? render(parts) : raw!;
 
-  // Fidelity guard, then one targeted repair, then fall back to plain polish.
+  // Fidelity guard on the rendered text, then one targeted repair, then
+  // fall back to the user's own words, cleaned up.
   const trusted = trustedContext(
     req,
     user,
@@ -280,15 +325,25 @@ async function engineer(
   if (problems.length) {
     guarded = problems;
     calls++;
-    const repaired = await deps.complete(
-      critic + REPAIR_NOTE(problems),
-      P.criticUser(protectedText.text, target, prompt, context),
-      { model: deps.models.smart, maxTokens: 4096 },
-    );
-    const fixed = P.parsePrompt(repaired);
-    if (fixed && findInventions(trusted, fixed).length === 0) {
-      prompt = fixed;
-      problems = [];
+    if (parts) {
+      const fixed = parseReview(await review(problems)).parts;
+      const text = fixed ? render(fixed) : undefined;
+      if (text && findInventions(trusted, text).length === 0) {
+        prompt = text;
+        problems = [];
+      }
+    } else {
+      const fixed = P.parsePrompt(
+        await deps.complete(
+          critic + REPAIR_NOTE(problems),
+          P.criticUser(protectedText.text, target, prompt, context),
+          smart,
+        ),
+      );
+      if (fixed && findInventions(trusted, fixed).length === 0) {
+        prompt = fixed;
+        problems = [];
+      }
     }
   }
   if (problems.length) {
@@ -302,22 +357,15 @@ async function engineer(
       ...safe,
       guarded: problems,
       calls: calls + safe.calls,
-      label: "Prompt Engineer blocked an invented detail · used smart polish",
+      label: KEPT_WORDS_LABEL,
     };
   }
 
-  let label: string;
-  if (ai) label = `Prompt · for ${ai.name}`;
-  else {
-    label = `Prompt Engineer · ${target}`;
-    if (done) label += ` · ${done} critique round(s)`;
-    if (score !== undefined) label += ` · score ${score}/10`;
-  }
   return {
     text: S.expand(prompt, protectedText.tokens),
     mode: "engineer",
     category,
-    label,
+    label: ai ? `Prompt · for ${ai.name}` : "Prompt",
     ...(ai ? { target: ai.id } : {}),
     guarded,
     calls,
@@ -397,19 +445,17 @@ export async function rewrite(
     try {
       return withMemory(await engineer(req, user, category, deps), req);
     } catch {
-      return withMemory(
-        await polish(
-          {
-            ...req,
-            mode: "dictate",
-            outputLanguage: outputLanguageFor("engineer", req, user),
-          },
-          user,
-          category,
-          deps,
-        ),
-        req,
+      const safe = await polish(
+        {
+          ...req,
+          mode: "dictate",
+          outputLanguage: outputLanguageFor("engineer", req, user),
+        },
+        user,
+        category,
+        deps,
       );
+      return withMemory({ ...safe, label: KEPT_WORDS_ERROR_LABEL }, req);
     }
   }
   // Plain dictation is only cleaned up; memory is never added to it.

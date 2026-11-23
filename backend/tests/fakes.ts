@@ -42,13 +42,41 @@ export type Replies = Partial<
   Record<string, string | ((call: Call) => string | Promise<string>)>
 >;
 
+/** The prompt's parts as the architect returns them. */
+export function draft(
+  task: string,
+  more: Record<string, unknown> = {},
+  target = "chat_assistant",
+): string {
+  return JSON.stringify({
+    target,
+    task,
+    context: "",
+    requirements: [],
+    output_format: "",
+    ...more,
+  });
+}
+
+/** A critic reply: score plus the improved parts. */
+export function review(
+  score: number,
+  task: string,
+  more: Record<string, unknown> = {},
+): string {
+  return JSON.stringify({
+    score,
+    issues: [],
+    prompt: { task, context: "", requirements: [], output_format: "", ...more },
+  });
+}
+
 export const DEFAULT_REPLIES: Replies = {
   ask: '{"ask": false}',
   extract: '{"memories": []}',
   check: '{"verdict": "good", "issues": []}',
-  architect: "<target>coding_agent</target><prompt>Write the script.</prompt>",
-  critic:
-    "<score>10</score><issues>- none</issues><prompt>Write the script.</prompt>",
+  architect: draft("Write the script.", {}, "coding_agent"),
+  critic: review(10, "Write the script."),
   polish: "Hello there.",
   edit: "Edited.",
   write: "Written.",
@@ -64,6 +92,8 @@ export interface FakeDb extends Db {
   usageCalls: Limits[];
   memoryQueries: string[];
   deleted: boolean;
+  feedback: Array<Record<string, unknown>>;
+  feedbackTimes: string[];
 }
 
 export function fakeDb(
@@ -74,6 +104,7 @@ export function fakeDb(
     usage?: UsageDecision;
     /** Simulates the v2 tables not existing yet. */
     noClarifications?: boolean;
+    noFeedback?: boolean;
   } = {},
 ): FakeDb {
   let n = 0;
@@ -89,6 +120,8 @@ export function fakeDb(
     usageCalls: [],
     memoryQueries: [],
     deleted: false,
+    feedback: [],
+    feedbackTimes: [],
     loadUserData: async () => ({
       settings: { ...structuredClone(DEFAULT_SETTINGS), ...opts.settings },
       dictionary: opts.dictionary ?? ["Wispr Flow"],
@@ -121,6 +154,13 @@ export function fakeDb(
     },
     deleteAccount: async () => {
       db.deleted = true;
+    },
+    recentFeedback: async () => db.feedbackTimes,
+    saveFeedback: async (row) => {
+      if (opts.noFeedback) return false;
+      db.feedback.push(row);
+      db.feedbackTimes.push(new Date().toISOString());
+      return true;
     },
   };
   return db;

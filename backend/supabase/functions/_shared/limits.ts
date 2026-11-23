@@ -25,13 +25,37 @@ export class LimitError extends Error {
   constructor(
     readonly code: "rate_limited" | "quota",
     readonly retryAfterSec: number,
+    message?: string,
   ) {
     super(
-      code === "quota"
-        ? "You've reached today's limit. It resets at midnight UTC."
-        : "That's a lot of requests in a minute. Try again in a moment.",
+      message ??
+        (code === "quota"
+          ? "You've reached today's limit. It resets at midnight UTC."
+          : "That's a lot of requests in a minute. Try again in a moment."),
     );
   }
+}
+
+/** Feedback isn't counted in the limits, but is capped per hour. */
+export const FEEDBACK_PER_HOUR = 30;
+
+/**
+ * Seconds until another feedback is allowed, given the times of this
+ * user's feedback in the last hour; 0 when it's allowed now.
+ */
+export function feedbackRetryAfter(
+  recent: string[],
+  now = Date.now(),
+  cap = FEEDBACK_PER_HOUR,
+): number {
+  const times = recent
+    .map((t) => Date.parse(t))
+    .filter((t) => Number.isFinite(t) && t > now - 3_600_000)
+    .sort((a, b) => a - b);
+  if (times.length < cap) return 0;
+  // The oldest of the last `cap` leaves the window first.
+  const oldest = times[times.length - cap];
+  return Math.max(1, Math.ceil((oldest + 3_600_000 - now) / 1000));
 }
 
 /** Limits from env (PF_PER_MINUTE, PF_PER_DAY), else the beta defaults. */

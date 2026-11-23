@@ -3,6 +3,7 @@ import { classify } from "../supabase/functions/_shared/categories.ts";
 import { learnFromEdit } from "../supabase/functions/_shared/learn.ts";
 import { rewrite, type Deps } from "../supabase/functions/_shared/pipeline.ts";
 import * as S from "../supabase/functions/_shared/snippets.ts";
+import { draft, review } from "./fakes.ts";
 import {
   DEFAULT_SETTINGS,
   type UserData,
@@ -92,11 +93,18 @@ describe("prompt engineer", () => {
   const long =
     "fix the login bug in auth dot ts it crashes when the password is empty and add a test we use vitest";
 
-  test("auto-engineers long dictation in AI apps, with a critique round", async () => {
-    const { deps, calls } = fakeModel([
-      "<target>coding_agent</target><prompt>Fix auth.ts</prompt>",
-      "<score>9</score><issues>- none</issues><prompt>Fix the crash in `auth.ts` when the password is empty. Add a vitest test.</prompt>",
-    ]);
+  const fixed = review(
+    9,
+    "Fix the crash in `auth.ts` when the password is empty.",
+    {
+      context: "We use vitest.",
+      requirements: ["Add a vitest test."],
+      output_format: "The code change and a short summary.",
+    },
+  );
+
+  test("dictation is only polished in AI apps unless auto-engineer is on", async () => {
+    const { deps } = fakeModel(["Fix the login bug."]);
     const out = await rewrite(
       {
         text: long,
@@ -106,25 +114,83 @@ describe("prompt engineer", () => {
       user(),
       deps,
     );
+    expect(out.mode).toBe("dictate");
+    expect(out.label).toBe("Cleaned up");
+  });
+
+  test("auto-engineers long dictation in AI apps when switched on, as Claude XML", async () => {
+    const { deps, calls } = fakeModel([
+      draft("Fix auth.ts", {}, "coding_agent"),
+      fixed,
+    ]);
+    const u = user();
+    u.settings.engineer.auto_in_ai_apps = true;
+    const out = await rewrite(
+      {
+        text: long,
+        mode: "dictate",
+        app: { name: "Claude", bundle_id: "com.anthropic.claude" },
+      },
+      u,
+      deps,
+    );
     expect(out.mode).toBe("engineer");
     expect(out.label).toBe("Prompt · for Claude");
     expect(out.target).toBe("claude");
     expect(calls[0].system).toContain("This prompt is for Claude");
-    expect(out.text).toContain("vitest");
+    expect(calls[0].system).toContain('"requirements"');
+    expect(calls[0].system).not.toContain("Reply in exactly this shape");
+    expect(out.text).toBe(
+      "<task>\nFix the crash in `auth.ts` when the password is empty.\n</task>\n<context>\nWe use vitest.\n</context>\n<requirements>\n- Add a vitest test.\n</requirements>\n<output_format>\nThe code change and a short summary.\n</output_format>",
+    );
+    expect(calls[1].user).toContain('"task": "Fix auth.ts"');
     expect(calls.every((c) => c.model === "smart-model")).toBe(true);
     expect(calls[0].system).toContain("Never add numbers");
   });
 
-  test("without a known AI the label names the playbook and score", async () => {
+  test("without a known AI it's Markdown and labelled just Prompt", async () => {
     const { deps } = fakeModel([
-      "<target>coding_agent</target><prompt>Fix auth.ts</prompt>",
-      "<score>9</score><issues>- none</issues><prompt>Fix the crash in `auth.ts` when the password is empty. Add a vitest test.</prompt>",
+      draft("Fix auth.ts", {}, "coding_agent"),
+      fixed,
     ]);
     const out = await rewrite({ text: long, mode: "engineer" }, user(), deps);
-    expect(out.label).toBe(
-      "Prompt Engineer · coding_agent · 1 critique round(s) · score 9/10",
-    );
+    expect(out.label).toBe("Prompt");
     expect(out.target).toBeUndefined();
+    expect(out.text.startsWith("### Task\nFix the crash")).toBe(true);
+    expect(out.text).toContain("### Requirements\n- Add a vitest test.");
+  });
+
+  test("invalid JSON gets one stricter retry, then the raw text", async () => {
+    const retry = fakeModel([
+      "Sure! Here is the prompt: {oops",
+      draft("Fix auth.ts"),
+      review(10, "Fix auth.ts"),
+    ]);
+    const out = await rewrite(
+      { text: long, mode: "engineer" },
+      user(),
+      retry.deps,
+    );
+    expect(retry.calls[1].system).toContain("was not valid JSON");
+    expect(out.text).toContain("### Task\nFix auth.ts");
+    const raw = fakeModel(["not json", "still not json, fix auth.ts"]);
+    const out2 = await rewrite(
+      { text: long, mode: "engineer" },
+      user(),
+      raw.deps,
+    );
+    expect(raw.calls.length).toBe(2);
+    expect(out2.mode).toBe("engineer");
+    expect(out2.text).toBe("still not json, fix auth.ts");
+    // Broken JSON is never pasted: it falls back to the user's words.
+    const broken = fakeModel(["{", '{"task": ', "Fix the login bug."]);
+    const out3 = await rewrite(
+      { text: long, mode: "engineer" },
+      user(),
+      broken.deps,
+    );
+    expect(out3.mode).toBe("dictate");
+    expect(out3.text).toBe("Fix the login bug.");
   });
 
   test("short replies in AI apps are only polished", async () => {
@@ -143,9 +209,9 @@ describe("prompt engineer", () => {
 
   test("repairs an invented target, then accepts the clean version", async () => {
     const { deps, calls } = fakeModel([
-      "<target>writing</target><prompt>Write a report. Aim for 99% accuracy.</prompt>",
-      "<score>9</score><prompt>Write a report. Aim for 99% accuracy.</prompt>",
-      "<score>9</score><prompt>Write a report on why accuracy lags.</prompt>",
+      draft("Write a report. Aim for 99% accuracy.", {}, "writing"),
+      review(9, "Write a report. Aim for 99% accuracy."),
+      review(9, "Write a report on why accuracy lags."),
     ]);
     const out = await rewrite(
       { text: "write a report on why our accuracy lags", mode: "engineer" },
@@ -154,15 +220,17 @@ describe("prompt engineer", () => {
     );
     expect(calls.length).toBe(3);
     expect(calls[2].system).toContain("number 99");
-    expect(out.text).toBe("Write a report on why accuracy lags.");
+    expect(out.text).toContain(
+      "### Task\nWrite a report on why accuracy lags.",
+    );
     expect(out.guarded).toEqual(["number 99"]);
   });
 
   test("falls back to safe polish if the repair still invents", async () => {
     const { deps } = fakeModel([
-      "<prompt>Hit 99%.</prompt>",
-      "<score>9</score><prompt>Hit 99%.</prompt>",
-      "<prompt>Hit 95%.</prompt>",
+      draft("Hit 99%."),
+      review(9, "Hit 99%."),
+      review(9, "Hit 95%."),
       "Write a report on accuracy.",
     ]);
     const out = await rewrite(
@@ -172,7 +240,7 @@ describe("prompt engineer", () => {
     );
     expect(out.mode).toBe("dictate");
     expect(out.text).toBe("Write a report on accuracy.");
-    expect(out.label).toContain("blocked an invented detail");
+    expect(out.label).toBe("Kept your words: couldn't verify a detail");
   });
 
   test("model failure falls back to polish", async () => {
