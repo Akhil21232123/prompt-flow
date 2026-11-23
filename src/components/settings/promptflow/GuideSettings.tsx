@@ -5,9 +5,8 @@ import {
   Eye,
   HelpCircle,
   Mic,
-  Pencil,
   ShieldCheck,
-  Sparkles,
+  Wand2,
   type LucideIcon,
 } from "lucide-react";
 import { Keycaps } from "@/components/shared/Keycaps";
@@ -16,17 +15,22 @@ import { useOsType } from "@/hooks/useOsType";
 import { PfCard, PfPage } from "./ui";
 
 type Feature = {
-  id: "transcribe" | "prompt_engineer" | "this" | "command_mode" | "autopilot";
+  /** The binding whose key is shown; "fn" is the Fn key itself. */
+  id: "fn" | "transcribe" | "this" | "autopilot";
   key: string;
   icon: LucideIcon;
   tone: string;
 };
 
-const FEATURES: Feature[] = [
-  { id: "transcribe", key: "dictate", icon: Mic, tone: "gradient" },
-  { id: "prompt_engineer", key: "prompt", icon: Sparkles, tone: "blue" },
+/** The two keys. */
+const KEYS: Feature[] = [
+  { id: "fn", key: "smart", icon: Wand2, tone: "gradient" },
+  { id: "transcribe", key: "plain", icon: Mic, tone: "blue" },
+];
+
+/** The extras, in the menu bar (and Advanced shortcuts). */
+const MENU: Feature[] = [
   { id: "this", key: "this", icon: Eye, tone: "blue" },
-  { id: "command_mode", key: "edit", icon: Pencil, tone: "gradient" },
   { id: "autopilot", key: "autopilot", icon: ShieldCheck, tone: "mint" },
 ];
 
@@ -131,37 +135,51 @@ export const GuideSettings: React.FC = () => {
         </p>
       </div>
 
-      <PfCard title={t("guide.shortcutsTitle")}>
-        {FEATURES.map((feat) => {
-          const Icon = feat.icon;
-          const binding = bindings[feat.id]?.current_binding ?? "";
-          return (
-            <div key={feat.id} className="px-4 py-4 flex gap-3.5">
-              <div
-                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${toneClass(feat.tone)}`}
-              >
-                <Icon size={17} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-[14.5px] font-semibold text-pf-text">
-                    {t(`guide.features.${feat.key}.title`)}
-                  </span>
-                  {binding && (
-                    <Keycaps binding={binding} osType={os} size="line" />
-                  )}
+      {(
+        [
+          ["guide.shortcutsTitle", undefined, KEYS],
+          ["guide.menuTitle", "guide.menuBody", MENU],
+        ] as const
+      ).map(([title, description, features]) => (
+        <PfCard
+          key={title}
+          title={t(title)}
+          description={description ? t(description) : undefined}
+        >
+          {features.map((feat) => {
+            const Icon = feat.icon;
+            const binding =
+              feat.id === "fn"
+                ? "fn"
+                : (bindings[feat.id]?.current_binding ?? "");
+            return (
+              <div key={feat.id} className="px-4 py-4 flex gap-3.5">
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${toneClass(feat.tone)}`}
+                >
+                  <Icon size={17} />
                 </div>
-                <p className="text-[13px] text-pf-muted mt-1 leading-relaxed">
-                  {t(`guide.features.${feat.key}.body`)}
-                </p>
-                <p className="text-[12.5px] text-pf-text/80 mt-1.5 italic">
-                  {t(`guide.features.${feat.key}.example`)}
-                </p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <span className="text-[14.5px] font-semibold text-pf-text">
+                      {t(`guide.features.${feat.key}.title`)}
+                    </span>
+                    {binding && (
+                      <Keycaps binding={binding} osType={os} size="line" />
+                    )}
+                  </div>
+                  <p className="text-[13px] text-pf-muted mt-1 leading-relaxed">
+                    {t(`guide.features.${feat.key}.body`)}
+                  </p>
+                  <p className="text-[12.5px] text-pf-text/80 mt-1.5 italic">
+                    {t(`guide.features.${feat.key}.example`)}
+                  </p>
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </PfCard>
+            );
+          })}
+        </PfCard>
+      ))}
 
       <PfCard
         title={t("guide.island.title")}
@@ -215,6 +233,7 @@ export const GuideSettings: React.FC = () => {
         <ul className="px-5 py-4 flex flex-col gap-2.5">
           {(
             [
+              "twoKeys",
               "accounts",
               "askBack",
               "aiSpecific",

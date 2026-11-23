@@ -58,6 +58,9 @@ jobs:
       - name: Test keyboard utilities
         run: bun run test:keyboard
 
+      - name: Test that the island never takes the keyboard
+        run: bun run test:island
+
       - name: Type-check
         run: bunx tsc --noEmit
 

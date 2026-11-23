@@ -818,12 +818,14 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
     let separator = || PredefinedMenuItem::separator(app);
 
     let menu = if inputs.busy {
+        let finish_i = MenuItem::with_id(app, "finish", &strings.finish, true, None::<&str>)?;
         let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)?;
         Menu::with_items(
             app,
             &[
                 &version_i,
                 &separator()?,
+                &finish_i,
                 &cancel_i,
                 &separator()?,
                 &copy_last_transcript_i,
@@ -861,10 +863,22 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             true,
             None::<&str>,
         )?;
+        // The extras that have no default key any more.
+        let this = MenuItem::with_id(app, "prompt_this", &strings.prompt_this, true, None::<&str>)?;
+        let check = MenuItem::with_id(
+            app,
+            "check_answer",
+            &strings.check_answer,
+            true,
+            None::<&str>,
+        )?;
         Menu::with_items(
             app,
             &[
                 &version_i,
+                &separator()?,
+                &this,
+                &check,
                 &separator()?,
                 &style,
                 &speak,

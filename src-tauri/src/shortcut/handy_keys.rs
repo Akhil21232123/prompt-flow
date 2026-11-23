@@ -222,8 +222,18 @@ impl HandyKeysState {
         Ok(())
     }
 
-    /// Register a shortcut binding
+    /// Register a shortcut binding. An unset binding registers nothing.
     pub fn register(&self, binding: &ShortcutBinding) -> Result<(), String> {
+        if !super::status::is_set(binding) {
+            super::status::clear(&binding.id);
+            return Ok(());
+        }
+        let result = self.register_set(binding);
+        super::status::note(binding, &result);
+        result
+    }
+
+    fn register_set(&self, binding: &ShortcutBinding) -> Result<(), String> {
         let (tx, rx) = mpsc::channel();
         self.command_sender
             .lock()
@@ -241,6 +251,7 @@ impl HandyKeysState {
 
     /// Unregister a shortcut binding
     pub fn unregister(&self, binding: &ShortcutBinding) -> Result<(), String> {
+        super::status::clear(&binding.id);
         let (tx, rx) = mpsc::channel();
         self.command_sender
             .lock()
@@ -281,6 +292,7 @@ impl HandyKeysState {
         }
 
         self.is_recording.store(true, Ordering::SeqCst);
+        super::status::set_capturing(true);
         self.recording_running.store(true, Ordering::SeqCst);
 
         // Start a thread to emit key events to the frontend
@@ -333,6 +345,7 @@ impl HandyKeysState {
     /// Stop recording mode
     pub fn stop_recording(&self) -> Result<(), String> {
         self.is_recording.store(false, Ordering::SeqCst);
+        super::status::set_capturing(false);
         self.recording_running.store(false, Ordering::SeqCst);
 
         {

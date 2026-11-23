@@ -237,7 +237,8 @@ body {
   background: var(--i-fill);
 }
 .i-glyph.mode-dictate,
-.i-glyph.mode-command {
+.i-glyph.mode-command,
+.i-glyph.mode-smart {
   background: var(--pf-gradient);
 }
 .i-glyph.mode-engineer,
@@ -636,4 +637,27 @@ body {
 .i-wave.mode-engineer i,
 .i-wave.mode-this i {
   background: linear-gradient(var(--pf-blue), #8fb4ff);
+}
+
+/* The island never shows focus: it never takes it (see noFocus.ts). */
+.island button:focus,
+.island button:focus-visible {
+  outline: none;
+}
+
+/* A one-time tip under a result. */
+.i-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--i-line);
+  font-size: 11.5px;
+  color: var(--i-muted);
+}
+.i-tip-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
 }

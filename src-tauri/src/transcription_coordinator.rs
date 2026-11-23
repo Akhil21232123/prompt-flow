@@ -35,6 +35,9 @@ pub struct RecordingStateEvent {
 }
 
 fn emit_recording_phase(app: &AppHandle, phase: RecordingPhase) {
+    if phase == RecordingPhase::Locked {
+        crate::island::mark_hands_free(app);
+    }
     if let Err(e) = (RecordingStateEvent { phase }).emit(app) {
         warn!("Failed to emit recording state {phase:?}: {e}");
     }
@@ -207,8 +210,13 @@ enum Effect {
 /// Commands processed sequentially by the coordinator thread.
 enum Command {
     Input(InputEvent),
-    Cancel { recording_was_active: bool },
+    Cancel {
+        recording_was_active: bool,
+    },
     ProcessingFinished,
+    /// Stop and send the recording in progress, whichever key started it
+    /// (the menu bar's Finish).
+    Finish,
 }
 
 /// Decide whether a key-up should be deferred (so auto-repeat can cancel it)
@@ -557,6 +565,18 @@ impl CoordinatorState {
         }
     }
 
+    /// Finish whatever is recording, as its own key would.
+    fn on_finish(&mut self) -> Option<Effect> {
+        self.pending_release = None;
+        match &self.stage {
+            Stage::Recording(id) => {
+                let id = id.clone();
+                Some(self.begin_processing(id, "menu".to_string()))
+            }
+            _ => None,
+        }
+    }
+
     fn begin_processing(&mut self, binding_id: String, hotkey_string: String) -> Effect {
         self.stage = Stage::Processing;
         self.hold = None;
@@ -579,7 +599,13 @@ pub struct TranscriptionCoordinator {
 pub fn is_transcribe_binding(id: &str) -> bool {
     matches!(
         id,
-        "transcribe" | "transcribe_with_post_process" | "prompt_engineer" | "command_mode" | "this"
+        "transcribe"
+            | "transcribe_alt"
+            | "smart"
+            | "transcribe_with_post_process"
+            | "prompt_engineer"
+            | "command_mode"
+            | "this"
     )
 }
 
@@ -639,6 +665,11 @@ impl TranscriptionCoordinator {
                         }
                         Command::ProcessingFinished => {
                             if let Some(effect) = state.on_processing_finished() {
+                                run_effect(&app, &mut state, effect);
+                            }
+                        }
+                        Command::Finish => {
+                            if let Some(effect) = state.on_finish() {
                                 run_effect(&app, &mut state, effect);
                             }
                         }
@@ -724,6 +755,13 @@ impl TranscriptionCoordinator {
             })
             .is_err()
         {
+            warn!("Transcription coordinator channel closed");
+        }
+    }
+
+    /// Stops and sends the recording in progress (the menu bar's Finish).
+    pub fn finish(&self) {
+        if self.tx.send(Command::Finish).is_err() {
             warn!("Transcription coordinator channel closed");
         }
     }
@@ -1303,6 +1341,44 @@ mod tests {
 
     fn ms(n: u64) -> Duration {
         Duration::from_millis(n)
+    }
+
+    /// Fn's hands-free: the double tap starts a locked recording (toggle),
+    /// releases do nothing, the next tap's toggle press sends it.
+    #[test]
+    fn fn_hands_free_runs_until_the_next_tap() {
+        let mut state = CoordinatorState::new();
+        let t0 = Instant::now();
+        let toggle = ShortcutActivation::Toggle;
+        assert!(matches!(
+            state.on_input(input(toggle, true), t0),
+            Some(Effect::Start { .. })
+        ));
+        assert!(state.is_recording_locked());
+        // A push-to-talk release (a hold that never was) can't end it.
+        assert!(state
+            .on_input(input(ShortcutActivation::PushToTalk, false), t0 + ms(300))
+            .is_none());
+        assert!(state.on_grace_expired().is_none());
+        assert_eq!(state.stage, Stage::Recording(BINDING.to_string()));
+        assert!(matches!(
+            state.on_input(input(toggle, true), t0 + ms(9000)),
+            Some(Effect::Stop { .. })
+        ));
+        assert_eq!(state.stage, Stage::Processing);
+    }
+
+    /// The menu bar's Finish sends whatever is recording, and does nothing
+    /// otherwise.
+    #[test]
+    fn finish_sends_the_recording_in_progress() {
+        let mut state = CoordinatorState::new();
+        assert!(state.on_finish().is_none());
+        let t0 = Instant::now();
+        state.on_input(input(ShortcutActivation::Toggle, true), t0);
+        assert!(matches!(state.on_finish(), Some(Effect::Stop { .. })));
+        assert_eq!(state.stage, Stage::Processing);
+        assert!(state.on_finish().is_none());
     }
 
     /// Hold-or-toggle: a key held past the threshold is push-to-talk — the

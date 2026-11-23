@@ -34,6 +34,28 @@ pub enum FlowMode {
     /// "This": Prompt Engineer with what's on screen. On-device (Private
     /// mode) it runs as plain Prompt Engineer.
     This,
+    /// Smart (hold Fn): PromptFlow decides. Text selected → edit it; an AI
+    /// app or code editor → a prompt; anywhere else → your words, written
+    /// for that app. The cloud decides on the server (`mode: "auto"`).
+    Auto,
+}
+
+/// Fewer words than this are never turned into a prompt (the server's
+/// `MIN_PROMPT_WORDS`).
+pub const MIN_PROMPT_WORDS: usize = 4;
+
+/// What Smart (Fn) does with a recording, decided the same way as the
+/// server: a selection is edited, an AI app or code editor gets a prompt
+/// (from four words), anything else gets the speaker's words.
+pub fn resolve_auto(category: AppCategory, selection: Option<&str>, transcript: &str) -> FlowMode {
+    // A highlight in a terminal is output, never something to rewrite.
+    if category != AppCategory::Terminal && selection.is_some_and(|s| !s.trim().is_empty()) {
+        FlowMode::Command
+    } else if category.is_ai_target() && word_count(transcript) >= MIN_PROMPT_WORDS {
+        FlowMode::PromptEngineer
+    } else {
+        FlowMode::Dictate
+    }
 }
 
 /// Everything the output stage needs to know about one recording.
@@ -115,20 +137,6 @@ fn word_count(text: &str) -> usize {
     text.split_whitespace().count()
 }
 
-/// Whether a normal dictation should be upgraded to Prompt Engineer.
-pub fn should_auto_engineer(
-    settings: &AppSettings,
-    category: AppCategory,
-    transcript: &str,
-) -> bool {
-    let pe = &settings.flow.prompt_engineer;
-    // A style picked on purpose means "write it like this", not a prompt.
-    settings.flow.style_preset.is_none()
-        && pe.auto_in_ai_apps
-        && category.is_ai_target()
-        && word_count(transcript) >= pe.auto_min_words as usize
-}
-
 /// Run Prompt Engineer or Command Mode. `None` means "not handled here":
 /// the caller continues with normal dictation cleanup.
 pub async fn run_special(
@@ -139,13 +147,15 @@ pub async fn run_special(
     let app = input.app.as_ref();
     let category = category_for(settings, app);
 
-    let engineer = match input.mode {
-        FlowMode::PromptEngineer | FlowMode::This => true,
-        FlowMode::Dictate => should_auto_engineer(settings, category, transcript),
-        FlowMode::Command => false,
+    // Plain dictation (⌘Space) is never turned into a prompt: Smart (Fn)
+    // is the key that decides.
+    let mode = match input.mode {
+        FlowMode::Auto => resolve_auto(category, input.selection.as_deref(), transcript),
+        mode => mode,
     };
+    let engineer = matches!(mode, FlowMode::PromptEngineer | FlowMode::This);
 
-    if input.mode == FlowMode::Command {
+    if mode == FlowMode::Command {
         return Some(run_command(settings, transcript, input, category).await);
     }
     if !engineer {
@@ -287,20 +297,39 @@ mod tests {
     }
 
     #[test]
-    fn auto_engineer_needs_ai_app_and_enough_words() {
-        let s = get_default_settings();
-        let long = "so I want you to build me a landing page for my puzzle brand with a waitlist";
-        assert!(should_auto_engineer(&s, AppCategory::AiChat, long));
-        assert!(should_auto_engineer(&s, AppCategory::Terminal, long));
-        assert!(!should_auto_engineer(
-            &s,
-            AppCategory::AiChat,
-            "yes go ahead"
-        ));
-        assert!(!should_auto_engineer(&s, AppCategory::Email, long));
-        let mut off = s.clone();
-        off.flow.prompt_engineer.auto_in_ai_apps = false;
-        assert!(!should_auto_engineer(&off, AppCategory::AiChat, long));
+    fn smart_decides_like_the_server() {
+        let long = "so I want you to build me a landing page";
+        assert_eq!(
+            resolve_auto(AppCategory::AiChat, None, long),
+            FlowMode::PromptEngineer
+        );
+        assert_eq!(
+            resolve_auto(AppCategory::Code, None, "fix the login bug now"),
+            FlowMode::PromptEngineer
+        );
+        // Short replies stay words, even in an AI app.
+        assert_eq!(
+            resolve_auto(AppCategory::AiChat, None, "yes go ahead"),
+            FlowMode::Dictate
+        );
+        assert_eq!(
+            resolve_auto(AppCategory::Email, None, long),
+            FlowMode::Dictate
+        );
+        // A selection is always an edit.
+        assert_eq!(
+            resolve_auto(AppCategory::Email, Some("Dear team"), "make it warmer"),
+            FlowMode::Command
+        );
+        assert_eq!(
+            resolve_auto(AppCategory::AiChat, Some("  "), long),
+            FlowMode::PromptEngineer
+        );
+        assert_eq!(
+            resolve_auto(AppCategory::Terminal, Some("error: build failed"), long),
+            FlowMode::PromptEngineer,
+            "terminal output is never edited"
+        );
     }
 
     #[test]

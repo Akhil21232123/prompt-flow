@@ -11,7 +11,7 @@
     "language": "Language",
     "autoLanguage": "Auto",
     "otherLanguages": "Other Languages",
-    "writeStyle": "Write Style",
+    "writeStyle": "Writing Style",
     "styleSmart": "Smart (fits the app)",
     "styleClean": "Clean",
     "styleFormal": "Formal",
@@ -22,7 +22,10 @@
     "spokenLanguage": "I Speak",
     "privateMode": "Private Mode",
     "pause": "Pause PromptFlow",
-    "reportProblem": "Report a Problem…"
+    "reportProblem": "Report a Problem…",
+    "finish": "Finish Recording",
+    "promptThis": "This: Prompt About the Screen",
+    "checkAnswer": "Check the AI's Answer"
   },
   "sidebar": {
     "general": "General",
@@ -362,8 +365,8 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Write",
-            "description": "Your words, cleaned up in your style. Never turns into a prompt."
+            "name": "Just your words",
+            "description": "⌘Space: your words, cleaned up. Never a prompt. Press to start and again to stop, or hold while you talk."
           },
           "cancel": {
             "name": "Cancel",
@@ -388,11 +391,21 @@
           "autopilot": {
             "name": "Check the answer",
             "description": "Checks the AI's reply against what you asked and offers a fix."
+          },
+          "transcribe_alt": {
+            "name": "Just your words, second key",
+            "description": "Does the same as ⌘Space. Handy while Spotlight still has ⌘Space."
+          },
+          "smart": {
+            "name": "Smart, like holding Fn",
+            "description": "For keyboards without Fn: PromptFlow writes it right for the app, a prompt in AI apps and a message everywhere else."
           }
         },
         "errors": {
           "set": "Failed to set shortcut: {{error}}"
-        }
+        },
+        "notSet": "Not set",
+        "clear": "Turn off {{setting}}"
       },
       "language": {
         "title": "Language",
@@ -943,7 +956,7 @@
       "setupNeeded": "Prompt Engineer, Command Mode and smart cleanup need an AI model. Turn on Post Processing below, then pick a provider, model and API key in the Post Process page (or set a provider for Prompt Engineer here).",
       "shortcuts": {
         "title": "Shortcuts",
-        "description": "Hold to talk, release to paste. Dictate cleans up what you say; Prompt Engineer turns it into a prompt for an AI; Command Mode edits your selection."
+        "description": "Hold Fn and PromptFlow writes it right for the app: a prompt in AI apps, a message everywhere else. ⌘Space keeps just your words."
       },
       "engineer": {
         "title": "Prompt Engineer",
@@ -1103,7 +1116,7 @@
       },
       "stylePreset": {
         "title": "Dictation style",
-        "description": "How your main dictation shortcut writes. Auto follows the app (formal in email, casual in chat). Any other choice always writes in that style and never turns into a prompt. Prompt Engineer has its own shortcut.",
+        "description": "How your words are written. Auto follows the app (formal in email, casual in chat). Any other choice always writes in that style.",
         "options": {
           "auto": "Auto by app",
           "clean": "Clean",
@@ -1278,10 +1291,10 @@
   },
   "dictation": {
     "title": "Dictation",
-    "subtitle": "How Write (⌥Space) cleans up your words. Prompt (⌃⌥P) always writes for the AI you're in.",
+    "subtitle": "How PromptFlow writes your words. Hold Fn and it writes for the app; ⌘Space keeps just your words.",
     "style": {
       "title": "Writing style",
-      "description": "Used by Write. It only cleans up your words: it never turns them into a prompt.",
+      "description": "How your words are written: by Fn outside AI apps, and by ⌘Space. Smart matches the app for Fn and keeps ⌘Space clean. A style never turns your words into a prompt.",
       "customLabel": "Your style",
       "customPlaceholder": "e.g. Friendly but brief, British spelling, no emoji",
       "options": {
@@ -1371,11 +1384,21 @@
   },
   "shortcuts": {
     "title": "Shortcuts",
-    "subtitle": "Write keeps your words; Prompt turns them into a prompt. Hold a shortcut and talk, or tap to start and tap again to stop.",
-    "activation": "How shortcuts work",
+    "subtitle": "Two keys. Hold Fn and PromptFlow writes it right for the app; press ⌘Space for just your words.",
+    "activation": "How ⌘Space works",
     "permissions": "Permissions",
     "permissionsDescription": "macOS asks for these once. After an update it may ask again.",
-    "keys": "Keyboard shortcuts"
+    "keys": "Your two keys",
+    "spotlight": {
+      "title": "Turn off Spotlight's ⌘Space so PromptFlow can use it",
+      "body": "In Keyboard Shortcuts, choose Spotlight and switch off “Show Spotlight search”. Until then, ⌥Space does the same.",
+      "open": "Open Keyboard Shortcuts"
+    },
+    "problem": "PromptFlow couldn't use {{keys}}. macOS or another app may have it; pick another key.",
+    "advanced": {
+      "title": "Advanced shortcuts",
+      "description": "Optional keys for the extras. They're off until you set one. This and Check the answer are also in the menu bar."
+    }
   },
   "permissions": {
     "allow": "Allow",
@@ -1383,15 +1406,24 @@
     "optional": "Optional",
     "microphone": {
       "title": "Microphone",
-      "why": "To hear you while you hold a shortcut. Nothing is recorded otherwise."
+      "why": "To hear you while you hold Fn or after you press ⌘Space. Nothing is recorded otherwise."
     },
     "accessibility": {
       "title": "Accessibility",
-      "why": "To notice the shortcut, paste the text where you're typing and read the text \"This\" is about."
+      "why": "To notice your keys, paste the text where you're typing and read the text \"This\" is about."
     },
     "screen_recording": {
       "title": "Screen Recording",
       "why": "Lets \"This\" and Autopilot read text in images, PDFs and apps that don't share it. Read on this Mac, never stored."
+    },
+    "input_monitoring": {
+      "title": "Input Monitoring",
+      "why": "So holding Fn works. PromptFlow only watches for Fn; it never records what you type."
+    },
+    "reset": {
+      "title": "macOS needs you to re-allow PromptFlow after updating",
+      "body": "Remove PromptFlow from the Accessibility list with –, then add it again. “Fix it” opens the list and asks macOS again.",
+      "fix": "Fix it"
     }
   },
   "private": {
@@ -1418,10 +1450,10 @@
     "title": "How to use PromptFlow",
     "subtitle": "Two keys to remember, one island to watch.",
     "hero": {
-      "title": "Write or Prompt. Hold, talk, let go.",
-      "body": "Write (⌥Space) puts your own words where you're typing, cleaned up in your style; it never turns them into a prompt. Prompt (⌃⌥P) turns what you say into a structured prompt for the AI app you're in: Claude, ChatGPT, Gemini, Cursor and more. The island at the top shows which one is running."
+      "title": "Hold Fn, or press ⌘Space.",
+      "body": "Hold Fn: PromptFlow writes it right for the app, a prompt in AI apps and a message everywhere else. ⌘Space: just your words. The island at the top shows what's happening."
     },
-    "shortcutsTitle": "The shortcuts",
+    "shortcutsTitle": "The two keys",
     "features": {
       "dictate": {
         "title": "Write",
@@ -1436,7 +1468,7 @@
       "this": {
         "title": "This",
         "body": "Ask about what's on screen. PromptFlow uses your selection, or the window's text, and adds it to the prompt.",
-        "example": "Select an error message, hold the shortcut: \"explain this and how to fix it\"."
+        "example": "Select an error message, choose This in the menu bar and say \"explain this and how to fix it\"."
       },
       "edit": {
         "title": "Edit with your voice",
@@ -1445,8 +1477,18 @@
       },
       "autopilot": {
         "title": "Check the answer",
-        "body": "After an AI replies, press it. PromptFlow compares the answer with what you asked and offers a one-click fix.",
+        "body": "After an AI replies, choose Check the answer in the menu bar. PromptFlow compares the answer with what you asked and offers a one-click fix.",
         "example": "\"Used JavaScript; you asked for Python\" → Send fix."
+      },
+      "smart": {
+        "title": "Hold Fn",
+        "body": "PromptFlow writes it right for the app: a prompt in AI apps, a message everywhere else. Select text first and it edits the selection. Double-tap Fn for hands-free and tap it again to finish.",
+        "example": "In Claude: \"make me a landing page for my puzzle brand with a waitlist\" → a structured prompt. In Mail: \"tell sam the deck is late\" → a short, polite email line."
+      },
+      "plain": {
+        "title": "Just your words",
+        "body": "Fillers out, punctuation in, nothing else. Never a prompt. Press to start and again to stop, or hold while you talk.",
+        "example": "\"um so can you send me the deck by friday thanks\" → \"Can you send me the deck by Friday? Thanks!\""
       }
     },
     "island": {
@@ -1461,7 +1503,7 @@
       "states": {
         "listening": {
           "title": "Listening",
-          "body": "Says what's running: Writing, or Prompt for Claude."
+          "body": "Says what's coming: Prompt for Claude, Message for Mail, or Edit selection."
         },
         "working": {
           "title": "Working",
@@ -1469,7 +1511,7 @@
         },
         "ask": {
           "title": "Ask-back",
-          "body": "Tap an answer, press the shortcut to say it, or Skip."
+          "body": "Tap an answer, hold Fn to say it, or Skip."
         },
         "done": {
           "title": "Done",
@@ -1479,7 +1521,7 @@
     },
     "tipsTitle": "Tips",
     "tips": {
-      "holdOrTap": "Hold 🌐 (Fn) to Write and double-tap-and-hold it for Prompt, or use ⌥Space and ⌃⌥P. Tap a shortcut once to start and again to stop.",
+      "holdOrTap": "Hold Fn and talk, let go to finish. Double-tap Fn for hands-free and tap it again when you're done. ⌘Space: press, talk, press again.",
       "escape": "Press Esc while recording to cancel. Nothing is pasted.",
       "undo": "Didn't like the result? Click Undo in the island, or press ⌘Z.",
       "anyLanguage": "Speak Hindi, Telugu, Tamil and more. Prompts come out in English if you want.",
@@ -1518,8 +1560,14 @@
       "island": {
         "title": "The island.",
         "body": "A Dynamic Island that grows out of the notch and shows every step."
+      },
+      "twoKeys": {
+        "title": "Two keys.",
+        "body": "Hold Fn and PromptFlow writes it right for the app. ⌘Space is just your words."
       }
-    }
+    },
+    "menuTitle": "In the menu bar",
+    "menuBody": "These live in the menu bar. You can give them keys under Shortcuts → Advanced shortcuts."
   },
   "island": {
     "languageAuto": "AUTO",
@@ -1529,11 +1577,12 @@
     "close": "Close",
     "openApp": "Open PromptFlow",
     "mode": {
-      "dictate": "Dictate",
+      "dictate": "Words",
       "engineer": "Prompt",
       "command": "Edit",
       "this": "This",
-      "autopilot": "Autopilot"
+      "autopilot": "Autopilot",
+      "smart": "Smart"
     },
     "source": {
       "selection": "selection",
@@ -1552,7 +1601,7 @@
       "title": "Quick question",
       "skip": "Skip",
       "voiceHint": "Or press {{shortcut}} and answer out loud",
-      "voiceHintNoKey": "Or press the Prompt shortcut and answer out loud"
+      "voiceHintNoKey": "Or hold Fn and answer out loud"
     },
     "done": {
       "pasted": "Pasted",
@@ -1620,7 +1669,7 @@
       },
       "no_answer_found": {
         "title": "Can't see an answer",
-        "body": "Select the AI's reply, then press the shortcut again."
+        "body": "Select the AI's reply, then choose Check the answer again."
       },
       "paste_failed": {
         "title": "Couldn't paste",
@@ -1637,10 +1686,14 @@
       "timeout": {
         "title": "PromptFlow took too long",
         "body": "Try again in a moment."
+      },
+      "permissions_reset": {
+        "title": "Re-allow PromptFlow",
+        "body": "macOS needs you to re-allow PromptFlow after updating: remove it from the Accessibility list with –, then add it again."
       }
     },
     "active": {
-      "write": "Writing",
+      "write": "Just your words",
       "edit": "Editing",
       "prompt": "Prompt",
       "promptFor": "Prompt for {{app}}",
@@ -1662,6 +1715,22 @@
       "now": "Retry",
       "pasteRaw": "Paste raw text",
       "manual": "It may still have gone through. Retry only if nothing arrived."
+    },
+    "listening": "Listening",
+    "handsFree": "Hands-free · press again to finish",
+    "smart": {
+      "prompt": "Prompt",
+      "promptFor": "Prompt for {{app}}",
+      "message": "Message",
+      "messageFor": "Message for {{app}}",
+      "edit": "Edit selection"
+    },
+    "fix": {
+      "permissions_reset": "Fix it"
+    },
+    "tip": {
+      "fn_also_used_by_macos": "macOS may also open the emoji picker when you use Fn. Set 🌐 to Do Nothing.",
+      "open": "Keyboard Settings"
     }
   },
   "onboardingPf": {
@@ -1674,9 +1743,9 @@
       "body": "Dictate anywhere on your Mac, and turn rambling thoughts into prompts any AI understands.",
       "start": "Get started",
       "points": {
-        "speak": "Write: hold ⌥Space and talk. Your words, cleaned up, never turned into a prompt.",
-        "prompts": "Prompt: hold ⌃⌥P to turn what you say into a structured prompt for the AI you're in.",
-        "this": "Ask about what's on screen with \"This\".",
+        "speak": "Hold Fn: PromptFlow writes it right for the app, a prompt in AI apps and a message everywhere else.",
+        "prompts": "⌘Space: just your words, cleaned up.",
+        "this": "Ask about what's on screen with \"This\" in the menu bar.",
         "autopilot": "Check an AI's answer and fix it in one click."
       }
     },
@@ -1687,20 +1756,21 @@
     },
     "microphone": {
       "title": "Let PromptFlow hear you",
-      "body": "PromptFlow only listens while you hold a shortcut. Click below and choose Allow.",
+      "body": "PromptFlow only listens while you hold Fn or after you press ⌘Space. Click below and choose Allow.",
       "allow": "Allow microphone"
     },
     "accessibility": {
       "title": "Let PromptFlow type for you",
-      "body": "Accessibility lets PromptFlow notice your shortcut and paste the text where your cursor is.",
+      "body": "Accessibility lets PromptFlow notice your keys and paste the text where your cursor is. Input Monitoring lets it see the Fn key.",
       "open": "Open System Settings",
       "step1": "In Privacy & Security → Accessibility, find PromptFlow.",
       "step2": "Switch it on. You may need your Mac password.",
-      "step3": "Come back here. This page moves on by itself."
+      "step3": "Come back here. This page moves on by itself.",
+      "inputMonitoring": "Allow Input Monitoring (for Fn)"
     },
     "try": {
       "title": "Try it live",
-      "body": "Try Write now: click in the box, hold 🌐 (or ⌥Space) and say something like \"Hi, I'm trying PromptFlow and it's pretty great\".",
+      "body": "Click in the box, hold Fn (or press ⌘Space) and say something like \"Hi, I'm trying PromptFlow and it's pretty great\".",
       "holdHint": "Hold while you talk, let go to finish",
       "placeholder": "Your words appear here…",
       "idle": "Watch the top of your screen: the island shows when PromptFlow is listening.",
@@ -1717,6 +1787,14 @@
       "prompt": {
         "title": "Prompt",
         "body": "A structured prompt for the AI app you're in."
+      },
+      "smart": {
+        "title": "Hold Fn",
+        "body": "Written right for the app: a prompt in AI apps, a message everywhere else."
+      },
+      "plain": {
+        "title": "Just your words",
+        "body": "Cleaned up, never a prompt."
       }
     },
     "done": {
@@ -1726,14 +1804,18 @@
       "screenBody": "Lets \"This\" read images and PDFs.",
       "atLogin": "Open PromptFlow when I log in",
       "finish": "Start using PromptFlow"
+    },
+    "keys": {
+      "title": "Two keys, that's it",
+      "body": "Hold Fn: PromptFlow writes it right for the app, a prompt in AI apps and a message everywhere else. ⌘Space: just your words."
     }
   },
   "recovery": {
     "title": "PromptFlow needs your permission again",
     "allSet": "All set",
-    "body": "macOS sometimes forgets permissions after PromptFlow updates. Allow these again and you'll be right back to dictating.",
+    "body": "macOS needs you to re-allow PromptFlow after updating: remove it from the list with –, then add it again. Then you're right back to dictating.",
     "stuckTitle": "Already switched on, but still not working?",
-    "stuckBody": "In System Settings, select PromptFlow in the list, remove it with the minus button, then add it again with plus (it's in Applications). macOS then trusts the new version.",
+    "stuckBody": "In System Settings, select PromptFlow in the list, remove it with –, then add it again with + (it's in Applications). macOS then trusts the new version.",
     "continueAnyway": "Continue without them"
   },
   "update": {
@@ -1753,17 +1835,19 @@
     "opened": "PromptFlow.dmg is open: drag PromptFlow onto Applications and choose Replace, then open PromptFlow again."
   },
   "fnKey": {
-    "title": "Hold 🌐 (Fn) to talk",
-    "body": "Hold 🌐 to Write, release to paste. Double-tap and hold 🌐, or hold 🌐 and Control, for Prompt.",
-    "fix": "Set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings.",
+    "title": "Hold Fn",
+    "body": "PromptFlow writes it right for the app: a prompt in AI apps, a message everywhere else, an edit when text is selected. Double-tap Fn for hands-free; tap it again to finish.",
+    "fix": "PromptFlow works anyway; set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings so macOS stays out of the way.",
     "openKeyboard": "Open Keyboard settings",
-    "needsAccessibility": "Starts working once PromptFlow is allowed in Accessibility.",
+    "needsAccessibility": "Fn starts working once PromptFlow is allowed in Accessibility and Input Monitoring.",
     "conflict": {
-      "change_input_source": "macOS switches your keyboard language when you press 🌐.",
-      "show_emoji": "macOS opens the emoji picker when you press 🌐.",
-      "start_dictation": "macOS starts its own dictation when you press 🌐.",
-      "unknown": "macOS may do something else when you press 🌐."
-    }
+      "change_input_source": "macOS may also switch your keyboard language when you press 🌐.",
+      "show_emoji": "macOS may also open the emoji picker when you press 🌐.",
+      "start_dictation": "macOS may also start its own dictation when you press 🌐.",
+      "unknown": "macOS may also do something else when you press 🌐."
+    },
+    "inputMonitoring": "Fn also needs Input Monitoring.",
+    "allow": "Allow"
   },
   "cloudHistory": {
     "title": "History",
@@ -1776,9 +1860,10 @@
     "youSaid": "You said",
     "pasteAgain": "Paste again",
     "mode": {
-      "dictate": "Write",
+      "dictate": "Words",
       "engineer": "Prompt",
-      "command": "Edit"
+      "command": "Edit",
+      "auto": "Smart"
     },
     "notSent": "Not sent",
     "notSentBody": "A {{seconds}} s recording that couldn't reach PromptFlow. Nothing is lost.",
@@ -1794,5 +1879,12 @@
       "thanks": "Thanks. The PromptFlow team will look at it.",
       "signIn": "Sign in to send a report."
     }
+  },
+  "newKeys": {
+    "title": "Two keys now",
+    "fn": "Hold Fn: PromptFlow writes it right for the app, a prompt in AI apps and a message everywhere else.",
+    "plain": "⌘Space: just your words.",
+    "old": "The other shortcuts are off now. You can give any of them a key again under Shortcuts → Advanced shortcuts; This and Check the answer are in the menu bar.",
+    "ok": "Got it"
   }
 }

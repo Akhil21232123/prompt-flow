@@ -24,6 +24,7 @@ import {
   clearPromptFlowOnboarding,
 } from "./components/onboarding/pf/PromptFlowOnboarding";
 import { PermissionsRecovery } from "./components/onboarding/pf/PermissionsRecovery";
+import { NewKeysDialog } from "./components/settings/promptflow/NewKeysDialog";
 import { PrivateModeSettings } from "./components/settings/promptflow/PrivateModeSettings";
 import {
   clearOnboardingProgress,
@@ -377,6 +378,7 @@ function App() {
             </div>
           </div>
         </div>
+        <NewKeysDialog />
         {/* Fixed footer at bottom */}
         <Footer onShowHistory={showHistory} />
         {settings?.flow?.private_mode && (

@@ -75,6 +75,7 @@ regex = "1"
 url = "2"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
+plist = "1"
 # Text-based language ID (filler-word removal fallback); isolang bridges the
 # ISO 639-1 codes in model metadata to whatlang's 639-3 codes.
 whatlang = "0.16"

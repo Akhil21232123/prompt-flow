@@ -79,6 +79,8 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   ask_back: flow?.ask_back ?? true,
   memory_enabled: flow?.memory_enabled ?? true,
   fn_key: flow?.fn_key ?? true,
+  new_keys_notice: flow?.new_keys_notice ?? false,
+  fn_tip_shown: flow?.fn_tip_shown ?? false,
 });
 
 const newId = () =>
@@ -255,15 +257,6 @@ export const FlowSettings: React.FC = () => {
             onSelect={(v) => savePe({ format: v as PromptFormat })}
           />
         </SettingContainer>
-        <ToggleSwitch
-          checked={pe.auto_in_ai_apps}
-          onChange={(v) => savePe({ auto_in_ai_apps: v })}
-          isUpdating={isUpdating("flow")}
-          label={f("engineer.auto.title")}
-          description={f("engineer.auto.description")}
-          descriptionMode="tooltip"
-          grouped={true}
-        />
         <SettingContainer
           title={f("engineer.provider.title")}
           description={f("engineer.provider.description")}

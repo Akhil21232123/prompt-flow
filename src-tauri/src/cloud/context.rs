@@ -51,6 +51,9 @@ pub struct FieldContext {
     pub before_cursor: Option<String>,
     /// The selected text, read without touching the clipboard.
     pub selected: Option<String>,
+    /// The selection is in a field the user can type into (not terminal
+    /// output or a read-only page), so Smart may edit it.
+    pub selected_editable: bool,
     /// The page's address, when the window shows a web page.
     pub url: Option<String>,
     /// The focused window's title (for web apps and browsers, usually the
@@ -119,6 +122,17 @@ where
     if let Ok(mut pending) = PENDING.lock() {
         *pending = Some(handle);
     }
+}
+
+/// The text selected in the focused field right now, as Accessibility
+/// reports it (no clipboard), only when that field can be typed into: a
+/// highlight in terminal output or on a read-only page isn't something to
+/// edit.
+pub fn editable_selection() -> Option<String> {
+    let field = platform::focused_field();
+    field
+        .selected
+        .filter(|s| field.selected_editable && !s.trim().is_empty())
 }
 
 /// Drops the pending capture without waiting for it (its thread finishes
@@ -221,6 +235,24 @@ fn known_ai(haystack: &str) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
+/// A known AI from the page's address or title (in a browser or web app)
+/// or from the app's name; `None` for anything else.
+pub fn known_ai_target(
+    app_name: Option<&str>,
+    in_browser: bool,
+    url: Option<&str>,
+    title: Option<&str>,
+) -> Option<String> {
+    let host = url
+        .and_then(|u| url::Url::parse(u).ok())
+        .and_then(|u| u.host_str().map(str::to_string));
+    host.as_deref()
+        .and_then(known_ai)
+        .or_else(|| app_name.and_then(known_ai))
+        .or_else(|| in_browser.then(|| title.and_then(known_ai)).flatten())
+        .map(str::to_string)
+}
+
 /// The name of what a prompt is written for: a known AI from the page's
 /// address or title in a browser or web app, otherwise the app's own name.
 /// `None` for a browser showing something unrecognised.
@@ -230,16 +262,9 @@ pub fn target_name(
     url: Option<&str>,
     title: Option<&str>,
 ) -> Option<String> {
-    let host = url
-        .and_then(|u| url::Url::parse(u).ok())
-        .and_then(|u| u.host_str().map(str::to_string));
-    let found = host
-        .as_deref()
-        .and_then(known_ai)
-        .or_else(|| app_name.and_then(known_ai))
-        .or_else(|| in_browser.then(|| title.and_then(known_ai)).flatten());
-    if let Some(name) = found {
-        return Some(name.to_string());
+    let found = known_ai_target(app_name, in_browser, url, title);
+    if found.is_some() {
+        return found;
     }
     if in_browser {
         return None;
@@ -362,6 +387,11 @@ mod platform {
             value: CFTypeRef,
         ) -> i32;
         fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, timeout: f32) -> i32;
+        fn AXUIElementIsAttributeSettable(
+            element: AXUIElementRef,
+            attribute: CFStringRef,
+            settable: *mut u8,
+        ) -> i32;
         fn AXValueGetValue(value: CFTypeRef, the_type: u32, value_ptr: *mut c_void) -> u8;
     }
 
@@ -440,6 +470,14 @@ mod platform {
         (err == 0 && !value.is_null()).then_some(Cf(value))
     }
 
+    /// Whether the app lets `name` be written (an editable field's text).
+    fn settable(el: AXUIElementRef, name: &str) -> bool {
+        let key = cf_str(name);
+        let mut out: u8 = 0;
+        let err = unsafe { AXUIElementIsAttributeSettable(el, key.0, &mut out) };
+        err == 0 && out != 0
+    }
+
     fn attr_string(el: AXUIElementRef, name: &str) -> Option<String> {
         attr(el, name).and_then(|v| rust_string(v.0))
     }
@@ -513,6 +551,10 @@ mod platform {
             let secure = role == "AXSecureTextField" || subrole == "AXSecureTextField";
             if !secure {
                 out.selected = attr_string(el.0, "AXSelectedText").filter(|s| !s.trim().is_empty());
+                out.selected_editable = out.selected.is_some()
+                    && (TEXT_ROLES.contains(&role.as_str())
+                        || settable(el.0, "AXSelectedText")
+                        || settable(el.0, "AXValue"));
                 if TEXT_ROLES.contains(&role.as_str()) || role == "AXWebArea" {
                     if let Some(value) = attr_string(el.0, "AXValue") {
                         let range: Option<CFRange> =

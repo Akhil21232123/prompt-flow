@@ -1371,6 +1371,18 @@ async requestScreenRecording() : Promise<boolean> {
     return await TAURI_INVOKE("request_screen_recording");
 },
 /**
+ * The fix button on an island error: opens the System Settings pane that
+ * solves it.
+ */
+async islandFix(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_fix", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Whether the Fn key works and what macOS does with it on its own.
  */
 async fnKeyStatus() : Promise<FnKeyStatus> {
@@ -1386,6 +1398,53 @@ async openKeyboardSettings() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Opens Keyboard → Keyboard Shortcuts, where Spotlight's ⌘Space is turned
+ * off. PromptFlow never changes system settings itself.
+ */
+async openKeyboardShortcuts() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_keyboard_shortcuts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Whether Spotlight still owns ⌘Space, so PromptFlow's ⌘Space can't work
+ * until the user turns Spotlight's shortcut off.
+ */
+async spotlightOwnsCmdSpace() : Promise<boolean> {
+    return await TAURI_INVOKE("spotlight_owns_cmd_space");
+},
+/**
+ * Asks macOS for Input Monitoring (the prompt appears once; after that the
+ * System Settings pane is the only way).
+ */
+async requestInputMonitoring() : Promise<void> {
+    await TAURI_INVOKE("request_input_monitoring");
+},
+async permissionHealth() : Promise<PermissionHealth> {
+    return await TAURI_INVOKE("permission_health");
+},
+/**
+ * Clears macOS's stale Accessibility entry, asks again and opens the
+ * pane, so the user only has to switch PromptFlow on.
+ */
+async fixAccessibility() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("fix_accessibility") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Shortcuts that are set but didn't register.
+ */
+async shortcutProblems() : Promise<ShortcutProblem[]> {
+    return await TAURI_INVOKE("shortcut_problems");
 }
 }
 
@@ -1716,14 +1775,27 @@ ask_back?: boolean;
  */
 memory_enabled?: boolean; 
 /**
- * Hold Fn/🌐 to Write; double-tap and hold, or Fn+Control, to Prompt.
+ * Hold Fn/🌐 for Smart: a prompt in AI apps, a message everywhere
+ * else. Double-tap for hands-free.
  */
-fn_key?: boolean }
+fn_key?: boolean; 
+/**
+ * Tell a user who had the old shortcuts about the two keys, once.
+ */
+new_keys_notice?: boolean; 
+/**
+ * The "set 🌐 to Do Nothing" tip was shown (it's shown once).
+ */
+fn_tip_shown?: boolean }
 export type FnKeyStatus = { 
 /**
- * The tap is listening (Accessibility is granted and the setting is on).
+ * The tap is listening (permissions granted and the setting is on).
  */
-active: boolean; usage: FnUsage }
+active: boolean; usage: FnUsage; 
+/**
+ * macOS lets PromptFlow watch the keyboard (Input Monitoring).
+ */
+input_monitoring: boolean }
 /**
  * What macOS does when the 🌐/Fn key is pressed on its own
  * (System Settings → Keyboard → "Press 🌐 key to").
@@ -1777,7 +1849,12 @@ export type IslandError = "sign_in" | "session_ended" | "nothing_heard" | "rate_
 /**
  * The server took too long; it may still have finished.
  */
-"timeout"
+"timeout" | 
+/**
+ * macOS dropped PromptFlow's Accessibility grant (an update changed its
+ * signature) though System Settings still shows it on.
+ */
+"permissions_reset"
 export type IslandEvent = { id: number; view: IslandView; geometry: IslandGeometry }
 /**
  * Where the island sits, so the frontend can draw it into the notch.
@@ -1803,7 +1880,11 @@ export type IslandMode = "dictate" |
 /**
  * "This": a prompt about what's on screen.
  */
-"this" | "autopilot"
+"this" | "autopilot" | 
+/**
+ * Smart (hold Fn): PromptFlow decides what to write.
+ */
+"smart"
 export type IslandStep = 
 /**
  * Turning speech into text (and, in the cloud, everything after it).
@@ -1817,7 +1898,16 @@ export type IslandStep =
  * Autopilot is reading the answer.
  */
 "checking"
-export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
+/**
+ * A one-time tip shown under a result, with a button that fixes it.
+ */
+export type IslandTip = 
+/**
+ * "Press 🌐 key to" isn't "Do Nothing": macOS may also open the emoji
+ * picker (or switch input source) when Fn is used.
+ */
+"fn_also_used_by_macos"
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null; hint: SmartHint | null; hands_free: boolean } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean; tip: IslandTip | null } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
 /**
  * A Handy notice from the on-device pipeline (Private mode).
  */
@@ -1900,7 +1990,11 @@ export type MacPermission = "accessibility" | "microphone" |
 /**
  * Screen Recording, for reading text on screen ("This", Autopilot).
  */
-"screen"
+"screen" | 
+/**
+ * Input Monitoring, for the Fn key.
+ */
+"input_monitoring"
 export type Memory = { id: string; content: string; kind: string; source: string; pinned: boolean; created_at: string | null; updated_at: string | null; last_used_at: string | null }
 /**
  * A memory the backend used, shown as a chip.
@@ -1993,6 +2087,19 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
  */
 export type PendingDictation = { id: string; created_at: number; mode: string; app_name: string | null; duration_sec: number }
 export type PermissionAccess = "allowed" | "denied" | "unknown"
+export type PermissionHealth = { 
+/**
+ * macOS trusts PromptFlow with Accessibility right now.
+ */
+accessibility: boolean; 
+/**
+ * It was allowed before, and macOS dropped it (an update).
+ */
+accessibility_reset: boolean; 
+/**
+ * Input Monitoring, which the Fn key's listener needs.
+ */
+input_monitoring: boolean }
 /**
  * Request format a post-processing endpoint speaks. Built-in providers have a
  * fixed format; only the custom provider lets the user change it.
@@ -2007,7 +2114,11 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
-export type PrivacyPane = "microphone" | "accessibility" | "screen_recording"
+export type PrivacyPane = "microphone" | "accessibility" | "screen_recording" | 
+/**
+ * Input Monitoring, for the Fn key.
+ */
+"input_monitoring"
 export type PromptEngineerSettings = { quality?: EngineerQuality; target?: PromptTarget; missing_info?: MissingInfoPolicy; format?: PromptFormat; 
 /**
  * Critic score (1-10) at which Max mode stops revising.
@@ -2171,7 +2282,26 @@ export type ShortcutActivation =
  * (`hold_threshold_ms`).
  */
 "hold_or_toggle"
-export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; 
+/**
+ * Empty: not set (the shortcut is off until the user assigns a key).
+ */
+current_binding: string }
+export type ShortcutProblem = { id: string; 
+/**
+ * The key that didn't register, e.g. "command+space".
+ */
+binding: string; error: string }
+export type SmartHint = { kind: SmartKind; 
+/**
+ * The AI (for a prompt) or the app (for a message).
+ */
+app: string | null }
+/**
+ * What Smart (Fn) is about to write, as far as PromptFlow can tell while
+ * listening ("Prompt for Claude", "Message for Mail", "Edit selection").
+ */
+export type SmartKind = "prompt" | "message" | "edit"
 export type Snippet = { id: string; trigger: string; expansion: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**

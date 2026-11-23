@@ -214,6 +214,9 @@ pub enum MacPermission {
     Microphone,
     /// Screen Recording, for reading text on screen ("This", Autopilot).
     Screen,
+    /// Input Monitoring, for the Fn key.
+    #[serde(rename = "input_monitoring")]
+    InputMonitoring,
 }
 
 /// Clears Handy's macOS grant for `permission` before asking for it. A grant is
@@ -230,6 +233,7 @@ pub fn reset_macos_permission(app: AppHandle, permission: MacPermission) -> Resu
             MacPermission::Accessibility => "Accessibility",
             MacPermission::Microphone => "Microphone",
             MacPermission::Screen => "ScreenCapture",
+            MacPermission::InputMonitoring => "ListenEvent",
         };
         let identifier = app.config().identifier.clone();
         let output = std::process::Command::new("/usr/bin/tccutil")

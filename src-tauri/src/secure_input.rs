@@ -406,6 +406,10 @@ mod imp {
     }
 
     fn plan_fallback_binding(id: &str, binding: &ShortcutBinding) -> ShadowPlan {
+        if binding.current_binding.trim().is_empty() {
+            // Not set: nothing to shadow.
+            return ShadowPlan::Immune;
+        }
         let Ok(hotkey) = binding.current_binding.parse::<handy_keys::Hotkey>() else {
             warn!(
                 "SecureInput fallback: '{}' has unparseable binding '{}', skipping",
