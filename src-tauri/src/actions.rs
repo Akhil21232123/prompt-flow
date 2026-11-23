@@ -898,7 +898,7 @@ impl ShortcutAction for TranscribeAction {
                     tm.cancel_stream();
                     if input_silent {
                         // A muted microphone: say so instead of sending silence.
-                        let _ = crate::cloud::context::take_captured();
+                        crate::cloud::context::discard_captured();
                         finish_without_text(&ah, true, samples.len(), stop_time);
                         return;
                     }

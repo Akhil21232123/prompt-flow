@@ -96,6 +96,14 @@ where
     }
 }
 
+/// Drops the pending capture without waiting for it (its thread finishes
+/// on its own).
+pub fn discard_captured() {
+    if let Ok(mut pending) = PENDING.lock() {
+        pending.take();
+    }
+}
+
 /// The capture started by the last `begin_capture`, waiting for it.
 pub fn take_captured() -> Captured {
     let handle = PENDING.lock().ok().and_then(|mut p| p.take());
