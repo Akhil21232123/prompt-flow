@@ -313,7 +313,7 @@ def v2_checks(token, check):
     # Autopilot: a good answer and a missed one.
     r = call("POST", "/functions/v1/check", token, body={
         "intent": "Write a haiku about the monsoon in Mumbai",
-        "answer": "Grey clouds over Mumbai\nrain drums on tin roofs all night\nthe sea breathes again", "app": {"name": "Claude"}})
+        "answer": "Dark clouds cross the bay\nrain drums on tin roofs all night\nthe sea breathes again", "app": {"name": "Claude"}})
     check("check: a good answer is good", r["_status"] == 200 and r.get("verdict") == "good", json.dumps({k: r.get(k) for k in ("verdict", "issues")}))
     r = call("POST", "/functions/v1/check", token, body={
         "intent": "Write a Python function that reverses a string. Don't use slicing.",
