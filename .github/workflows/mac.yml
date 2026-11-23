@@ -5,7 +5,7 @@ name: mac
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "agent/**"]
     paths:
       - "src/**"
       - "src-tauri/**"
@@ -48,7 +48,7 @@ jobs:
       - name: Build
         run: bun run tauri build --bundles app,dmg
       - name: Publish to the mac-latest release
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
