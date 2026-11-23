@@ -1747,7 +1747,11 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 /**
  * A macOS privacy permission Handy asks for during onboarding.
  */
-export type MacPermission = "accessibility" | "microphone"
+export type MacPermission = "accessibility" | "microphone" | 
+/**
+ * Screen Recording, for reading text on screen ("This", Autopilot).
+ */
+"screen"
 export type Memory = { id: string; content: string; kind: string; source: string; pinned: boolean; created_at: string | null; updated_at: string | null; last_used_at: string | null }
 /**
  * A memory the backend used, shown as a chip.

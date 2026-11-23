@@ -158,31 +158,28 @@ const Island: React.FC = () => {
     if (idRef.current) void commands.islandCardSize(idRef.current, w, h);
   });
 
+  const kindRef = useRef<IslandView["kind"]>("hidden");
   const apply = useCallback((event: IslandEvent) => {
+    const previous = kindRef.current;
+    kindRef.current = event.view.kind;
     if (event.view.kind === "hidden") {
       setLeaving(true);
       return;
     }
     idRef.current = event.id;
+    // A new recording starts the timer and waveform fresh.
+    if (event.view.kind === "listening" && previous !== "listening") {
+      setElapsed(0);
+      setReady(false);
+      smoothed.current = Array(16).fill(0);
+      setLevels(Array(WAVE_BARS).fill(0));
+    }
+    if (previous === "hidden") resetSpring();
     setLeaving(false);
     setCopied(false);
     setBusy(false);
     setHovered(false);
-    setShown((prev) => {
-      // A new recording starts the timer and waveform fresh.
-      if (event.view.kind === "listening" && prev?.view.kind !== "listening") {
-        setElapsed(0);
-        setReady(false);
-        smoothed.current = Array(16).fill(0);
-        setLevels(Array(WAVE_BARS).fill(0));
-      }
-      if (!prev || prev.view.kind === "hidden") resetSpring();
-      return {
-        id: event.id,
-        view: event.view,
-        geometry: event.geometry,
-      };
-    });
+    setShown({ id: event.id, view: event.view, geometry: event.geometry });
   }, []);
 
   useEffect(() => {
@@ -458,25 +455,22 @@ const Island: React.FC = () => {
       content = (
         <>
           {header(
-            <>
-              <span className="i-glyph mode-engineer">
-                <HelpCircle size={13} />
-              </span>
-              <span className="i-mode-label">{t("island.ask.title")}</span>
-            </>,
+            <span className="i-glyph mode-engineer">
+              <HelpCircle size={13} />
+            </span>,
             close,
           )}
           <div className="i-body">
-            {!notch && (
-              <div className="i-title-row">
+            <div className="i-title-row">
+              {!notch && (
                 <span className="i-glyph mode-engineer">
                   <HelpCircle size={13} />
                 </span>
-                <span className="i-eyebrow">{t("island.ask.title")}</span>
-                <span className="i-spacer" />
-                {close}
-              </div>
-            )}
+              )}
+              <span className="i-mode-label">{t("island.ask.title")}</span>
+              <span className="i-spacer" />
+              {!notch && close}
+            </div>
             <p className="i-question">{view.question}</p>
             {view.options.length > 0 && (
               <div className="i-options">

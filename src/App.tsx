@@ -8,6 +8,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { platform } from "@tauri-apps/plugin-os";
+import { listen } from "@tauri-apps/api/event";
 import {
   checkAccessibilityPermission,
   checkMicrophonePermission,
@@ -127,6 +128,16 @@ function App() {
       refreshOutputDevices();
     }
   }, [onboardingStep, refreshAudioDevices, refreshOutputDevices]);
+
+  // The tray's "Check for updates" opens About, which shows the status.
+  useEffect(() => {
+    const unlisten = listen("check-for-updates", () =>
+      setCurrentSection("about"),
+    );
+    return () => {
+      unlisten.then((u) => u());
+    };
+  }, []);
 
   // Handle keyboard shortcuts for debug mode toggle
   useEffect(() => {
@@ -362,7 +373,9 @@ function App() {
         </div>
         {/* Fixed footer at bottom */}
         <Footer onShowHistory={showHistory} />
-        <FileDropOverlay onDropped={showHistory} />
+        {settings?.flow?.private_mode && (
+          <FileDropOverlay onDropped={showHistory} />
+        )}
       </div>
     );
   }

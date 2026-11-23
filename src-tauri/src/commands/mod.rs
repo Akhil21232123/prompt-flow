@@ -212,6 +212,8 @@ pub fn complete_onboarding(app: AppHandle) -> Result<(), String> {
 pub enum MacPermission {
     Accessibility,
     Microphone,
+    /// Screen Recording, for reading text on screen ("This", Autopilot).
+    Screen,
 }
 
 /// Clears Handy's macOS grant for `permission` before asking for it. A grant is
@@ -227,6 +229,7 @@ pub fn reset_macos_permission(app: AppHandle, permission: MacPermission) -> Resu
         let service = match permission {
             MacPermission::Accessibility => "Accessibility",
             MacPermission::Microphone => "Microphone",
+            MacPermission::Screen => "ScreenCapture",
         };
         let identifier = app.config().identifier.clone();
         let output = std::process::Command::new("/usr/bin/tccutil")

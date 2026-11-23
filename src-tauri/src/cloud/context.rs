@@ -196,7 +196,7 @@ mod platform {
     #[derive(Default, Clone, Copy)]
     struct CFRange {
         location: isize,
-        length: isize,
+        _length: isize,
     }
 
     #[link(name = "ApplicationServices", kind = "framework")]

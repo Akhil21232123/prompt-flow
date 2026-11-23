@@ -826,7 +826,10 @@ impl ShortcutAction for TranscribeAction {
         let use_streaming_overlay = should_use_streaming_overlay(style, tm.is_streaming());
         if use_streaming_overlay {
             tm.emit_stream_working(StreamWorkKind::Transcribing);
-        } else {
+        }
+        // A press that never started recording (signed out, no model) left
+        // its explanation in the island; don't replace it.
+        if rm.is_recording() {
             show_transcribing_overlay(app);
         }
 
@@ -1023,9 +1026,8 @@ impl ShortcutAction for TranscribeAction {
                             if post_process {
                                 if use_streaming_overlay {
                                     tm.emit_stream_working(StreamWorkKind::Polishing);
-                                } else {
-                                    show_processing_overlay(&ah);
                                 }
+                                show_processing_overlay(&ah);
                             }
                             let selection = match selection_task {
                                 Some(task) => task.await.ok().flatten(),
@@ -1242,7 +1244,11 @@ impl ShortcutAction for TranscribeAction {
                 debug!("No samples retrieved from recording stop");
                 // Tear down any streaming worker so its channel doesn't leak.
                 tm.cancel_stream();
-                utils::hide_recording_overlay(&ah);
+                // Only fold a recording away: an explanation of why nothing
+                // recorded (sign in, no model) stays up.
+                if utils::is_session_showing() {
+                    utils::hide_recording_overlay(&ah);
+                }
                 set_tray_state(&ah, TrayIconState::Idle);
                 if !rm.was_cancelled_since(cancel_generation) {
                     emit_transcription_complete(&ah, TranscriptionOutcome::Empty, 0, stop_time);

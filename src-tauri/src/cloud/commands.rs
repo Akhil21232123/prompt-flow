@@ -144,6 +144,17 @@ fn clean_kind(kind: &str) -> String {
     }
 }
 
+/// PostgREST's errors are technical; a repeated fact is the one users hit.
+fn friendly_memory_error(mut e: ApiError) -> ApiError {
+    if e.status == 409 {
+        e.code = ErrorCode::BadRequest;
+        e.message = "You already have that memory".into();
+    } else if e.code == ErrorCode::Server || e.code == ErrorCode::BadRequest {
+        e.message = "PromptFlow couldn't save that memory. Please try again.".into();
+    }
+    e
+}
+
 #[tauri::command]
 #[specta::specta]
 pub async fn memories_list(app: AppHandle) -> Result<Vec<Memory>, ApiError> {
@@ -153,7 +164,9 @@ pub async fn memories_list(app: AppHandle) -> Result<Vec<Memory>, ApiError> {
 #[tauri::command]
 #[specta::specta]
 pub async fn memory_add(app: AppHandle, content: String, kind: String) -> Result<Memory, ApiError> {
-    api::add_memory(&app, &clean_memory(&content)?, &clean_kind(&kind)).await
+    api::add_memory(&app, &clean_memory(&content)?, &clean_kind(&kind))
+        .await
+        .map_err(friendly_memory_error)
 }
 
 #[tauri::command]
@@ -175,7 +188,9 @@ pub async fn memory_update(
     if let Some(p) = pinned {
         patch.insert("pinned".into(), json!(p));
     }
-    api::update_memory(&app, &id, Value::Object(patch)).await
+    api::update_memory(&app, &id, Value::Object(patch))
+        .await
+        .map_err(friendly_memory_error)
 }
 
 #[tauri::command]
@@ -476,6 +491,14 @@ mod tests {
         assert_eq!(flow.spoken_language, "te");
         assert!(!apply_server(&mut flow, &json!({"spoken_language": "xx"})));
         assert_eq!(flow.spoken_language, "te");
+    }
+
+    #[test]
+    fn duplicate_memories_get_plain_words() {
+        let e = api::parse_error(409, r#"{"code":"23505","message":"duplicate key"}"#, None);
+        let e = friendly_memory_error(e);
+        assert_eq!(e.message, "You already have that memory");
+        assert_eq!(e.code, ErrorCode::BadRequest);
     }
 
     #[test]

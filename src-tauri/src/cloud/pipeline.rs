@@ -62,6 +62,10 @@ static PENDING_FIX: Lazy<Mutex<Option<PendingFix>>> = Lazy::new(|| Mutex::new(No
 /// The server keeps a question for 10 minutes; stop offering it a little before.
 const ASK_TTL: Duration = Duration::from_secs(9 * 60 + 30);
 
+/// The longest a recording waits, after the key is released, for the screen
+/// text that started being read when it began.
+const CAPTURE_WAIT: Duration = Duration::from_secs(5);
+
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -222,9 +226,19 @@ where
     let sample_count = rec.samples.len();
     let duration =
         sample_count as f64 / crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as f64;
-    let captured: Captured = tokio::task::spawn_blocking(context::take_captured)
-        .await
-        .unwrap_or_default();
+    // Reading the screen is bounded on its own, but never let it hold the
+    // request for long: without it the prompt is still useful.
+    let captured: Captured = tokio::time::timeout(
+        CAPTURE_WAIT,
+        tokio::task::spawn_blocking(context::take_captured),
+    )
+    .await
+    .ok()
+    .and_then(|joined| joined.ok())
+    .unwrap_or_else(|| {
+        log::warn!("Reading the screen took too long; sending without it");
+        Captured::default()
+    });
 
     let pending = {
         let mut p = lock(&PENDING_ASK);

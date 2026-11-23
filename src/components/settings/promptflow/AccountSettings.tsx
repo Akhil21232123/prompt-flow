@@ -100,7 +100,10 @@ export const AccountSettings: React.FC = () => {
           <div className="flex items-center gap-2 mt-1">
             <PfBadge tone="violet">
               {usage?.plan
-                ? t("account.plan", { plan: usage.plan })
+                ? t("account.plan", {
+                    plan:
+                      usage.plan.charAt(0).toUpperCase() + usage.plan.slice(1),
+                  })
                 : t("account.planBeta")}
             </PfBadge>
             {privateMode ? (

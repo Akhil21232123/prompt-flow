@@ -72,6 +72,8 @@ struct MenuInputs {
     update_checks_enabled: bool,
     /// The language submenu, when the selected model has languages to pick.
     language: Option<LanguageMenu>,
+    /// Private mode: the on-device model is in use, so its menu items show.
+    private_mode: bool,
 }
 
 /// What the language submenu shows: `(code, name)` entries, with codes as
@@ -394,6 +396,7 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             locale: settings.app_language,
             update_checks_enabled: settings.update_checks_enabled,
             language,
+            private_mode: settings.flow.private_mode,
         },
     }
 }
@@ -709,6 +712,21 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &quit_i,
             ],
         )?
+    } else if !inputs.private_mode {
+        // The cloud transcribes: no local model or language to pick here.
+        Menu::with_items(
+            app,
+            &[
+                &version_i,
+                &separator()?,
+                &copy_last_transcript_i,
+                &separator()?,
+                &settings_i,
+                &check_updates_i,
+                &separator()?,
+                &quit_i,
+            ],
+        )?
     } else {
         // Build model submenu — label is the active model name
         let submenu_label = inputs
@@ -989,6 +1007,7 @@ mod tests {
             locale: "en".to_string(),
             update_checks_enabled: true,
             language: None,
+            private_mode: true,
         }
     }
 

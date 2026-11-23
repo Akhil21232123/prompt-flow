@@ -209,3 +209,8 @@
     animation: none;
   }
 }
+
+/* A disabled gradient button keeps white text; it fades as a whole. */
+.pf-button-primary:disabled {
+  color: #fff;
+}

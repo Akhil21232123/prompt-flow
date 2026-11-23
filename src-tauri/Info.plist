@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Request microphone access to transcribe audio locally</string>
+  <string>PromptFlow listens only while you hold a shortcut, to turn what you say into text.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>PromptFlow checks which app you're typing in, so it can write in the right style for it.</string>
 </dict>
 </plist>

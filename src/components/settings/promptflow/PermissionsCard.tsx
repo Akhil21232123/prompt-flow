@@ -53,18 +53,23 @@ export const useMacPermissions = (poll = true) => {
   return { state, refresh: check };
 };
 
-/** Asks for `pane` the way macOS allows: a prompt the first time, the
- *  System Settings pane after that (and after an update forgot the grant). */
+/** Asks for `pane` the way macOS allows. A grant belongs to one build's
+ *  signature, and PromptFlow's ad-hoc signature changes with every update,
+ *  so a stale entry is cleared first (only ever called while not granted);
+ *  macOS then prompts afresh, and the System Settings pane opens as well. */
 export const askFor = async (pane: PrivacyPane) => {
   try {
     if (pane === "microphone") {
+      await commands.resetMacosPermission("microphone");
       await requestMicrophonePermission();
       if (!(await checkMicrophonePermission()))
         await commands.openPrivacySettings("microphone");
     } else if (pane === "accessibility") {
+      await commands.resetMacosPermission("accessibility");
       await requestAccessibilityPermission();
       await commands.openPrivacySettings("accessibility");
     } else {
+      await commands.resetMacosPermission("screen");
       await commands.requestScreenRecording();
     }
   } catch (e) {

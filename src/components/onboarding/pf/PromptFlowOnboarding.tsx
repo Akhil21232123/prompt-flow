@@ -384,10 +384,19 @@ const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
       >
         {hint}
       </p>
-      <button className="pf-button-primary w-full" onClick={onNext}>
-        {worked ? t("onboardingPf.try.next") : t("onboardingPf.try.skip")}
-        <ArrowRight size={16} />
-      </button>
+      {worked ? (
+        <button className="pf-button-primary w-full pf-rise" onClick={onNext}>
+          {t("onboardingPf.try.next")}
+          <ArrowRight size={16} />
+        </button>
+      ) : (
+        <button
+          className="pf-button-secondary self-center h-10 px-5"
+          onClick={onNext}
+        >
+          {t("onboardingPf.try.skip")}
+        </button>
+      )}
     </div>
   );
 };
