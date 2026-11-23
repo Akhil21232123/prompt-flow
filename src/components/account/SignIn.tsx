@@ -7,7 +7,8 @@ import { apiErrorMessage } from "@/lib/cloud";
 /** Codes are 6 digits, but the email service may send up to 8. */
 const CODE_MIN = 6;
 const CODE_MAX = 8;
-/** A 6- or 7-digit code is sent once typing pauses this long (an 8-digit one at once). */
+/** A 6-digit code is sent once typing pauses this long (more digits may be
+ * coming); an 8-digit one at once; anything else on Enter. */
 const PAUSE_MS = 900;
 const RESEND_AFTER_S = 30;
 
@@ -53,16 +54,25 @@ export const SignIn: React.FC<SignInProps> = ({
   }, [step]);
 
   // Send the code when it's complete: at once at 8 digits, or when typing
-  // pauses at 6 or 7. A code that already failed isn't sent again.
+  // pauses at exactly 6. A code that already failed isn't sent again.
   useEffect(() => {
-    if (step !== "code" || busy || code.length < CODE_MIN) return;
-    if (code === tried.current) return;
+    if (step !== "code" || busy || code === tried.current) return;
+    if (code.length !== CODE_MIN && code.length !== CODE_MAX) return;
     const timer = setTimeout(
       () => void verify(code),
-      code.length >= CODE_MAX ? 0 : PAUSE_MS,
+      code.length === CODE_MAX ? 0 : PAUSE_MS,
     );
     return () => clearTimeout(timer);
   }, [code, step, busy]);
+
+  // After a wrong code, the field is ready to retype (it was disabled while
+  // checking, so focus is put back once it's enabled again).
+  useEffect(() => {
+    if (step === "code" && !busy && error) {
+      codeRef.current?.focus();
+      codeRef.current?.select();
+    }
+  }, [busy, error, step]);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
@@ -93,8 +103,6 @@ export const SignIn: React.FC<SignInProps> = ({
       onSignedIn?.();
     } else {
       setError(apiErrorMessage(t, r.error));
-      // Leave the code to fix: select it so typing replaces it.
-      requestAnimationFrame(() => codeRef.current?.select());
     }
   };
 

@@ -89,6 +89,15 @@ pub struct DictateMeta {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub skip_clarify: bool,
     pub device: &'static str,
+    /// One per recording, the same on every retry, so the server can tell a
+    /// retry from a new dictation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
+/// A fresh `request_id`.
+pub fn new_request_id() -> String {
+    uuid::Uuid::new_v4().to_string()
 }
 
 /// How an ask-back is being answered.
@@ -186,6 +195,7 @@ pub fn build_meta(
         answer_text,
         skip_clarify,
         device: "mac",
+        request_id: None,
     }
 }
 
@@ -361,6 +371,16 @@ pub async fn send(
     wav: Option<&[u8]>,
 ) -> Result<DictateOutcome, ApiError> {
     let meta_json = serde_json::to_string(meta).map_err(|e| ApiError::server(e.to_string()))?;
+    send_json(app, &meta_json, wav).await
+}
+
+/// [`send`] with the meta already serialised (a kept recording's retry).
+pub async fn send_json(
+    app: &AppHandle,
+    meta_json: &str,
+    wav: Option<&[u8]>,
+) -> Result<DictateOutcome, ApiError> {
+    let meta_json = meta_json.to_string();
     let body = api::authed(app, || {
         let mut form = reqwest::multipart::Form::new().part(
             "meta",
@@ -409,6 +429,7 @@ mod tests {
         };
         let meta = build_meta(CloudMode::Engineer, &flow(), input, None);
         let v = serde_json::to_value(&meta).unwrap();
+        assert!(v.get("request_id").is_none());
         assert_eq!(
             v,
             json!({
@@ -551,6 +572,13 @@ mod tests {
         assert_eq!(body["mode"], "engineer");
         assert_eq!(body["ask_back"], false);
         assert!(body.get("duration_sec").is_none());
+    }
+
+    #[test]
+    fn request_ids_are_unique_uuids() {
+        let a = new_request_id();
+        assert_eq!(a.len(), 36);
+        assert_ne!(a, new_request_id());
     }
 
     #[test]

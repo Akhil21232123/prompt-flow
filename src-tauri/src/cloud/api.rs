@@ -25,6 +25,9 @@ pub enum ErrorCode {
     Quota,
     /// The server couldn't be reached.
     Network,
+    /// The server took too long to answer. It may still finish the work, so
+    /// this is never retried automatically.
+    Timeout,
     /// Anything else the server got wrong.
     Server,
 }
@@ -82,13 +85,15 @@ impl ApiError {
         Self::new(ErrorCode::Server, message)
     }
     fn network(e: &reqwest::Error) -> Self {
-        let message = if e.is_timeout() {
-            "PromptFlow took too long to answer"
-        } else {
-            "Can't reach PromptFlow. Check your internet connection."
-        };
         log::warn!("PromptFlow request failed: {e}");
-        Self::new(ErrorCode::Network, message)
+        if e.is_timeout() {
+            Self::new(ErrorCode::Timeout, "PromptFlow took too long to answer")
+        } else {
+            Self::new(
+                ErrorCode::Network,
+                "Can't reach PromptFlow. Check your internet connection.",
+            )
+        }
     }
 }
 

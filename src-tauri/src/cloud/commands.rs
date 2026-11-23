@@ -213,6 +213,27 @@ pub async fn cloud_history(
     api::history(&app, 50, offset, &query).await
 }
 
+/// Recordings that couldn't be sent, newest first.
+#[tauri::command]
+#[specta::specta]
+pub fn outbox_list(app: AppHandle) -> Vec<super::outbox::PendingDictation> {
+    super::outbox::list(&app).iter().map(Into::into).collect()
+}
+
+/// Sends a kept recording now. Returns what was written ("" if nothing
+/// was heard).
+#[tauri::command]
+#[specta::specta]
+pub async fn outbox_retry(app: AppHandle, id: String) -> Result<String, ApiError> {
+    super::pipeline::send_kept(&app, &id).await
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn outbox_delete(app: AppHandle, id: String) {
+    super::outbox::remove(&app, &id);
+}
+
 /// "Paste again": hides PromptFlow so the app the user was in comes back to
 /// the front, then pastes there.
 #[tauri::command]
@@ -347,6 +368,8 @@ pub fn island_close(app: AppHandle, id: u64) {
 #[tauri::command]
 #[specta::specta]
 pub fn island_dismiss(app: AppHandle, id: u64) {
+    // A dismissed retry stops; its recording waits in History.
+    super::pipeline::clear_retry(Some(id));
     island::dismiss(&app, id);
 }
 

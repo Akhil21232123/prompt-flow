@@ -1229,7 +1229,8 @@
       "rateLimitedFor": "That was a lot at once. Try again in {{seconds}} seconds.",
       "quota": "You've reached today's limit. It resets tomorrow.",
       "auth": "You've been signed out. Sign in again to keep going.",
-      "generic": "Something went wrong. Please try again."
+      "generic": "Something went wrong. Please try again.",
+      "timeout": "PromptFlow took too long to answer. Try again in a moment."
     }
   },
   "account": {
@@ -1565,7 +1566,8 @@
       "good": "Good result",
       "bad": "Bad result",
       "thanks": "Thanks",
-      "onClipboard": "On your clipboard"
+      "onClipboard": "On your clipboard",
+      "alreadySent": "Already sent · new version on your clipboard"
     },
     "verdict": {
       "good": "The answer looks right",
@@ -1631,6 +1633,10 @@
       "paused": {
         "title": "PromptFlow is paused",
         "body": "Resume it from the menu bar."
+      },
+      "timeout": {
+        "title": "PromptFlow took too long",
+        "body": "Try again in a moment."
       }
     },
     "active": {
@@ -1654,7 +1660,8 @@
       "trying": "Trying again…",
       "gaveUp": "Still can't get through. Try again when you're back online.",
       "now": "Retry",
-      "pasteRaw": "Paste raw text"
+      "pasteRaw": "Paste raw text",
+      "manual": "It may still have gone through. Retry only if nothing arrived."
     }
   },
   "onboardingPf": {
@@ -1772,7 +1779,10 @@
       "dictate": "Write",
       "engineer": "Prompt",
       "command": "Edit"
-    }
+    },
+    "notSent": "Not sent",
+    "notSentBody": "A {{seconds}} s recording that couldn't reach PromptFlow. Nothing is lost.",
+    "retry": "Retry"
   },
   "help": {
     "title": "Help",

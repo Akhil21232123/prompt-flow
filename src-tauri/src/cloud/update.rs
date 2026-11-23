@@ -63,6 +63,9 @@ pub fn parse_release(v: &Value, current: u32) -> UpdateInfo {
     }
 }
 
+/// No bytes for this long ends a download.
+const STALL_TIMEOUT: Duration = Duration::from_secs(60);
+
 /// Only PromptFlow's own release assets are downloaded.
 pub fn trusted_download(url: &str) -> bool {
     url::Url::parse(url).is_ok_and(|u| {
@@ -113,7 +116,17 @@ pub async fn download_and_open(app: &tauri::AppHandle, url: &str) -> Result<Stri
     let mut received = 0u64;
     let mut last_emit = 0u64;
     let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
+    loop {
+        // A connection that stops sending is dropped after a minute rather
+        // than left hanging forever.
+        let next = tokio::time::timeout(STALL_TIMEOUT, stream.next())
+            .await
+            .map_err(|_| {
+                "The download stalled. Check your connection and try again.".to_string()
+            })?;
+        let Some(chunk) = next else {
+            break;
+        };
         let chunk = chunk.map_err(|e| format!("The download stopped: {e}"))?;
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
             .await

@@ -90,6 +90,8 @@ pub enum IslandError {
     AskExpired,
     /// Paused from the menu bar.
     Paused,
+    /// The server took too long; it may still have finished.
+    Timeout,
 }
 
 /// A one-click redo of the last result, offered as a chip.
@@ -157,6 +159,9 @@ pub enum IslandView {
         memory: Vec<MemoryChip>,
         /// It was pasted (so ⌘Z can undo it), not just copied.
         pasted: bool,
+        /// It was sent (auto-submit pressed Return): no Undo, and a redo
+        /// goes to the clipboard.
+        sent: bool,
         /// One-click redos ("As prompt", "Formal", …).
         chips: Vec<Redo>,
         /// It can be rated (the server gave it an id).
@@ -625,6 +630,7 @@ mod tests {
             label: None,
             memory: vec![],
             pasted: true,
+            sent: false,
             chips: vec![Redo::AsPrompt],
             rateable: true,
         };
