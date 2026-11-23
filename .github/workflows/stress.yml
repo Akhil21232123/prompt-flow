@@ -1,14 +1,17 @@
 name: stress test
 # Runs real speech, silence and noise through the deployed backend as a
-# throwaway test user. With repo secret PF_SERVICE (the project's secret /
-# service_role key) it creates and deletes its own user; without it, it needs
-# anonymous sign-ins switched on in Supabase while it runs. Manual.
+# throwaway test user, then every v2 feature (ask-back, AI targets, Hindi and
+# Telugu, memory, "this", /check, limits, settings merge, delete_account).
+# With repo secret PF_SERVICE (the project's secret / service_role key) it
+# creates its own user; without it, it needs anonymous sign-ins switched on in
+# Supabase while it runs. The user deletes itself at the end. Manual.
 on:
   workflow_dispatch:
 
 jobs:
   live:
     runs-on: macos-15
+    timeout-minutes: 40
     env:
       REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
     steps:

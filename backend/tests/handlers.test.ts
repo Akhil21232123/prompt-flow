@@ -13,60 +13,36 @@ import {
 import {
   AuthError,
   mergeSettings,
-  type Db,
 } from "../supabase/functions/_shared/supabase.ts";
-import { DEFAULT_SETTINGS } from "../supabase/functions/_shared/types.ts";
+import { dictateRequest, fakeCtx } from "./fakes.ts";
 
 function ctx(
   opts: { transcript?: string; reply?: string; signedIn?: boolean } = {},
 ) {
-  const saved: Array<Record<string, unknown>> = [];
-  const added: string[][] = [];
-  const db: Db = {
-    session: { userId: "u1", token: "t" },
-    loadUserData: async () => ({
-      settings: structuredClone(DEFAULT_SETTINGS),
-      dictionary: ["Wispr Flow"],
-      snippets: [],
-    }),
-    saveDictation: async (row) => void saved.push(row),
-    addWords: async (w) => void added.push(w),
-  };
-  const sttCalls: Array<{ language?: string; prompt?: string }> = [];
+  const f = fakeCtx({
+    transcript: opts.transcript,
+    replies: opts.reply ? { polish: opts.reply } : {},
+  });
   const c: Ctx = {
-    db: async () => {
+    ...f.ctx,
+    db: async (req) => {
       if (opts.signedIn === false)
         throw new AuthError("Sign in to use PromptFlow");
-      return db;
+      return f.ctx.db(req);
     },
-    transcribe: async (_audio, o) => {
-      sttCalls.push(o);
-      return { text: opts.transcript ?? "hello there", provider: "groq" };
-    },
-    complete: async () => opts.reply ?? "Hello there.",
-    models: { fast: "f", smart: "s" },
   };
-  return { c, saved, added, sttCalls };
-}
-
-function dictateRequest(meta: Record<string, unknown>, bytes = 1000) {
-  const form = new FormData();
-  form.append(
-    "audio",
-    new Blob([new Uint8Array(bytes)], { type: "audio/wav" }),
-    "a.wav",
-  );
-  form.append("meta", JSON.stringify(meta));
-  return new Request("http://x/dictate", {
-    method: "POST",
-    body: form,
-    headers: { authorization: "Bearer t" },
-  });
+  return {
+    c,
+    saved: f.db.saved,
+    added: f.db.words,
+    sttCalls: f.sttCalls,
+    settle: f.settle,
+  };
 }
 
 describe("dictate", () => {
   test("transcribes with the dictionary as a prompt, rewrites, saves history", async () => {
-    const { c, saved, sttCalls } = ctx();
+    const { c, saved, sttCalls, settle } = ctx();
     const res = await handleDictate(
       dictateRequest({
         mode: "dictate",
@@ -81,7 +57,7 @@ describe("dictate", () => {
     expect(body.text).toBe("Hello there.");
     expect(body.category).toBe("personal_chat");
     expect(sttCalls[0]).toEqual({ language: "en", prompt: "Wispr Flow" });
-    await Promise.resolve();
+    await settle();
     expect(saved[0].stt_provider).toBe("groq");
   });
 
@@ -107,7 +83,7 @@ describe("dictate", () => {
     expect(
       (await handleDictate(dictateRequest({ mode: "sing" }), c)).status,
     ).toBe(400);
-    expect((await handleDictate(dictateRequest({}, 0), c)).status).toBe(400);
+    expect((await handleDictate(dictateRequest({}, null), c)).status).toBe(400);
   });
 });
 

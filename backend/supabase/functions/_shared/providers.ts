@@ -1,6 +1,7 @@
-// Model providers: Claude (Anthropic) for every rewrite; Groq or OpenAI for
-// speech-to-text. Plain fetch, no SDKs, so the same code runs in Deno and Bun.
+// Model providers: Claude (Anthropic) when its key is set, else Groq, for
+// every rewrite; Groq or OpenAI for speech-to-text. Plain fetch, no SDKs, so the same code runs in Deno and Bun.
 
+import { languageCode } from "./languages.ts";
 import type { Complete, Transcribe } from "./types.ts";
 
 export interface Env {
@@ -202,12 +203,15 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
           );
         const data = (await res.json()) as {
           text?: string;
+          language?: string;
           segments?: Array<{ no_speech_prob?: number; avg_logprob?: number }>;
         };
+        const language = languageCode(data.language);
         return {
           text: (data.text ?? "").trim(),
           provider: name,
           ...(isSilent(data.segments) ? { silent: true } : {}),
+          ...(language ? { language } : {}),
         };
       } catch (e) {
         lastError = e;
@@ -227,8 +231,7 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
  */
 export function isSilent(
   segments:
-    | Array<{ no_speech_prob?: number; avg_logprob?: number }>
-    | undefined,
+    Array<{ no_speech_prob?: number; avg_logprob?: number }> | undefined,
 ): boolean {
   if (!segments || segments.length === 0) return false;
   return segments.every(

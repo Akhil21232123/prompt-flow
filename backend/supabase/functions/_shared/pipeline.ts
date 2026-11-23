@@ -4,11 +4,21 @@
 
 import { classify, isAiTarget } from "./categories.ts";
 import { findInventions } from "./fidelity.ts";
+import { needsEnglish, type OutputLanguage } from "./languages.ts";
+import { usedMemories } from "./memory.ts";
 import * as P from "./prompts.ts";
 import * as S from "./snippets.ts";
+import {
+  type AiTarget,
+  conventionsFor,
+  detectTarget,
+  formatFor,
+  playbookFor,
+} from "./targets.ts";
 import type {
   AppCategory,
   Complete,
+  Mode,
   PromptTarget,
   RewriteRequest,
   RewriteResult,
@@ -68,6 +78,33 @@ export function resolveMode(
     : "dictate";
 }
 
+/** The path a request will take, before any model is called. */
+export function plannedMode(req: RewriteRequest, user: UserData): Mode {
+  return resolveMode(req, user, classify(req.app));
+}
+
+/** The language the result is written in: "en" or the speaker's own. */
+export function outputLanguageFor(
+  mode: Mode,
+  req: RewriteRequest,
+  user: UserData,
+): OutputLanguage {
+  if (req.outputLanguage) return req.outputLanguage;
+  if (mode === "engineer")
+    return user.settings.prompts_in_english ? "en" : "same";
+  return "same";
+}
+
+/** undefined: keep the language; otherwise translate (code, or "" if unknown). */
+function translateFrom(
+  req: RewriteRequest,
+  output: OutputLanguage,
+): string | undefined {
+  return needsEnglish(output, req.language, req.text)
+    ? (req.language ?? "")
+    : undefined;
+}
+
 /** Text the rewrite may legitimately draw facts from, besides the transcript. */
 function trustedContext(
   req: RewriteRequest,
@@ -77,12 +114,24 @@ function trustedContext(
   return [
     req.text,
     req.selection ?? "",
+    req.screen?.text ?? "",
     req.app?.name ?? "",
     req.app?.title ?? "",
+    req.app?.url ?? "",
     req.app?.surrounding_text ?? "",
+    ...(req.memories ?? []).map((m) => m.content),
+    req.clarification?.answer ?? "",
     user.dictionary.join(" "),
     extra,
   ].join("\n");
+}
+
+function withMemory(result: RewriteResult, req: RewriteRequest): RewriteResult {
+  const used = usedMemories(req.memories ?? [], req.text, result.text);
+  return {
+    ...result,
+    memory_used: used.map((m) => ({ id: m.id, content: m.content })),
+  };
 }
 
 const REPAIR_NOTE = (problems: string[]) =>
@@ -106,6 +155,7 @@ async function polish(
     developerMode: user.settings.developer_mode,
     dictionary: user.dictionary,
     hasSnippetTokens: protectedText.tokens.length > 0,
+    translateFrom: translateFrom(req, outputLanguageFor("dictate", req, user)),
   });
   const context = trustedContext(req, user);
   let calls = 0;
@@ -148,10 +198,22 @@ async function engineer(
   const s = user.settings.engineer;
   const protectedText = S.protect(req.text, user.snippets);
   const hasTokens = protectedText.tokens.length > 0;
-  const format = P.resolveFormat(s.format, req.app, category);
-  const architect = P.architectSystem(s, format, hasTokens);
-  const critic = P.criticSystem(s, format, hasTokens);
-  const fixedTarget: PromptTarget = req.target ?? s.target;
+  const ai: AiTarget | undefined = detectTarget(req.app);
+  const format: P.FormatChoice = ai
+    ? { text: formatFor(ai) }
+    : P.resolveFormat(s.format, req.app, category);
+  const output = outputLanguageFor("engineer", req, user);
+  const extras = { translateFrom: translateFrom(req, output) };
+  const architect = P.architectSystem(s, format, hasTokens, extras);
+  const critic = P.criticSystem(s, format, hasTokens, extras);
+  const fixedTarget: PromptTarget =
+    req.target ?? (ai ? playbookFor(ai) : undefined) ?? s.target;
+  const context = P.contextBlocks({
+    memories: req.memories,
+    screen: req.screen,
+    clarification: req.clarification,
+    targetName: ai?.name,
+  });
   let calls = 0;
 
   calls++;
@@ -164,6 +226,7 @@ async function engineer(
       target: fixedTarget,
       customInstructions: s.custom_instructions,
       dictionary: user.dictionary,
+      context,
     }),
     { model: deps.models.smart, maxTokens: 4096 },
   );
@@ -191,7 +254,7 @@ async function engineer(
       calls++;
       review = await deps.complete(
         critic,
-        P.criticUser(protectedText.text, target, prompt),
+        P.criticUser(protectedText.text, target, prompt, context),
         {
           model: deps.models.smart,
           maxTokens: 4096,
@@ -207,26 +270,30 @@ async function engineer(
   }
 
   // Fidelity guard, then one targeted repair, then fall back to plain polish.
-  const context = trustedContext(req, user, s.custom_instructions);
-  let problems = findInventions(context, prompt);
+  const trusted = trustedContext(
+    req,
+    user,
+    `${s.custom_instructions}\n${conventionsFor(ai, req.text)}`,
+  );
+  let problems = findInventions(trusted, prompt);
   let guarded: string[] | undefined;
   if (problems.length) {
     guarded = problems;
     calls++;
     const repaired = await deps.complete(
       critic + REPAIR_NOTE(problems),
-      P.criticUser(protectedText.text, target, prompt),
+      P.criticUser(protectedText.text, target, prompt, context),
       { model: deps.models.smart, maxTokens: 4096 },
     );
     const fixed = P.parsePrompt(repaired);
-    if (fixed && findInventions(context, fixed).length === 0) {
+    if (fixed && findInventions(trusted, fixed).length === 0) {
       prompt = fixed;
       problems = [];
     }
   }
   if (problems.length) {
     const safe = await polish(
-      { ...req, mode: "dictate" },
+      { ...req, mode: "dictate", outputLanguage: output },
       user,
       category,
       deps,
@@ -239,14 +306,19 @@ async function engineer(
     };
   }
 
-  let label = `Prompt Engineer · ${target}`;
-  if (done) label += ` · ${done} critique round(s)`;
-  if (score !== undefined) label += ` · score ${score}/10`;
+  let label: string;
+  if (ai) label = `Prompt · for ${ai.name}`;
+  else {
+    label = `Prompt Engineer · ${target}`;
+    if (done) label += ` · ${done} critique round(s)`;
+    if (score !== undefined) label += ` · score ${score}/10`;
+  }
   return {
     text: S.expand(prompt, protectedText.tokens),
     mode: "engineer",
     category,
     label,
+    ...(ai ? { target: ai.id } : {}),
     guarded,
     calls,
   };
@@ -260,13 +332,18 @@ async function command(
 ): Promise<RewriteResult> {
   const selection = req.selection?.trim() ? req.selection : undefined;
   const style = req.style ?? styleFor(user, category);
-  const system = P.commandSystem(Boolean(selection));
+  const system = P.commandSystem(
+    Boolean(selection),
+    translateFrom(req, outputLanguageFor("command", req, user)),
+  );
   const user_ = P.commandUser({
     instruction: req.text,
     selection,
     app: req.app,
     category,
     style,
+    memories: req.memories,
+    screen: req.screen,
   });
   const context = trustedContext(req, user);
   let calls = 0;
@@ -314,13 +391,30 @@ export async function rewrite(
     };
   }
   const mode = resolveMode(req, user, category);
-  if (mode === "command") return command(req, user, category, deps);
+  if (mode === "command")
+    return withMemory(await command(req, user, category, deps), req);
   if (mode === "engineer") {
     try {
-      return await engineer(req, user, category, deps);
+      return withMemory(await engineer(req, user, category, deps), req);
     } catch {
-      return polish({ ...req, mode: "dictate" }, user, category, deps);
+      return withMemory(
+        await polish(
+          {
+            ...req,
+            mode: "dictate",
+            outputLanguage: outputLanguageFor("engineer", req, user),
+          },
+          user,
+          category,
+          deps,
+        ),
+        req,
+      );
     }
   }
-  return polish(req, user, category, deps);
+  // Plain dictation is only cleaned up; memory is never added to it.
+  return withMemory(
+    await polish({ ...req, memories: undefined }, user, category, deps),
+    { ...req, memories: [] },
+  );
 }

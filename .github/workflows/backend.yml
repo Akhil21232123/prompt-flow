@@ -8,6 +8,7 @@ on:
         "backend/**",
         "src-tauri/src/flow/**",
         "scripts/sync-prompts.py",
+        "scripts/stress_test.py",
         ".github/workflows/backend.yml",
       ]
   pull_request:
@@ -28,3 +29,6 @@ jobs:
         run: python3 scripts/sync-prompts.py && git diff --exit-code backend/supabase/functions/_shared/prompt_texts.ts
       - run: bun run typecheck
       - run: bun test
+      - name: Stress test script compiles
+        working-directory: .
+        run: python3 -m py_compile scripts/stress_test.py

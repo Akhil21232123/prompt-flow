@@ -1,0 +1,12 @@
+Welcome to PromptFlow
+
+Your confirmation code: {{ .Token }}
+
+Type it in the PromptFlow app. It works once and expires in 10 minutes.
+
+Or open this link on the device you want to use:
+{{ .ConfirmationURL }}
+
+Didn't create a PromptFlow account? You can ignore this email.
+
+PromptFlow
