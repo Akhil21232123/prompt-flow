@@ -31,14 +31,20 @@ import {
   wavSeconds,
 } from "./limits.ts";
 import { extractMemories } from "./memory.ts";
+import { classify, isAiTarget } from "./categories.ts";
 import {
+  MIN_PROMPT_WORDS,
   outputLanguageFor,
   plannedMode,
   rewrite,
   type Models,
 } from "./pipeline.ts";
 import { MAX_SCREEN_CHARS } from "./prompts.ts";
-import { ProviderError, vocabularyPrompt } from "./providers.ts";
+import {
+  BASE_VOCABULARY,
+  ProviderError,
+  vocabularyPrompt,
+} from "./providers.ts";
 import {
   AuthError,
   type ClarificationRow,
@@ -193,11 +199,35 @@ function parseScreen(raw: unknown): ScreenContext | undefined {
   return source ? { text, source } : { text };
 }
 
+/** What the Fn key does here; see parseRequestBody. */
+export function autoMode(
+  app: AppContext | undefined,
+  selection: string | undefined,
+  text: string,
+): Mode {
+  if (selection) return "command";
+  const words = text.trim().split(/\s+/).filter(Boolean).length;
+  const ai = detectTarget(app) !== undefined || isAiTarget(classify(app));
+  return ai && words >= MIN_PROMPT_WORDS ? "engineer" : "dictate";
+}
+
 function parseRequestBody(
   raw: Record<string, unknown>,
   text: string,
 ): RewriteRequest {
-  const mode = (raw.mode ?? "dictate") as Mode;
+  const app = parseApp(raw.app);
+  const selected =
+    typeof raw.selection === "string" && raw.selection.trim()
+      ? raw.selection
+      : undefined;
+  // "auto" (the Mac's Fn key): PromptFlow decides. Text selected → edit it;
+  // an AI app or code editor → a prompt; anywhere else → your words, written
+  // for that app.
+  const mode = (
+    raw.mode === "auto"
+      ? autoMode(app, selected, text)
+      : (raw.mode ?? "dictate")
+  ) as Mode;
   if (!MODES.includes(mode)) throw new BadRequest(`unknown mode "${raw.mode}"`);
   const style = raw.style as WritingStyle | undefined;
   if (style && !STYLES.includes(style))
@@ -208,7 +238,7 @@ function parseRequestBody(
   return {
     text,
     mode,
-    app: parseApp(raw.app),
+    app,
     selection:
       typeof raw.selection === "string" && raw.selection.trim()
         ? raw.selection.slice(0, 20_000)
@@ -424,7 +454,10 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
       db.loadUserData(),
       pending ? Promise.resolve() : consume(ctx, db),
     ]);
-    const vocabulary = vocabularyPrompt(user.dictionary);
+    const vocabulary = vocabularyPrompt([
+      ...user.dictionary,
+      ...BASE_VOCABULARY,
+    ]);
     const whisperLanguage = sttLanguage(
       meta.language ?? user.settings.spoken_language,
     );

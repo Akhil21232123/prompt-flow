@@ -33,10 +33,10 @@ export const PROMPT_JSON_SPEC = `Reply with only a JSON object: no prose before 
 {
   "target": "coding_agent" | "chat_assistant" | "research" | "writing" | "image_generation" | "music_generation" | "data_analysis",
   "task": "the direct instruction, one to three sentences, in the user's voice",
-  "context": "the background, purpose and audience the user gave or clearly implied",
+  "context": "background, purpose and audience the user said in this dictation; \"\" if none. Never who they are unless they said it, never the app this is typed into",
   "requirements": ["one requirement, constraint or 'don't' per item"],
   "output_format": "what the answer should look like: structure, length, format",
-  "acceptance_criteria": ["checks the AI can make before it finishes; mainly for coding work, otherwise []"],
+  "acceptance_criteria": ["only checks that the requirements don't already state; usually []"],
   "examples": ["only examples the user gave, or one that clearly helps; otherwise []"],
   "prose": "image and music prompts only: the whole prompt as one dense description; otherwise \\"\\""
 }
@@ -114,7 +114,43 @@ function partsFrom(o: Record<string, unknown>): PromptParts | undefined {
     examples: list(pick(o, "examples", "example")),
     prose: text(pick(o, "prose", "description")),
   };
-  return parts.task || parts.prose ? parts : undefined;
+  return parts.task || parts.prose ? dedupeParts(parts) : undefined;
+}
+
+const norm = (t: string) =>
+  new Set(
+    (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter(
+      (w) => w.length > 2,
+    ),
+  );
+
+/** How much of the shorter line's words the other line also has (0..1). */
+function overlap(a: string, b: string): number {
+  const x = norm(a);
+  const y = norm(b);
+  if (!x.size || !y.size) return 0;
+  const [small, big] = x.size <= y.size ? [x, y] : [y, x];
+  let n = 0;
+  for (const w of small) if (big.has(w)) n++;
+  return n / small.size;
+}
+
+/**
+ * Drops points the model wrote twice: a requirement repeated in the list,
+ * or a success criterion that only restates a requirement.
+ */
+export function dedupeParts(p: PromptParts): PromptParts {
+  const kept: string[] = [];
+  for (const r of p.requirements)
+    if (!kept.some((k) => overlap(k, r) >= 0.8)) kept.push(r);
+  const criteria: string[] = [];
+  for (const c of p.acceptance_criteria)
+    if (
+      !kept.some((k) => overlap(k, c) >= 0.6) &&
+      !criteria.some((k) => overlap(k, c) >= 0.8)
+    )
+      criteria.push(c);
+  return { ...p, requirements: kept, acceptance_criteria: criteria };
 }
 
 const TARGETS: Record<string, PromptTarget> = {

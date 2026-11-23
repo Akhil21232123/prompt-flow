@@ -274,6 +274,22 @@ export function isSilent(
   );
 }
 
+/**
+ * Names speech-to-text often mishears in this app's world ("cloud" for
+ * Claude, "prom flow" for PromptFlow). Sent after the user's own words.
+ */
+export const BASE_VOCABULARY = [
+  "PromptFlow",
+  "Claude",
+  "ChatGPT",
+  "Gemini",
+  "Perplexity",
+  "Cursor",
+  "Fn key",
+  "Command",
+  "Option",
+];
+
 export function vocabularyPrompt(
   words: string[],
   maxChars = 600,

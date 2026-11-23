@@ -56,7 +56,8 @@ describe("dictate", () => {
     expect(body.raw).toBe("hello there");
     expect(body.text).toBe("Hello there.");
     expect(body.category).toBe("personal_chat");
-    expect(sttCalls[0]).toEqual({ language: "en", prompt: "Wispr Flow" });
+    expect(sttCalls[0].language).toBe("en");
+    expect(sttCalls[0].prompt).toMatch(/^Wispr Flow, PromptFlow, Claude/);
     await settle();
     expect(saved[0].stt_provider).toBe("groq");
   });

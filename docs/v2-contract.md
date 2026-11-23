@@ -50,7 +50,7 @@ omitted only when answering an ask-back (`clarify_session`) with `answer_text` o
 ```jsonc
 // meta
 {
-  "mode": "engineer" | "dictate" | "command",
+  "mode": "auto" | "engineer" | "dictate" | "command",   // auto = the Fn key: selection → command, AI app/code editor and 4+ words → engineer, else dictate
   "duration_sec": 4.2,
   "preset": "clean" | "formal" | "short" | "casual" | "bullets" | "custom", // dictate only
   "language": "en" | "hi" | "te" | "ta" | "kn" | "ml" | "mr" | "bn" | "gu" | "pa" | "ur" | "auto",

@@ -5,7 +5,7 @@
 import { classify, isAiTarget } from "./categories.ts";
 import { findInventions } from "./fidelity.ts";
 import { needsEnglish, type OutputLanguage } from "./languages.ts";
-import { usedMemories } from "./memory.ts";
+import { relevantMemories, usedMemories } from "./memory.ts";
 import * as P from "./prompts.ts";
 import * as S from "./snippets.ts";
 import {
@@ -425,6 +425,9 @@ async function command(
   };
 }
 
+/** Fewer words than this are cleaned up, never turned into a prompt. */
+export const MIN_PROMPT_WORDS = 4;
+
 export async function rewrite(
   req: RewriteRequest,
   user: UserData,
@@ -440,7 +443,20 @@ export async function rewrite(
       calls: 0,
     };
   }
-  const mode = resolveMode(req, user, category);
+  // Only memories that are about this request; the rest stay out entirely.
+  req = { ...req, memories: relevantMemories(req.memories ?? [], req.text) };
+  let mode = resolveMode(req, user, category);
+  // A few words ("so I'm prompting") are not a request to engineer: writing
+  // a prompt from them means inventing one. Clean them up instead.
+  if (mode === "engineer" && wordCount(req.text) < MIN_PROMPT_WORDS) {
+    mode = "dictate";
+    // Still in the language a prompt would have been written in.
+    req = {
+      ...req,
+      mode: "dictate",
+      outputLanguage: outputLanguageFor("engineer", req, user),
+    };
+  }
   if (mode === "command")
     return withMemory(await command(req, user, category, deps), req);
   if (mode === "engineer") {

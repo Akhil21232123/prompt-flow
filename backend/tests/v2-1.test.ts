@@ -350,7 +350,7 @@ describe("plain labels and shortcut semantics", () => {
 
   test("an engineer model failure keeps the user's words, labelled plainly", async () => {
     const out = await rewrite(
-      { text: "write a prd", mode: "engineer" },
+      { text: "write a prd for my food app", mode: "engineer" },
       user(),
       {
         complete: async (_s, _u, o) => {

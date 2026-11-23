@@ -135,6 +135,57 @@ const contentWords = (t: string) =>
     .map((w) => w.replace(/[.'-]+$/, ""))
     .filter((w) => (w.length >= 3 || /\d/.test(w)) && !STOP.has(w));
 
+/** Words too common in requests to show that a memory is on topic. */
+const GENERIC = new Set(
+  "app apps prompt prompts prompting engineer engineering thing things stuff want wanted need needs good better best write writing written help test testing tested text words word now like know think going get got give tell said say saying one two new old way time today please thanks thank okay yeah hey hello right sure kind sort actually basically something anything everything every all any some more most less fix fixing feature features bug bugs version thing".split(
+    " ",
+  ),
+);
+
+/** Requests this short are never enriched from memory. */
+export const MIN_WORDS_FOR_MEMORY = 4;
+
+/**
+ * The memories worth offering for this request. Pinned preferences always
+ * apply (the user asked for them); anything else must share at least two
+ * distinctive words with what was said, or be what "my <thing>" refers to.
+ * One shared common word ("engineer", "app") is not enough: that is how an
+ * unrelated fact ends up in a prompt.
+ */
+export function relevantMemories(
+  memories: Memory[],
+  transcript: string,
+): Memory[] {
+  const lower = transcript.toLowerCase();
+  const short =
+    (transcript.trim().match(/\S+/g) ?? []).length < MIN_WORDS_FOR_MEMORY;
+  const said = new Set(contentWords(transcript).filter((w) => !GENERIC.has(w)));
+  // "my backend", "our app": the user's own project, so what memory knows
+  // about their projects and stack is on topic.
+  const ownProject = [
+    ...lower.matchAll(/\b(?:my|our)\s+(?:\p{L}+\s+)?([\p{L}-]{3,})/gu),
+  ].some((m) => PROJECT_NOUNS.has(m[1]));
+  // A bio, a resume, "about me": who they are is the point.
+  const aboutMe = ABOUT_ME.test(lower);
+  return memories.filter((m) => {
+    if (m.pinned && m.kind === "preference") return true;
+    if (aboutMe && m.kind !== "preference") return true;
+    if (short) return false;
+    const words = [...new Set(contentWords(m.content))];
+    if (words.filter((w) => said.has(w)).length >= 2) return true;
+    return ownProject && (m.kind === "project" || m.kind === undefined);
+  });
+}
+
+const PROJECT_NOUNS = new Set(
+  "app apps project projects backend frontend website site startup company brand product products code codebase repo service api business store".split(
+    " ",
+  ),
+);
+
+const ABOUT_ME =
+  /\b(?:bio|about me|myself|introduce me|my (?:resume|cv|profile|intro|background|linkedin)|cover letter|for me)\b/;
+
 /**
  * Memories that actually shaped the output: at least one of their distinctive
  * words appears in the output without having been said, and a fair share of
