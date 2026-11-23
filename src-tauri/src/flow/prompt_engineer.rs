@@ -56,15 +56,18 @@ pub struct EngineerOutcome {
 
 impl EngineerOutcome {
     /// Short label stored in history next to the result.
+    /// What History shows for the prompt, in plain words.
     pub fn summary(&self) -> String {
-        let mut s = format!("Prompt Engineer · {}", self.target.as_str());
-        if self.rounds > 0 {
-            s.push_str(&format!(" · {} critique round(s)", self.rounds));
-        }
-        if let Some(score) = self.score {
-            s.push_str(&format!(" · score {score}/10"));
-        }
-        s
+        let target = match self.target {
+            PromptTarget::Auto => return "Prompt".to_string(),
+            PromptTarget::CodingAgent => "a coding agent",
+            PromptTarget::ChatAssistant => "a chat assistant",
+            PromptTarget::Research => "research",
+            PromptTarget::Writing => "writing",
+            PromptTarget::ImageGeneration => "an image generator",
+            PromptTarget::DataAnalysis => "data analysis",
+        };
+        format!("Prompt · for {target}")
     }
 }
 
@@ -698,9 +701,6 @@ mod tests {
             score: Some(9),
             issues: vec![],
         };
-        assert_eq!(
-            o.summary(),
-            "Prompt Engineer · research · 1 critique round(s) · score 9/10"
-        );
+        assert_eq!(o.summary(), "Prompt · for research");
     }
 }

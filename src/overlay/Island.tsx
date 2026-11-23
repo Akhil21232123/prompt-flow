@@ -17,7 +17,10 @@ import {
   HelpCircle,
   Mic,
   Pencil,
+  RotateCw,
   ShieldCheck,
+  ThumbsDown,
+  ThumbsUp,
   Sparkles,
   TriangleAlert,
   Wand2,
@@ -145,6 +148,8 @@ const Island: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [retryLeft, setRetryLeft] = useState<number | null>(null);
+  const [retryIn, setRetryIn] = useState<number | null>(null);
+  const [rated, setRated] = useState(false);
   const [engineerKey, setEngineerKey] = useState("");
   const [measured, setMeasured] = useState<{ w: number; h: number } | null>(
     null,
@@ -176,6 +181,7 @@ const Island: React.FC = () => {
     }
     if (previous === "hidden") resetSpring();
     setLeaving(false);
+    setRated(false);
     setCopied(false);
     setBusy(false);
     setHovered(false);
@@ -253,6 +259,19 @@ const Island: React.FC = () => {
     return () => clearInterval(timer);
   }, [retryAfter, shown?.id]);
 
+  // The automatic retry's countdown.
+  const nextRetry =
+    view?.kind === "error" ? (view.retry?.next_in_sec ?? null) : null;
+  useEffect(() => {
+    setRetryIn(nextRetry);
+    if (!nextRetry) return;
+    const timer = setInterval(
+      () => setRetryIn((s) => (s && s > 0 ? s - 1 : s)),
+      1000,
+    );
+    return () => clearInterval(timer);
+  }, [nextRetry, shown?.id]);
+
   // Measure the content off-screen; the card springs to its size.
   useLayoutEffect(() => {
     const el = measureRef.current;
@@ -269,7 +288,7 @@ const Island: React.FC = () => {
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [shown, copied, busy, retryLeft, levels.length]);
+  }, [shown, copied, busy, retryLeft, retryIn, rated, levels.length]);
 
   if (!shown || !view) return null;
   const geometry = shown.geometry ?? NO_GEOMETRY;
@@ -301,7 +320,10 @@ const Island: React.FC = () => {
   );
 
   const wave = (
-    <div className={`i-wave ${ready ? "ready" : "arming"}`} aria-hidden="true">
+    <div
+      className={`i-wave mode-${mode ?? "none"} ${ready ? "ready" : "arming"}`}
+      aria-hidden="true"
+    >
       {levels.map((v, i) => (
         <i
           key={i}
@@ -366,6 +388,20 @@ const Island: React.FC = () => {
           <span>{t("island.answeringByVoice")}</span>
         </div>
       );
+      // Which shortcut is running, in its own words: "Writing" never makes
+      // a prompt; "Prompt for Claude" does.
+      const activeLabel =
+        view.mode === "dictate"
+          ? t("island.active.write")
+          : view.mode === "command"
+            ? t("island.active.edit")
+            : view.mode === "this"
+              ? view.target
+                ? t("island.active.thisFor", { app: view.target })
+                : t("island.active.this")
+              : view.target
+                ? t("island.active.promptFor", { app: view.target })
+                : t("island.active.prompt");
       content = notch ? (
         <>
           {header(
@@ -378,18 +414,17 @@ const Island: React.FC = () => {
               {langChip(view.language)}
             </>,
           )}
-          {(contextChip || answeringChip) && (
-            <div className="i-body tight">
-              {answeringChip}
-              {contextChip}
-            </div>
-          )}
+          <div className="i-body tight center">
+            <span className={`i-active mode-${view.mode}`}>{activeLabel}</span>
+            {answeringChip}
+            {contextChip}
+          </div>
         </>
       ) : (
         <>
           <div className="i-row pill">
             {glyph}
-            <span className="i-mode-label">{modeLabel(view.mode)}</span>
+            <span className={`i-active mode-${view.mode}`}>{activeLabel}</span>
             {wave}
             <span className="i-timer">{fmtTime(elapsed)}</span>
             {langChip(view.language)}
@@ -411,7 +446,7 @@ const Island: React.FC = () => {
           : view.step === "transcribing"
             ? t("island.step.transcribing")
             : view.mode === "dictate"
-              ? t("island.step.polishing")
+              ? t("island.step.cleaning")
               : view.target
                 ? t("island.step.writingFor", { app: view.target })
                 : t("island.step.writing");
@@ -516,33 +551,45 @@ const Island: React.FC = () => {
         (view.mode === "autopilot"
           ? t("island.done.fixPasted")
           : t("island.done.pasted"));
+      const memoryRow = view.memory.length > 0 && (
+        <div className="i-memory" title={t("island.done.memoryUsed")}>
+          <span className="i-memory-label">{t("island.done.memoryUsed")}</span>
+          {view.memory.slice(0, 2).map((m) => (
+            <span key={m.id || m.content} className="i-chip i-mem">
+              {m.content}
+            </span>
+          ))}
+          {view.memory.length > 2 && (
+            <span className="i-chip i-mem">
+              {t("island.done.more", { n: view.memory.length - 2 })}
+            </span>
+          )}
+        </div>
+      );
       const buttons = (
         <div className="i-actions">
-          {view.memory.length > 0 && (
-            <div className="i-memory" title={t("island.done.memoryUsed")}>
-              <span className="i-memory-label">
-                {t("island.done.memoryUsed")}
-              </span>
-              {view.memory.slice(0, 2).map((m) => (
-                <span key={m.id || m.content} className="i-chip i-mem">
-                  {m.content}
-                </span>
-              ))}
-              {view.memory.length > 2 && (
-                <span className="i-chip i-mem">
-                  {t("island.done.more", { n: view.memory.length - 2 })}
-                </span>
+          {view.chips.map((chip) => (
+            <button
+              key={chip}
+              className="i-btn chip"
+              disabled={busy}
+              onClick={act(() => commands.islandRedo(id, chip))}
+            >
+              {(chip === "as_prompt" || chip === "as_written") && (
+                <RotateCw size={11} />
               )}
-            </div>
-          )}
+              {t(`island.redo.${chip}`)}
+            </button>
+          ))}
           <span className="i-spacer" />
           {view.pasted && (
             <button
               className="i-btn ghost"
+              aria-label={t("island.done.undo")}
+              title={t("island.done.undo")}
               onClick={act(() => commands.islandUndo(id))}
             >
               <CornerUpLeft size={12} />
-              {t("island.done.undo")}
               <kbd>{t("island.done.undoKey")}</kbd>
             </button>
           )}
@@ -558,14 +605,44 @@ const Island: React.FC = () => {
           </button>
         </div>
       );
+      const rating = view.rateable && (
+        <span className="i-rate">
+          {rated ? (
+            <span className="i-rate-thanks">{t("island.done.thanks")}</span>
+          ) : (
+            <>
+              <button
+                className="i-icon-btn"
+                aria-label={t("island.done.good")}
+                title={t("island.done.good")}
+                onClick={() => {
+                  setRated(true);
+                  void commands.islandRate(id, true);
+                }}
+              >
+                <ThumbsUp size={12} />
+              </button>
+              <button
+                className="i-icon-btn"
+                aria-label={t("island.done.bad")}
+                title={t("island.done.bad")}
+                onClick={() => {
+                  setRated(true);
+                  void commands.islandRate(id, false);
+                }}
+              >
+                <ThumbsDown size={12} />
+              </button>
+            </>
+          )}
+        </span>
+      );
       content = (
         <>
           {header(
-            <>
-              <span className="i-glyph done">
-                <Check size={13} strokeWidth={3} />
-              </span>
-            </>,
+            <span className="i-glyph done">
+              <Check size={13} strokeWidth={3} />
+            </span>,
             <span className={`i-ring ${hovered ? "paused" : ""}`} />,
           )}
           <div className="i-body">
@@ -576,12 +653,19 @@ const Island: React.FC = () => {
                 </span>
               )}
               <span className="i-eyebrow">{label}</span>
-              {!notch && <span className="i-spacer" />}
+              {!view.pasted && (
+                <span className="i-hint-inline">
+                  {t("island.done.onClipboard")}
+                </span>
+              )}
+              <span className="i-spacer" />
+              {rating}
               {!notch && (
                 <span className={`i-ring ${hovered ? "paused" : ""}`} />
               )}
             </div>
             <p className="i-preview">{view.preview}</p>
+            {memoryRow}
             {buttons}
           </div>
         </>
@@ -655,31 +739,73 @@ const Island: React.FC = () => {
       tone = "tone-error";
       const { title, body } = errorText(t, view.error, retryLeft);
       const signIn = view.error === "sign_in" || view.error === "session_ended";
+      const retry = view.retry;
       const icon = (
-        <span className="i-glyph error">
+        <span className={`i-glyph ${retry ? "warn" : "error"}`}>
           <TriangleAlert size={13} />
         </span>
       );
+      const close = retry && (
+        <button
+          className="i-icon-btn"
+          aria-label={t("island.close")}
+          onClick={() => commands.islandDismiss(id)}
+        >
+          <X size={13} />
+        </button>
+      );
       content = (
         <>
-          {header(icon, null)}
+          {header(icon, close)}
           <div className="i-body">
             <div className="i-title-row">
               {!notch && icon}
-              <span className="i-eyebrow">{title}</span>
+              <span className="i-eyebrow">
+                {retry ? t("island.retry.title") : title}
+              </span>
+              <span className="i-spacer" />
+              {!notch && close}
             </div>
             <p className="i-preview muted">
-              {view.message &&
-              (view.error === "server" ||
-                view.error === "provider" ||
-                view.error === "bad_request")
-                ? view.message
-                : retryLeft === null &&
-                    view.error === "rate_limited" &&
-                    view.retry_after_sec
-                  ? t("island.errors.rate_limited.ready")
-                  : body}
+              {retry
+                ? retryIn !== null && retryIn > 0
+                  ? t("island.retry.inSeconds", { seconds: retryIn })
+                  : retry.next_in_sec === null
+                    ? t("island.retry.gaveUp")
+                    : t("island.retry.trying")
+                : view.message &&
+                    (view.error === "server" ||
+                      view.error === "provider" ||
+                      view.error === "bad_request")
+                  ? view.message
+                  : retryLeft === null &&
+                      view.error === "rate_limited" &&
+                      view.retry_after_sec
+                    ? t("island.errors.rate_limited.ready")
+                    : body}
             </p>
+            {retry && (
+              <div className="i-actions">
+                <span className="i-hint">{t("island.retry.safe")}</span>
+                {retry.can_paste_raw && (
+                  <button
+                    className="i-btn ghost"
+                    disabled={busy}
+                    onClick={act(() => commands.islandPasteRaw(id))}
+                  >
+                    {t("island.retry.pasteRaw")}
+                  </button>
+                )}
+                <button
+                  className="i-btn primary"
+                  disabled={busy}
+                  onClick={act(() => commands.islandRetry(id))}
+                >
+                  <RotateCw size={12} />
+                  {t("island.retry.now")}
+                </button>
+              </div>
+            )}
             {signIn && (
               <div className="i-actions">
                 <span className="i-spacer" />

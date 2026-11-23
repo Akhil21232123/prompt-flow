@@ -101,8 +101,14 @@ pub fn smart_polish_settings(
     patched
 }
 
-pub fn smart_polish_label(category: AppCategory, style: WritingStyle) -> String {
-    format!("Smart polish · {category:?} · {style:?}")
+/// What History shows for a cleaned-up dictation, in plain words.
+pub fn smart_polish_label(_category: AppCategory, style: WritingStyle) -> String {
+    let style = match style {
+        WritingStyle::Formal => "formal",
+        WritingStyle::Casual => "casual",
+        WritingStyle::VeryCasual => "very casual",
+    };
+    format!("Cleaned up · {style}")
 }
 
 fn word_count(text: &str) -> usize {
@@ -248,9 +254,9 @@ async fn run_command(
                 .as_deref()
                 .is_some_and(|s| !s.trim().is_empty())
             {
-                "Command Mode · edit selection".into()
+                "Edited your selection".into()
             } else {
-                "Command Mode · write".into()
+                "Wrote new text".into()
             },
             failed: false,
         },
@@ -260,7 +266,7 @@ async fn run_command(
             log::warn!("Command Mode failed: {e}");
             SpecialOutput {
                 text: String::new(),
-                label: format!("Command Mode failed: {e}"),
+                label: format!("Couldn't make that edit: {e}"),
                 failed: true,
             }
         }

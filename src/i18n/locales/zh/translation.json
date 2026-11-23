@@ -10,7 +10,19 @@
     "secureInputWarning": "⚠ 快捷键被 Secure Input 阻止",
     "language": "语言",
     "autoLanguage": "自动",
-    "otherLanguages": "其他语言"
+    "otherLanguages": "其他语言",
+    "writeStyle": "Write Style",
+    "styleSmart": "Smart (fits the app)",
+    "styleClean": "Clean",
+    "styleFormal": "Formal",
+    "styleShort": "Short & punchy",
+    "styleCasual": "Casual",
+    "styleBullets": "Bullet points",
+    "styleCustom": "Custom",
+    "spokenLanguage": "I Speak",
+    "privateMode": "Private Mode",
+    "pause": "Pause PromptFlow",
+    "reportProblem": "Report a Problem…"
   },
   "sidebar": {
     "general": "通用",
@@ -30,7 +42,8 @@
     "sound": "Microphone & sound",
     "private": "Private mode",
     "signedIn": "Signed in",
-    "signedOut": "Not signed in"
+    "signedOut": "Not signed in",
+    "help": "Help"
   },
   "onboarding": {
     "customModelDescription": "非官方支持",
@@ -1360,7 +1373,8 @@
     "subtitle": "Hold a shortcut and talk, or tap it to start and tap again to stop.",
     "activation": "How shortcuts work",
     "permissions": "Permissions",
-    "permissionsDescription": "macOS asks for these once. After an update it may ask again."
+    "permissionsDescription": "macOS asks for these once. After an update it may ask again.",
+    "keys": "Keyboard shortcuts"
   },
   "permissions": {
     "allow": "Allow",
@@ -1530,7 +1544,8 @@
       "polishing": "Polishing…",
       "writing": "Writing your prompt…",
       "writingFor": "Writing for {{app}}…",
-      "checking": "Checking the answer…"
+      "checking": "Checking the answer…",
+      "cleaning": "Cleaning up…"
     },
     "ask": {
       "title": "Quick question",
@@ -1546,7 +1561,11 @@
       "undo": "Undo",
       "undoKey": "⌘Z",
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "good": "Good result",
+      "bad": "Bad result",
+      "thanks": "Thanks",
+      "onClipboard": "On your clipboard"
     },
     "verdict": {
       "good": "The answer looks right",
@@ -1608,7 +1627,34 @@
       "ask_expired": {
         "title": "That question expired",
         "body": "Say your request again."
+      },
+      "paused": {
+        "title": "PromptFlow is paused",
+        "body": "Resume it from the menu bar."
       }
+    },
+    "active": {
+      "write": "Writing",
+      "edit": "Editing",
+      "prompt": "Prompt",
+      "promptFor": "Prompt for {{app}}",
+      "this": "Prompt about this",
+      "thisFor": "Prompt about this for {{app}}"
+    },
+    "redo": {
+      "as_prompt": "As prompt",
+      "as_written": "As written",
+      "formal": "Formal",
+      "shorter": "Shorter"
+    },
+    "retry": {
+      "title": "Couldn't reach PromptFlow",
+      "safe": "Your recording is safe.",
+      "inSeconds": "Trying again in {{seconds}} s…",
+      "trying": "Trying again…",
+      "gaveUp": "Still can't get through. Try again when you're back online.",
+      "now": "Retry",
+      "pasteRaw": "Paste raw text"
     }
   },
   "onboardingPf": {
@@ -1656,7 +1702,15 @@
       "problem": "Something went wrong. Check the island at the top of your screen, then try again.",
       "worked": "That's it. It works anywhere you can type.",
       "next": "Continue",
-      "skip": "Skip for now"
+      "skip": "Skip for now",
+      "write": {
+        "title": "Write",
+        "body": "Your words, cleaned up. Never a prompt."
+      },
+      "prompt": {
+        "title": "Prompt",
+        "body": "A structured prompt for the AI app you're in."
+      }
     },
     "done": {
       "title": "You're all set",
@@ -1685,6 +1739,50 @@
     "checking": "Checking…",
     "versionBuild": "v{{version}} (build {{build}})",
     "versionOnly": "v{{version}}",
-    "builtOnHandy": "Built on Handy, the open-source dictation app"
+    "builtOnHandy": "Built on Handy, the open-source dictation app",
+    "availableBuild": "Build {{build}} is available",
+    "thisBuild": "You have build {{build}}.",
+    "install": "Update",
+    "opened": "PromptFlow.dmg is open: drag PromptFlow onto Applications and choose Replace, then open PromptFlow again."
+  },
+  "fnKey": {
+    "title": "Hold 🌐 (Fn) to talk",
+    "body": "Hold 🌐 to Write, release to paste. Double-tap and hold 🌐, or hold 🌐 and Control, for Prompt.",
+    "fix": "Set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings.",
+    "openKeyboard": "Open Keyboard settings",
+    "needsAccessibility": "Starts working once PromptFlow is allowed in Accessibility.",
+    "conflict": {
+      "change_input_source": "macOS switches your keyboard language when you press 🌐.",
+      "show_emoji": "macOS opens the emoji picker when you press 🌐.",
+      "start_dictation": "macOS starts its own dictation when you press 🌐.",
+      "unknown": "macOS may do something else when you press 🌐."
+    }
+  },
+  "cloudHistory": {
+    "title": "History",
+    "subtitle": "Everything you've dictated, on every device.",
+    "search": "Search what you said or what was written",
+    "empty": "Nothing here yet",
+    "noMatch": "Nothing matches that search",
+    "signInFirst": "Sign in to see your history.",
+    "more": "Show more",
+    "youSaid": "You said",
+    "pasteAgain": "Paste again",
+    "mode": {
+      "dictate": "Write",
+      "engineer": "Prompt",
+      "command": "Edit"
+    }
+  },
+  "help": {
+    "title": "Help",
+    "report": {
+      "title": "Report a problem",
+      "placeholder": "What happened? What did you expect?",
+      "includeLast": "Include my last result",
+      "send": "Send",
+      "thanks": "Thanks. The PromptFlow team will look at it.",
+      "signIn": "Sign in to send a report."
+    }
   }
 }

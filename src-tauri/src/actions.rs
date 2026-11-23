@@ -518,7 +518,7 @@ pub(crate) async fn process_flow_output(
         .map(|t| crate::flow::snippets::expand(&t, &protected.tokens));
     if use_smart && out.post_processed_text.is_some() {
         out.post_process_prompt = Some(match settings.flow.style_preset {
-            Some(p) => format!("Style · {}", p.label()),
+            Some(p) => format!("Cleaned up · {}", p.label().to_lowercase()),
             None => crate::flow::smart_polish_label(
                 category,
                 crate::flow::style_for(&settings, category),

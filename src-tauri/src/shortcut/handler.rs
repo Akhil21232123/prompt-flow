@@ -34,6 +34,14 @@ pub fn handle_shortcut_event(
 ) {
     let settings = get_settings(app);
 
+    // Paused from the menu bar: say so once per press, do nothing else.
+    if crate::cloud::is_paused() && binding_id != "cancel" {
+        if is_pressed {
+            crate::cloud::pipeline::show_error(app, crate::island::IslandError::Paused);
+        }
+        return;
+    }
+
     // Transcribe bindings are handled by the coordinator.
     if is_transcribe_binding(binding_id) {
         if let Some(coordinator) = app.try_state::<TranscriptionCoordinator>() {

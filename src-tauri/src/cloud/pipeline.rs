@@ -5,12 +5,15 @@
 use super::api::{ApiError, ErrorCode};
 use super::context::{self, Captured};
 use super::dictate::{
-    self, ClarifyAnswer, CloudMode, DictateOutcome, Finished, MetaApp, MetaInput, MetaScreen,
-    ScreenSource,
+    self, ClarifyAnswer, CloudMode, DictateMeta, DictateOutcome, Finished, MetaApp, MetaInput,
+    MetaScreen, ScreenSource,
 };
 use crate::flow::app_context::AppContext;
+use crate::flow::settings::StylePreset;
 use crate::flow::FlowMode;
-use crate::island::{self, IslandContext, IslandError, IslandMode, IslandStep, IslandView};
+use crate::island::{
+    self, IslandContext, IslandError, IslandMode, IslandStep, IslandView, Redo, RetryState,
+};
 use crate::managers::history::HistoryManager;
 use crate::settings::get_settings;
 use crate::tray::{set_tray_state, TrayIconState};
@@ -37,7 +40,32 @@ struct PendingAsk {
 #[derive(Clone)]
 struct LastResult {
     island_id: u64,
+    /// What was pasted (or copied).
     text: String,
+    /// What was said, for redos.
+    raw: String,
+    mode: FlowMode,
+    input: MetaInput,
+    /// The app it was pasted into; Undo and redos only send ⌘Z there.
+    bundle: Option<String>,
+    pasted: bool,
+    /// For feedback.
+    dictation_id: Option<String>,
+    label: Option<String>,
+}
+
+/// A recording whose request failed for a reason that may pass.
+struct PendingRetry {
+    island_id: u64,
+    attempt: u32,
+    meta: DictateMeta,
+    wav: Arc<Vec<u8>>,
+    samples: Arc<Vec<f32>>,
+    mode: FlowMode,
+    input: MetaInput,
+    target: Option<String>,
+    history: Option<(Arc<HistoryManager>, String)>,
+    sample_count: usize,
 }
 
 /// The last prompt PromptFlow wrote, for Autopilot to check answers against.
@@ -58,6 +86,10 @@ static PENDING_ASK: Lazy<Mutex<Option<PendingAsk>>> = Lazy::new(|| Mutex::new(No
 static LAST_RESULT: Lazy<Mutex<Option<LastResult>>> = Lazy::new(|| Mutex::new(None));
 static LAST_PROMPT: Lazy<Mutex<Option<LastPrompt>>> = Lazy::new(|| Mutex::new(None));
 static PENDING_FIX: Lazy<Mutex<Option<PendingFix>>> = Lazy::new(|| Mutex::new(None));
+static PENDING_RETRY: Lazy<Mutex<Option<PendingRetry>>> = Lazy::new(|| Mutex::new(None));
+
+/// Seconds before each automatic retry; after the last, the user retries.
+const RETRY_BACKOFF: [u32; 3] = [3, 8, 20];
 
 /// The server keeps a question for 10 minutes; stop offering it a little before.
 const ASK_TTL: Duration = Duration::from_secs(9 * 60 + 30);
@@ -85,12 +117,6 @@ fn cloud_mode(mode: FlowMode) -> CloudMode {
         FlowMode::PromptEngineer | FlowMode::This => CloudMode::Engineer,
         FlowMode::Command => CloudMode::Command,
     }
-}
-
-/// The friendly name of an app for "Writing for Claude…".
-fn target_name(app: Option<&AppContext>) -> Option<String> {
-    app.and_then(|a| a.app_name.clone())
-        .filter(|n| !n.trim().is_empty())
 }
 
 pub fn island_error(e: &ApiError) -> IslandError {
@@ -124,6 +150,7 @@ fn show_api_error(app: &AppHandle, e: &ApiError) {
             error,
             message,
             retry_after_sec: e.retry_after_sec,
+            retry: None,
         },
     );
 }
@@ -135,6 +162,7 @@ pub fn show_error(app: &AppHandle, error: IslandError) {
             error,
             message: None,
             retry_after_sec: None,
+            retry: None,
         },
     );
 }
@@ -173,8 +201,9 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
     island::set_session(island_mode, &language);
     let view = IslandView::Listening {
         mode: island_mode,
-        language: language.clone(),
+        language,
         answering,
+        target: None,
         context: None,
     };
     let listening_id = island::show(app, view);
@@ -182,25 +211,60 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
     let wants_screen = mode == FlowMode::This && !answering;
     let handle = app.clone();
     context::begin_capture(wants_screen, move |screen| {
-        // Show "Using: 2,140 chars from Safari" while still listening.
-        if island::current_id() != listening_id {
-            return;
-        }
+        // Show "Using 2,140 characters from Safari" while still listening.
         let app_name = crate::flow::app_context::peek_name(Duration::from_millis(600));
-        island::show(
-            &handle,
-            IslandView::Listening {
-                mode: island_mode,
-                language,
-                answering,
-                context: Some(IslandContext {
-                    chars: screen.text.chars().count() as u32,
-                    source: screen.source,
-                    app: app_name,
-                }),
-            },
-        );
+        let context = IslandContext {
+            chars: screen.text.chars().count() as u32,
+            source: screen.source,
+            app: app_name,
+        };
+        island::patch(&handle, listening_id, |view| {
+            if let IslandView::Listening { context: c, .. } = view {
+                *c = Some(context);
+            }
+        });
     });
+
+    // Prompt modes say what the prompt is for: "Prompt for Claude".
+    if island_mode != IslandMode::Dictate && island_mode != IslandMode::Command {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let wait = Duration::from_millis(1200);
+            let app_ctx = crate::flow::app_context::peek(wait);
+            let field = context::peek_field(wait).unwrap_or_default();
+            let Some(target) = resolve_target(app_ctx.as_ref(), &field) else {
+                return;
+            };
+            island::patch(&handle, listening_id, |view| {
+                if let IslandView::Listening { target: t, .. } = view {
+                    *t = Some(target);
+                }
+            });
+        });
+    }
+}
+
+/// Whether the app is a browser or a web app saved from one: its page, not
+/// the app, says which AI is in front.
+fn shows_web_pages(app: Option<&AppContext>) -> bool {
+    app.is_some_and(|a| {
+        crate::flow::app_context::is_browser(a)
+            || crate::flow::app_context::is_web_app(a.bundle_id.as_deref())
+    })
+}
+
+/// What a prompt is written for, as the island names it.
+fn resolve_target(app: Option<&AppContext>, field: &context::FieldContext) -> Option<String> {
+    let title = field
+        .window_title
+        .as_deref()
+        .or(app.and_then(|a| a.window_title.as_deref()));
+    context::target_name(
+        app.and_then(|a| a.app_name.as_deref()),
+        shows_web_pages(app),
+        field.url.as_deref(),
+        title,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -253,10 +317,29 @@ where
     } else {
         rec.mode
     };
+    // A browser whose page address the accessibility tree didn't give:
+    // ask the browser (web apps have no address to ask for; their title
+    // and name say what they are).
+    let mut captured = captured;
+    if captured.field.url.is_none() {
+        if let Some(bundle) = rec
+            .app_context
+            .as_ref()
+            .filter(|a| crate::flow::app_context::is_browser(a))
+            .filter(|a| !crate::flow::app_context::is_web_app(a.bundle_id.as_deref()))
+            .and_then(|a| a.bundle_id.clone())
+        {
+            captured.field.url =
+                tauri::async_runtime::spawn_blocking(move || context::browser_url(&bundle))
+                    .await
+                    .ok()
+                    .flatten();
+        }
+    }
     let target = pending
         .as_ref()
         .and_then(|p| p.target.clone())
-        .or_else(|| target_name(rec.app_context.as_ref()));
+        .or_else(|| resolve_target(rec.app_context.as_ref(), &captured.field));
     let working_id = island::show(
         app,
         IslandView::Working {
@@ -284,7 +367,8 @@ where
         ),
     };
     let meta = dictate::build_meta(cloud_mode(mode), &settings.flow, input.clone(), clarify);
-    let wav = dictate::encode_wav(&rec.samples);
+    let wav = Arc::new(dictate::encode_wav(&rec.samples));
+    let kept_samples = Arc::new(rec.samples.clone());
 
     // History keeps the audio, like the on-device pipeline.
     let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
@@ -295,7 +379,7 @@ where
         crate::audio_toolkit::save_wav_file(&wav_path, &samples).is_ok()
     });
 
-    let result = dictate::send(app, &meta, Some(&wav)).await;
+    let result = dictate::send(app, &meta, Some(wav.as_slice())).await;
     let wav_saved = wav_saved.await.unwrap_or(false);
     if cancelled() {
         island::hide(app);
@@ -314,6 +398,12 @@ where
             history,
             sample_count,
             stop_time: rec.stop_time,
+            retry: Some(RetryPayload {
+                attempt: 1,
+                meta,
+                wav,
+                samples: kept_samples,
+            }),
         },
     )
     .await;
@@ -345,7 +435,11 @@ fn meta_input(
         app: MetaApp {
             name: app.and_then(|a| a.app_name.clone()),
             bundle_id: app.and_then(|a| a.bundle_id.clone()),
-            title: app.and_then(|a| a.window_title.clone()),
+            // The window's title from Accessibility (read as recording
+            // starts) is the most reliable; System Events' is the fallback.
+            title: field
+                .window_title
+                .or_else(|| app.and_then(|a| a.window_title.clone())),
             surrounding_text: field.before_cursor,
             url: field.url,
         },
@@ -362,6 +456,16 @@ struct HandleContext {
     history: Option<(Arc<HistoryManager>, String)>,
     sample_count: usize,
     stop_time: Instant,
+    /// The request, kept to retry it if it fails for a reason that may pass.
+    retry: Option<RetryPayload>,
+}
+
+struct RetryPayload {
+    /// This request's try number.
+    attempt: u32,
+    meta: DictateMeta,
+    wav: Arc<Vec<u8>>,
+    samples: Arc<Vec<f32>>,
 }
 
 async fn handle_outcome(
@@ -387,11 +491,14 @@ async fn handle_outcome(
             }
             deliver(
                 app,
-                ctx.mode,
-                finished,
-                ctx.working_id,
-                ctx.sample_count,
-                ctx.stop_time,
+                Delivery {
+                    mode: ctx.mode,
+                    finished,
+                    input: ctx.input,
+                    working_id: ctx.working_id,
+                    sample_count: ctx.sample_count,
+                    stop_time: ctx.stop_time,
+                },
             )
             .await;
         }
@@ -433,9 +540,6 @@ async fn handle_outcome(
             });
         }
         Err(e) => {
-            if owns_ui() {
-                show_api_error(app, &e);
-            }
             set_tray_state(app, TrayIconState::Idle);
             crate::actions::emit_transcription_complete(
                 app,
@@ -443,34 +547,271 @@ async fn handle_outcome(
                 ctx.sample_count,
                 ctx.stop_time,
             );
+            if !owns_ui() {
+                return;
+            }
+            match ctx.retry {
+                // Never lose what was said: keep it and try again.
+                Some(payload) if retryable(&e) => {
+                    log::warn!("PromptFlow request failed ({e}); keeping the recording to retry");
+                    offer_retry(
+                        app,
+                        &e,
+                        PendingRetry {
+                            island_id: 0,
+                            attempt: payload.attempt,
+                            meta: payload.meta,
+                            wav: payload.wav,
+                            samples: payload.samples,
+                            mode: ctx.mode,
+                            input: ctx.input,
+                            target: ctx.target,
+                            history: ctx.history,
+                            sample_count: ctx.sample_count,
+                        },
+                    );
+                }
+                _ => show_api_error(app, &e),
+            }
         }
     }
 }
 
-/// The first line of `text`, short enough for the island.
+/// Failures that may pass by themselves: the network, the server, the AI.
+fn retryable(e: &ApiError) -> bool {
+    matches!(
+        e.code,
+        ErrorCode::Network | ErrorCode::Server | ErrorCode::Provider
+    )
+}
+
+/// Seconds before automatic retry `attempt + 1`, or `None` when PromptFlow
+/// stops retrying on its own.
+pub fn backoff(attempt: u32) -> Option<u32> {
+    RETRY_BACKOFF
+        .get(attempt.saturating_sub(1) as usize)
+        .copied()
+}
+
+/// Whether an on-device model could transcribe a kept recording.
+fn local_model_ready(app: &AppHandle) -> bool {
+    let selected = get_settings(app).selected_model;
+    !selected.is_empty()
+        && app
+            .state::<Arc<crate::managers::model::ModelManager>>()
+            .get_model_info(&selected)
+            .is_some_and(|m| m.is_downloaded)
+}
+
+fn offer_retry(app: &AppHandle, e: &ApiError, mut pending: PendingRetry) {
+    let next = backoff(pending.attempt);
+    let error = match island_error(e) {
+        IslandError::Network => IslandError::Network,
+        _ => IslandError::Server,
+    };
+    let island_id = island::show(
+        app,
+        IslandView::Error {
+            error,
+            message: None,
+            retry_after_sec: None,
+            retry: Some(RetryState {
+                attempt: pending.attempt,
+                next_in_sec: next,
+                can_paste_raw: local_model_ready(app),
+            }),
+        },
+    );
+    pending.island_id = island_id;
+    *lock(&PENDING_RETRY) = Some(pending);
+    if let Some(secs) = next {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(secs as u64)).await;
+            retry(&app, island_id).await;
+        });
+    }
+}
+
+/// Sends the kept recording shown in island view `id` again.
+pub async fn retry(app: &AppHandle, id: u64) {
+    let pending = {
+        let mut p = lock(&PENDING_RETRY);
+        match p.as_ref() {
+            Some(r) if r.island_id == id => p.take(),
+            _ => None,
+        }
+    };
+    let Some(r) = pending else {
+        return;
+    };
+    let working_id = island::show(
+        app,
+        IslandView::Working {
+            mode: island_mode(r.mode),
+            step: IslandStep::Transcribing,
+            target: r.target.clone(),
+        },
+    );
+    let result = dictate::send(app, &r.meta, Some(r.wav.as_slice())).await;
+    handle_outcome(
+        app,
+        result,
+        HandleContext {
+            mode: r.mode,
+            input: r.input,
+            target: r.target,
+            working_id,
+            history: r.history,
+            sample_count: r.sample_count,
+            stop_time: Instant::now(),
+            retry: Some(RetryPayload {
+                attempt: r.attempt + 1,
+                meta: r.meta,
+                wav: r.wav,
+                samples: r.samples,
+            }),
+        },
+    )
+    .await;
+}
+
+/// Gives up on the cloud for the kept recording in view `id`: transcribes
+/// it on this Mac and pastes the words as heard.
+pub async fn paste_raw(app: &AppHandle, id: u64) {
+    let pending = {
+        let mut p = lock(&PENDING_RETRY);
+        match p.as_ref() {
+            Some(r) if r.island_id == id => p.take(),
+            _ => None,
+        }
+    };
+    let Some(r) = pending else {
+        return;
+    };
+    let working_id = island::show(
+        app,
+        IslandView::Working {
+            mode: IslandMode::Dictate,
+            step: IslandStep::Transcribing,
+            target: None,
+        },
+    );
+    let handle = app.clone();
+    let samples = r.samples.as_ref().clone();
+    let model = get_settings(app).selected_model;
+    let text = tauri::async_runtime::spawn_blocking(move || {
+        let tm = handle.state::<Arc<crate::managers::transcription::TranscriptionManager>>();
+        if !tm.is_model_loaded() {
+            tm.load_model(&model).map_err(|e| e.to_string())?;
+        }
+        tm.transcribe_recording(samples)
+            .map(|t| t.text)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    match text {
+        Ok(text) if !text.trim().is_empty() => {
+            let raw = text.trim().to_string();
+            deliver(
+                app,
+                Delivery {
+                    mode: FlowMode::Dictate,
+                    finished: Finished {
+                        id: None,
+                        raw: raw.clone(),
+                        text: raw,
+                        mode: "dictate".into(),
+                        label: None,
+                        target: None,
+                        memory_used: Vec::new(),
+                        language: None,
+                    },
+                    input: r.input,
+                    working_id,
+                    sample_count: r.sample_count,
+                    stop_time: Instant::now(),
+                },
+            )
+            .await;
+        }
+        Ok(_) => show_error(app, IslandError::NothingHeard),
+        Err(e) => {
+            log::warn!("On-device transcription failed: {e}");
+            show_api_error(app, &ApiError::server(e));
+        }
+    }
+}
+
+/// Removes `<tag>`-style markup, so an XML-sectioned prompt previews as words.
+fn strip_tags(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_tag = false;
+    for c in line.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    // An unclosed `<` was not a tag after all.
+    if in_tag {
+        return line.to_string();
+    }
+    out
+}
+
+/// The first line of words in `text`, short enough for the island.
 pub fn preview(text: &str) -> String {
     let line = text
         .lines()
-        .map(str::trim)
+        .map(|l| {
+            strip_tags(l)
+                .trim()
+                .trim_start_matches(['#', '*', '-', '>', ' '])
+                .to_string()
+        })
         .find(|l| !l.is_empty())
         .unwrap_or_default();
-    let line = line.trim_start_matches(['#', '*', '-', '>', ' ']);
     if line.chars().count() > 140 {
-        format!("{}…", context::head_chars(line, 139).trim_end())
+        format!("{}…", context::head_chars(&line, 139).trim_end())
     } else {
-        line.to_string()
+        line
+    }
+}
+
+/// A finished result on its way to the user's app.
+struct Delivery {
+    mode: FlowMode,
+    finished: Finished,
+    input: MetaInput,
+    working_id: u64,
+    sample_count: usize,
+    stop_time: Instant,
+}
+
+/// The redos offered after a result of `mode`.
+pub fn chips_for(mode: FlowMode) -> Vec<Redo> {
+    match mode {
+        FlowMode::Dictate => vec![Redo::AsPrompt, Redo::Formal, Redo::Shorter],
+        FlowMode::PromptEngineer | FlowMode::This => vec![Redo::AsWritten],
+        FlowMode::Command => Vec::new(),
     }
 }
 
 /// Pastes a finished result and shows it in the island.
-async fn deliver(
-    app: &AppHandle,
-    mode: FlowMode,
-    finished: Finished,
-    working_id: u64,
-    sample_count: usize,
-    stop_time: Instant,
-) {
+async fn deliver(app: &AppHandle, d: Delivery) {
+    let Delivery {
+        mode,
+        finished,
+        input,
+        working_id,
+        sample_count,
+        stop_time,
+    } = d;
     let text = crate::transcription_hook::apply(app, finished.text.clone()).await;
     if text.trim().is_empty() {
         if island::current_id() == working_id {
@@ -508,28 +849,167 @@ async fn deliver(
             false
         }
     };
-    let island_id = island::show(
+    show_result(
+        app,
+        LastResult {
+            island_id: 0,
+            text,
+            raw: finished.raw,
+            mode,
+            bundle: input.app.bundle_id.clone(),
+            input,
+            pasted: pasted_ok,
+            dictation_id: finished.id,
+            label: finished.label,
+        },
+        finished.memory_used,
+    );
+}
+
+/// Shows `result` in the island and remembers it for Undo, Copy, redos and
+/// feedback.
+fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::MemoryChip>) {
+    let has_raw = !result.raw.trim().is_empty();
+    result.island_id = island::show(
         app,
         IslandView::Done {
-            mode: island_mode(mode),
-            preview: preview(&text),
-            label: finished.label,
-            memory: finished.memory_used,
-            pasted: pasted_ok,
+            mode: island_mode(result.mode),
+            preview: preview(&result.text),
+            label: result.label.clone(),
+            memory,
+            pasted: result.pasted,
+            chips: if has_raw {
+                chips_for(result.mode)
+            } else {
+                Vec::new()
+            },
+            rateable: result.dictation_id.is_some(),
         },
     );
-    *lock(&LAST_RESULT) = Some(LastResult { island_id, text });
+    *lock(&LAST_RESULT) = Some(result);
+}
+
+/// The bundle id of the app in front now.
+async fn front_bundle() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::flow::app_context::detect_now().and_then(|a| a.bundle_id)
+    })
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Whether ⌘Z in the app in front would undo our paste: it went into this
+/// same app.
+fn same_app(pasted_into: Option<&str>, front: Option<&str>) -> bool {
+    matches!((pasted_into, front), (Some(a), Some(b)) if a == b)
+}
+
+/// A redo chip: the same words again, another way, replacing the paste.
+pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
+    let last = lock(&LAST_RESULT)
+        .as_ref()
+        .filter(|l| l.island_id == id)
+        .cloned();
+    let Some(last) = last else {
+        return;
+    };
+    let (mode, preset) = match kind {
+        Redo::AsPrompt => (FlowMode::PromptEngineer, None),
+        Redo::AsWritten => (FlowMode::Dictate, None),
+        Redo::Formal => (FlowMode::Dictate, Some(StylePreset::Formal)),
+        Redo::Shorter => (FlowMode::Dictate, Some(StylePreset::Short)),
+    };
+    let mut flow = get_settings(app).flow;
+    if preset.is_some() {
+        flow.style_preset = preset;
+    }
+    let target = (mode == FlowMode::PromptEngineer)
+        .then(|| last.input.app.name.clone())
+        .flatten();
+    let working_id = island::show(
+        app,
+        IslandView::Working {
+            mode: island_mode(mode),
+            step: IslandStep::Writing,
+            target,
+        },
+    );
+    let meta = dictate::build_meta(cloud_mode(mode), &flow, last.input.clone(), None);
+    let result = dictate::rewrite(app, &meta, &last.raw).await;
+    if island::current_id() != working_id {
+        return;
+    }
+    let finished = match result {
+        Ok(DictateOutcome::Done(f)) => f,
+        Ok(DictateOutcome::Dropped { .. }) => {
+            show_error(app, IslandError::NothingHeard);
+            return;
+        }
+        Ok(DictateOutcome::Ask(_)) => {
+            show_error(app, IslandError::Server);
+            return;
+        }
+        Err(e) => {
+            show_api_error(app, &e);
+            return;
+        }
+    };
+    let text = finished.text.clone();
+    // Replace the paste only where it went; anywhere else, copy instead.
+    let front = front_bundle().await;
+    let replace = last.pasted && same_app(last.bundle.as_deref(), front.as_deref());
+    let pasted = if replace {
+        let handle = app.clone();
+        let undone =
+            tauri::async_runtime::spawn_blocking(move || crate::clipboard::send_undo(&handle))
+                .await
+                .map_err(|e| e.to_string())
+                .and_then(|r| r);
+        match undone {
+            Ok(()) => {
+                tokio::time::sleep(Duration::from_millis(150)).await;
+                paste_blocking(app, text.clone(), false).await.is_ok()
+            }
+            Err(e) => {
+                log::warn!("Undo before redo failed: {e}");
+                false
+            }
+        }
+    } else {
+        false
+    };
+    if !pasted {
+        let _ = crate::clipboard::copy_text(app, &text);
+    }
+    if matches!(mode, FlowMode::PromptEngineer) && pasted {
+        *lock(&LAST_PROMPT) = Some(LastPrompt {
+            text: text.clone(),
+            app: finished.target.clone(),
+        });
+    }
+    show_result(
+        app,
+        LastResult {
+            island_id: 0,
+            text,
+            raw: last.raw,
+            mode,
+            input: last.input,
+            bundle: last.bundle,
+            pasted,
+            dictation_id: finished.id,
+            label: finished.label,
+        },
+        finished.memory_used,
+    );
 }
 
 /// Pastes on a worker thread (paste sleeps between steps) and waits.
 async fn paste_blocking(app: &AppHandle, text: String, never_submit: bool) -> Result<(), String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let outcome = if never_submit {
-            crate::clipboard::paste_without_submit(text, handle)
-        } else {
-            crate::clipboard::paste(text, handle)
-        };
+        let outcome = crate::clipboard::paste_cloud(text, handle, never_submit);
         match outcome {
             Ok(crate::clipboard::PasteOutcome::Pasted) => Ok(()),
             Ok(crate::clipboard::PasteOutcome::Blocked) => {
@@ -597,6 +1077,8 @@ pub async fn answer(app: &AppHandle, id: u64, answer: Option<String>) {
             history: None,
             sample_count: 0,
             stop_time: Instant::now(),
+            // A tapped answer has no recording to keep; it's quick to tap again.
+            retry: None,
         },
     )
     .await;
@@ -614,15 +1096,24 @@ pub fn close_question(app: &AppHandle, id: u64) {
 
 pub fn undo(app: &AppHandle, id: u64) -> Result<(), String> {
     let last = lock(&LAST_RESULT).clone();
-    if last.is_none_or(|l| l.island_id != id) {
+    let Some(last) = last.filter(|l| l.island_id == id) else {
         return Ok(());
-    }
+    };
     island::dismiss(app, id);
     *lock(&LAST_RESULT) = None;
+    if !last.pasted {
+        return Ok(());
+    }
     let handle = app.clone();
     std::thread::spawn(move || {
         // Let the click's mouse-up land first.
         std::thread::sleep(Duration::from_millis(60));
+        // ⌘Z only where we pasted: in another app it would undo the user's work.
+        let front = crate::flow::app_context::detect_now().and_then(|a| a.bundle_id);
+        if !same_app(last.bundle.as_deref(), front.as_deref()) {
+            log::info!("Not undoing: a different app is in front now");
+            return;
+        }
         if let Err(e) = crate::clipboard::send_undo(&handle) {
             log::warn!("Undo failed: {e}");
         }
@@ -637,6 +1128,59 @@ pub fn copy(app: &AppHandle, id: u64) -> Result<(), String> {
         .map(|l| l.text.clone())
         .ok_or("Nothing to copy")?;
     crate::clipboard::copy_text(app, &text)
+}
+
+/// What feedback says about the result in view `id` (or the last result).
+fn feedback_body(last: Option<&LastResult>, rating: &str, note: Option<&str>) -> serde_json::Value {
+    let mut body = serde_json::json!({ "rating": rating, "device": "mac" });
+    if let Some(note) = note.map(str::trim).filter(|n| !n.is_empty()) {
+        body["note"] = serde_json::json!(context::head_chars(note, 2000));
+    }
+    if let Some(l) = last {
+        if let Some(id) = &l.dictation_id {
+            body["dictation_id"] = serde_json::json!(id);
+        }
+        body["mode"] = serde_json::json!(cloud_mode(l.mode).as_str());
+        if let Some(label) = &l.label {
+            body["label"] = serde_json::json!(label);
+        }
+        let mut app = serde_json::Map::new();
+        if let Some(n) = &l.input.app.name {
+            app.insert("name".into(), serde_json::json!(n));
+        }
+        if let Some(b) = &l.bundle {
+            app.insert("bundle_id".into(), serde_json::json!(b));
+        }
+        if !app.is_empty() {
+            body["app"] = serde_json::Value::Object(app);
+        }
+    }
+    body
+}
+
+/// 👍/👎 on the result in view `id`. Sent in the background; never fails
+/// visibly.
+pub fn rate(app: &AppHandle, id: u64, up: bool) {
+    let last = lock(&LAST_RESULT)
+        .as_ref()
+        .filter(|l| l.island_id == id)
+        .cloned();
+    let Some(last) = last else {
+        return;
+    };
+    let body = feedback_body(Some(&last), if up { "up" } else { "down" }, None);
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = super::api::feedback(&app, body).await {
+            log::warn!("Feedback wasn't sent: {e}");
+        }
+    });
+}
+
+/// "Report a problem": a note about the last result (when asked to include it).
+pub async fn report(app: &AppHandle, note: &str, include_last: bool) -> Result<(), ApiError> {
+    let last = include_last.then(|| lock(&LAST_RESULT).clone()).flatten();
+    super::api::feedback(app, feedback_body(last.as_ref(), "down", Some(note))).await
 }
 
 /// Autopilot: checks the AI's answer on screen against the last prompt.
@@ -724,11 +1268,20 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                     label: None,
                     memory: Vec::new(),
                     pasted: true,
+                    chips: Vec::new(),
+                    rateable: false,
                 },
             );
             *lock(&LAST_RESULT) = Some(LastResult {
                 island_id,
                 text: fix.text,
+                raw: String::new(),
+                mode: FlowMode::PromptEngineer,
+                input: MetaInput::default(),
+                bundle: front_bundle().await,
+                pasted: true,
+                dictation_id: None,
+                label: None,
             });
             Ok(())
         }
@@ -748,6 +1301,11 @@ mod tests {
     fn preview_is_the_first_real_line() {
         assert_eq!(preview("\n\n## Goal\nBuild it"), "Goal");
         assert_eq!(preview("  hello world  "), "hello world");
+        assert_eq!(
+            preview("<task>\n<goal>Rename photos by date</goal>\n</task>"),
+            "Rename photos by date"
+        );
+        assert_eq!(preview("if a < b then"), "if a < b then");
         let long = "word ".repeat(60);
         let p = preview(&long);
         assert!(p.ends_with('…'));
@@ -798,6 +1356,68 @@ mod tests {
             island_error(&ApiError::session_ended()),
             IslandError::SessionEnded
         );
+    }
+
+    #[test]
+    fn retries_back_off_then_stop() {
+        assert_eq!(backoff(1), Some(3));
+        assert_eq!(backoff(3), Some(20));
+        assert_eq!(backoff(4), None);
+        assert!(retryable(&ApiError::new(ErrorCode::Network, "x")));
+        assert!(retryable(&ApiError::new(ErrorCode::Provider, "x")));
+        assert!(!retryable(&ApiError::new(ErrorCode::Quota, "x")));
+        assert!(!retryable(&ApiError::not_signed_in()));
+    }
+
+    #[test]
+    fn redo_chips_fit_the_result() {
+        assert_eq!(
+            chips_for(FlowMode::Dictate),
+            vec![Redo::AsPrompt, Redo::Formal, Redo::Shorter]
+        );
+        assert_eq!(chips_for(FlowMode::This), vec![Redo::AsWritten]);
+        assert!(chips_for(FlowMode::Command).is_empty());
+    }
+
+    #[test]
+    fn undo_only_where_we_pasted() {
+        assert!(same_app(
+            Some("com.anthropic.claudefordesktop"),
+            Some("com.anthropic.claudefordesktop")
+        ));
+        assert!(!same_app(Some("com.apple.Safari"), Some("com.apple.mail")));
+        assert!(!same_app(None, Some("com.apple.mail")));
+        assert!(!same_app(Some("com.apple.mail"), None));
+    }
+
+    #[test]
+    fn feedback_names_the_result() {
+        let last = LastResult {
+            island_id: 1,
+            text: "t".into(),
+            raw: "r".into(),
+            mode: FlowMode::PromptEngineer,
+            input: MetaInput {
+                app: MetaApp {
+                    name: Some("Claude".into()),
+                    ..Default::default()
+                },
+                ..Default::default()
+            },
+            bundle: Some("com.anthropic.claudefordesktop".into()),
+            pasted: true,
+            dictation_id: Some("d1".into()),
+            label: Some("Prompt · for Claude".into()),
+        };
+        let b = feedback_body(Some(&last), "up", Some("  "));
+        assert_eq!(b["dictation_id"], "d1");
+        assert_eq!(b["rating"], "up");
+        assert_eq!(b["mode"], "engineer");
+        assert_eq!(b["app"]["name"], "Claude");
+        assert!(b.get("note").is_none());
+        let r = feedback_body(None, "down", Some("It pasted twice"));
+        assert_eq!(r["note"], "It pasted twice");
+        assert!(r.get("dictation_id").is_none());
     }
 
     #[test]

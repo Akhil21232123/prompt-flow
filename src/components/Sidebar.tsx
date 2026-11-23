@@ -1,6 +1,5 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   BookOpen,
   Brain,
@@ -22,7 +21,6 @@ import { useAccount, useMacUpdate } from "@/lib/cloud";
 import {
   GeneralSettings,
   AdvancedSettings,
-  HistorySettings,
   AboutSettings,
   PostProcessingSettings,
   ModelsSettings,
@@ -32,6 +30,7 @@ import { DictationSettings } from "./settings/promptflow/DictationSettings";
 import { MemorySettings } from "./settings/promptflow/MemorySettings";
 import { ShortcutsSettings } from "./settings/promptflow/ShortcutsSettings";
 import { GuideSettings } from "./settings/promptflow/GuideSettings";
+import { HistoryPage } from "./settings/promptflow/HistoryPage";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -91,7 +90,7 @@ export const SECTIONS_CONFIG = {
   history: {
     labelKey: "sidebar.history",
     icon: History,
-    component: HistorySettings,
+    component: HistoryPage,
     enabled: () => true,
     group: "app",
   },
@@ -132,7 +131,7 @@ export const SECTIONS_CONFIG = {
     group: "app",
   },
   about: {
-    labelKey: "sidebar.about",
+    labelKey: "sidebar.help",
     icon: Info,
     component: AboutSettings,
     enabled: () => true,
@@ -224,7 +223,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {update?.available && (
         <button
           className="mb-3 p-3 rounded-2xl bg-[image:var(--pf-gradient-soft)] border border-pf-violet/30 text-start cursor-pointer pf-rise"
-          onClick={() => openUrl(update.download_url)}
+          onClick={() => onSectionChange("about")}
         >
           <div className="flex items-center gap-2 text-[13px] font-semibold text-pf-text">
             <Download size={14} className="text-pf-violet" />

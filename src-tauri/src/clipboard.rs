@@ -954,13 +954,35 @@ pub fn send_undo(app_handle: &AppHandle) -> Result<(), String> {
     with_enigo(app_handle, input::send_undo)
 }
 
-/// [`paste`] that never presses Return afterwards, whatever auto-submit is
-/// set to: Autopilot's fix is the user's to send.
-pub fn paste_without_submit(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {
-    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut settings = get_settings(&app_handle);
-    settings.auto_submit = false;
+/// Settings for pasting a cloud result. Prompts are often many lines of
+/// XML-tagged sections, so they always go through the clipboard (typing
+/// them would press Return at every newline, sending a half-written
+/// prompt), and the old clipboard comes back only after slow apps (Claude's
+/// Electron app with a long prompt) have had time to read it.
+fn cloud_paste_settings(mut settings: AppSettings, never_submit: bool) -> AppSettings {
+    if settings.paste_method == PasteMethod::Direct {
+        settings.paste_method = PasteMethod::default();
+    }
+    settings.paste_delay_after_ms = settings.paste_delay_after_ms.max(CLOUD_PASTE_RESTORE_MS);
     settings.reliable_paste = false;
+    if never_submit {
+        settings.auto_submit = false;
+    }
+    settings
+}
+
+/// How long a cloud paste leaves the text on the clipboard before restoring.
+const CLOUD_PASTE_RESTORE_MS: u64 = 450;
+
+/// Pastes a cloud result into the focused app (see `cloud_paste_settings`).
+/// `never_submit` skips auto-submit: Autopilot's fix is the user's to send.
+pub fn paste_cloud(
+    text: String,
+    app_handle: AppHandle,
+    never_submit: bool,
+) -> Result<PasteOutcome, String> {
+    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let settings = cloud_paste_settings(get_settings(&app_handle), never_submit);
     let blocked =
         sends_keys(settings.paste_method) && crate::utils::foreground_window_is_elevated();
     paste_as_configured(text, app_handle, settings)?;
@@ -1099,6 +1121,21 @@ fn paste_as_configured(
 mod tests {
     use super::*;
     use std::cell::Cell;
+
+    #[test]
+    fn cloud_results_paste_through_the_clipboard_and_stay_long_enough() {
+        let mut s = crate::settings::get_default_settings();
+        s.paste_method = PasteMethod::Direct;
+        s.paste_delay_after_ms = 60;
+        s.auto_submit = true;
+        s.reliable_paste = true;
+        let c = cloud_paste_settings(s.clone(), true);
+        assert_eq!(c.paste_method, PasteMethod::default());
+        assert!(c.paste_delay_after_ms >= CLOUD_PASTE_RESTORE_MS);
+        assert!(!c.auto_submit && !c.reliable_paste);
+        // Auto-submit is the user's choice for normal results.
+        assert!(cloud_paste_settings(s, false).auto_submit);
+    }
 
     #[cfg(target_os = "linux")]
     const YDOTOOL_0_1_8_HELP: &str = r#"

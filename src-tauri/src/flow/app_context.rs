@@ -66,23 +66,24 @@ pub fn begin_capture() {
     }
 }
 
-/// The captured app's name, waiting up to `wait` for detection to finish,
-/// without taking the capture.
-pub fn peek_name(wait: std::time::Duration) -> Option<String> {
+/// The captured app, waiting up to `wait` for detection to finish, without
+/// taking the capture.
+pub fn peek(wait: std::time::Duration) -> Option<AppContext> {
     let deadline = std::time::Instant::now() + wait;
     loop {
-        if let Some(name) = LATEST
-            .lock()
-            .ok()
-            .and_then(|l| l.as_ref().and_then(|c| c.app_name.clone()))
-        {
-            return Some(name);
+        if let Some(ctx) = LATEST.lock().ok().and_then(|l| l.clone()) {
+            return Some(ctx);
         }
         if std::time::Instant::now() >= deadline {
             return None;
         }
         std::thread::sleep(std::time::Duration::from_millis(40));
     }
+}
+
+/// The captured app's name (see [`peek`]).
+pub fn peek_name(wait: std::time::Duration) -> Option<String> {
+    peek(wait).and_then(|c| c.app_name)
 }
 
 /// Detects the frontmost app now, on the calling thread.
@@ -134,7 +135,12 @@ tell application "System Events"
     on error
         set windowName to ""
     end try
-    return appName & (ASCII character 31) & bundleId & (ASCII character 31) & windowName
+    try
+        set appPath to POSIX path of (file of frontProcess as alias)
+    on error
+        set appPath to ""
+    end try
+    return appName & (ASCII character 31) & bundleId & (ASCII character 31) & windowName & (ASCII character 31) & appPath
 end tell
 "#;
 
@@ -145,16 +151,62 @@ fn non_empty(s: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Parses `name \x1f bundle id \x1f window title`.
+/// Parses `name \x1f bundle id \x1f window title \x1f app path`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn parse_osascript_output(raw: &str) -> Option<AppContext> {
     let mut fields = raw.trim_end_matches(['\n', '\r']).split('\u{1f}');
+    let name = non_empty(fields.next());
+    let bundle_id = non_empty(fields.next());
+    let window_title = non_empty(fields.next());
+    let app_path = non_empty(fields.next());
     let ctx = AppContext {
-        app_name: non_empty(fields.next()),
-        bundle_id: non_empty(fields.next()),
-        window_title: non_empty(fields.next()),
+        app_name: display_name(name, bundle_id.as_deref(), app_path.as_deref()),
+        bundle_id,
+        window_title,
     };
     (!ctx.is_empty()).then_some(ctx)
+}
+
+/// Bundle-id prefixes of web apps saved from a browser ("Add to Dock" in
+/// Safari, "Install" in Chromium browsers). Lowercase.
+const WEB_APP_PREFIXES: &[&str] = &[
+    "com.apple.safari.webapp.",
+    "com.google.chrome.app.",
+    "com.google.chrome.canary.app.",
+    "com.microsoft.edgemac.app.",
+    "com.brave.browser.app.",
+    "com.vivaldi.vivaldi.app.",
+    "company.thebrowser.browser.app.",
+];
+
+/// A web app saved from a browser, e.g. Gemini added to the Dock from Safari.
+pub fn is_web_app(bundle_id: Option<&str>) -> bool {
+    let bundle = bundle_id.unwrap_or_default().to_ascii_lowercase();
+    WEB_APP_PREFIXES.iter().any(|p| bundle.starts_with(p))
+}
+
+/// The name people see for the app. Safari web apps all run as a process
+/// called "Web App"; their real name is the .app bundle's (in ~/Applications).
+fn display_name(
+    name: Option<String>,
+    bundle_id: Option<&str>,
+    app_path: Option<&str>,
+) -> Option<String> {
+    let generic = name
+        .as_deref()
+        .is_none_or(|n| n.eq_ignore_ascii_case("web app"));
+    if generic || is_web_app(bundle_id) {
+        let from_path = app_path.and_then(|p| {
+            std::path::Path::new(p.trim_end_matches('/'))
+                .file_stem()
+                .map(|s| s.to_string_lossy().trim().to_string())
+                .filter(|s| !s.is_empty() && !s.eq_ignore_ascii_case("web app"))
+        });
+        if from_path.is_some() {
+            return from_path;
+        }
+    }
+    name
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +491,27 @@ mod tests {
         assert_eq!(parsed.app_name.as_deref(), Some("Finder"));
         assert!(parsed.bundle_id.is_none() && parsed.window_title.is_none());
         assert!(parse_osascript_output("\u{1f}\u{1f}").is_none());
+    }
+
+    #[test]
+    fn safari_web_apps_get_their_real_name() {
+        let raw = "Web App\u{1f}com.apple.Safari.WebApp.1B2C-33\u{1f}\u{1f}/Users/me/Applications/Gemini.app/\n";
+        let parsed = parse_osascript_output(raw).unwrap();
+        assert_eq!(parsed.app_name.as_deref(), Some("Gemini"));
+        assert!(is_web_app(parsed.bundle_id.as_deref()));
+        // A native app keeps its process name.
+        let raw =
+            "Claude\u{1f}com.anthropic.claudefordesktop\u{1f}Chat\u{1f}/Applications/Claude.app/";
+        assert_eq!(
+            parse_osascript_output(raw).unwrap().app_name.as_deref(),
+            Some("Claude")
+        );
+        // No path: the process name stands.
+        let raw = "Web App\u{1f}com.apple.Safari.WebApp.X\u{1f}\u{1f}";
+        assert_eq!(
+            parse_osascript_output(raw).unwrap().app_name.as_deref(),
+            Some("Web App")
+        );
     }
 
     #[test]

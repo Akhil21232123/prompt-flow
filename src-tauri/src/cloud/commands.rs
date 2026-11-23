@@ -200,6 +200,38 @@ pub async fn memory_delete(app: AppHandle, id: String) -> Result<(), ApiError> {
 }
 
 // ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+#[specta::specta]
+pub async fn cloud_history(
+    app: AppHandle,
+    offset: u32,
+    query: String,
+) -> Result<Vec<api::CloudDictation>, ApiError> {
+    api::history(&app, 50, offset, &query).await
+}
+
+/// "Paste again": hides PromptFlow so the app the user was in comes back to
+/// the front, then pastes there.
+#[tauri::command]
+#[specta::specta]
+pub async fn paste_again(app: AppHandle, text: String) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    let handle = app.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::clipboard::paste_cloud(text, handle, true).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+// ---------------------------------------------------------------------------
 // Settings sync
 // ---------------------------------------------------------------------------
 
@@ -336,6 +368,54 @@ pub async fn island_send_fix(app: AppHandle, id: u64) -> Result<(), String> {
     super::pipeline::send_fix(&app, id).await
 }
 
+/// A redo chip ("As prompt", "Formal", …) on the result in view `id`.
+#[tauri::command]
+#[specta::specta]
+pub async fn island_redo(app: AppHandle, id: u64, kind: island::Redo) -> Result<(), String> {
+    super::pipeline::redo(&app, id, kind).await;
+    Ok(())
+}
+
+/// Sends the kept recording in view `id` again now.
+#[tauri::command]
+#[specta::specta]
+pub async fn island_retry(app: AppHandle, id: u64) -> Result<(), String> {
+    super::pipeline::retry(&app, id).await;
+    Ok(())
+}
+
+/// Transcribes the kept recording in view `id` on this Mac and pastes it.
+#[tauri::command]
+#[specta::specta]
+pub async fn island_paste_raw(app: AppHandle, id: u64) -> Result<(), String> {
+    super::pipeline::paste_raw(&app, id).await;
+    Ok(())
+}
+
+/// 👍 (`up`) or 👎 on the result in view `id`.
+#[tauri::command]
+#[specta::specta]
+pub fn island_rate(app: AppHandle, id: u64, up: bool) {
+    super::pipeline::rate(&app, id, up);
+}
+
+/// "Report a problem" from Settings or the menu bar.
+#[tauri::command]
+#[specta::specta]
+pub async fn report_problem(
+    app: AppHandle,
+    note: String,
+    include_last: bool,
+) -> Result<(), ApiError> {
+    if note.trim().is_empty() {
+        return Err(ApiError::new(
+            ErrorCode::BadRequest,
+            "Tell us what went wrong",
+        ));
+    }
+    super::pipeline::report(&app, &note, include_last).await
+}
+
 /// The card's drawn size, so hovering it can keep it open.
 #[tauri::command]
 #[specta::specta]
@@ -390,6 +470,13 @@ pub async fn autopilot_check_text(
 #[specta::specta]
 pub async fn check_mac_update() -> Result<UpdateInfo, String> {
     update::check().await
+}
+
+/// Downloads the new build and opens its .dmg.
+#[tauri::command]
+#[specta::specta]
+pub async fn install_mac_update(app: AppHandle, url: String) -> Result<String, String> {
+    update::download_and_open(&app, &url).await
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]

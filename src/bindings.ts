@@ -1206,6 +1206,56 @@ async islandCardSize(id: number, width: number, height: number) : Promise<void> 
     await TAURI_INVOKE("island_card_size", { id, width, height });
 },
 /**
+ * A redo chip ("As prompt", "Formal", …) on the result in view `id`.
+ */
+async islandRedo(id: number, kind: Redo) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_redo", { id, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Sends the kept recording in view `id` again now.
+ */
+async islandRetry(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_retry", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Transcribes the kept recording in view `id` on this Mac and pastes it.
+ */
+async islandPasteRaw(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_paste_raw", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * 👍 (`up`) or 👎 on the result in view `id`.
+ */
+async islandRate(id: number, up: boolean) : Promise<void> {
+    await TAURI_INVOKE("island_rate", { id, up });
+},
+/**
+ * "Report a problem" from Settings or the menu bar.
+ */
+async reportProblem(note: string, includeLast: boolean) : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("report_problem", { note, includeLast }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Opens the settings window (e.g. from "Sign in to start").
  */
 async islandOpenApp(id: number) : Promise<void> {
@@ -1248,6 +1298,37 @@ async checkMacUpdate() : Promise<Result<UpdateInfo, string>> {
 }
 },
 /**
+ * Downloads the new build and opens its .dmg.
+ */
+async installMacUpdate(url: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("install_mac_update", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cloudHistory(offset: number, query: string) : Promise<Result<CloudDictation[], ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cloud_history", { offset, query }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * "Paste again": hides PromptFlow so the app the user was in comes back to
+ * the front, then pastes there.
+ */
+async pasteAgain(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("paste_again", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Opens the System Settings pane where the user allows `pane`.
  */
 async openPrivacySettings(pane: PrivacyPane) : Promise<Result<null, string>> {
@@ -1267,6 +1348,23 @@ async screenRecordingAllowed() : Promise<boolean> {
  */
 async requestScreenRecording() : Promise<boolean> {
     return await TAURI_INVOKE("request_screen_recording");
+},
+/**
+ * Whether the Fn key works and what macOS does with it on its own.
+ */
+async fnKeyStatus() : Promise<FnKeyStatus> {
+    return await TAURI_INVOKE("fn_key_status");
+},
+/**
+ * Opens System Settings → Keyboard, where "Press 🌐 key to" lives.
+ */
+async openKeyboardSettings() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_keyboard_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1283,7 +1381,8 @@ recordingStateEvent: RecordingStateEvent,
 streamPhaseEvent: StreamPhaseEvent,
 streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
-transcriptionJob: TranscriptionJob
+transcriptionJob: TranscriptionJob,
+updateProgress: UpdateProgress
 }>({
 accountChanged: "account-changed",
 historyUpdatePayload: "history-update-payload",
@@ -1294,7 +1393,8 @@ recordingStateEvent: "recording-state-event",
 streamPhaseEvent: "stream-phase-event",
 streamTextEvent: "stream-text-event",
 transcriptionCompleteEvent: "transcription-complete-event",
-transcriptionJob: "transcription-job"
+transcriptionJob: "transcription-job",
+updateProgress: "update-progress"
 })
 
 /** user-defined constants **/
@@ -1477,6 +1577,7 @@ export type ChineseScript =
  */
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+export type CloudDictation = { id: string; created_at: string; mode: string; app_name: string | null; raw_text: string; final_text: string; label: string | null; device: string | null }
 export type CloudSttProvider = 
 /**
  * Groq's OpenAI-compatible Whisper endpoint. Uses the Groq API key from
@@ -1587,7 +1688,21 @@ ask_back?: boolean;
 /**
  * PromptFlow remembers durable facts and adds the relevant ones to prompts.
  */
-memory_enabled?: boolean }
+memory_enabled?: boolean; 
+/**
+ * Hold Fn/🌐 to Write; double-tap and hold, or Fn+Control, to Prompt.
+ */
+fn_key?: boolean }
+export type FnKeyStatus = { 
+/**
+ * The tap is listening (Accessibility is granted and the setting is on).
+ */
+active: boolean; usage: FnUsage }
+/**
+ * What macOS does when the 🌐/Fn key is pressed on its own
+ * (System Settings → Keyboard → "Press 🌐 key to").
+ */
+export type FnUsage = "do_nothing" | "change_input_source" | "show_emoji" | "start_dictation" | "unknown"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1628,7 +1743,11 @@ export type IslandError = "sign_in" | "session_ended" | "nothing_heard" | "rate_
 /**
  * The question timed out on the server.
  */
-"ask_expired"
+"ask_expired" | 
+/**
+ * Paused from the menu bar.
+ */
+"paused"
 export type IslandEvent = { id: number; view: IslandView; geometry: IslandGeometry }
 /**
  * Where the island sits, so the frontend can draw it into the notch.
@@ -1668,7 +1787,7 @@ export type IslandStep =
  * Autopilot is reading the answer.
  */
 "checking"
-export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null } | 
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; chips: Redo[]; rateable: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
 /**
  * A Handy notice from the on-device pipeline (Private mode).
  */
@@ -1931,9 +2050,38 @@ export type RecordingPhase =
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 export type RecordingStateEvent = { phase: RecordingPhase }
 /**
+ * A one-click redo of the last result, offered as a chip.
+ */
+export type Redo = 
+/**
+ * Write it as a prompt instead.
+ */
+"as_prompt" | 
+/**
+ * Keep the words instead of a prompt.
+ */
+"as_written" | "formal" | "shorter"
+/**
  * A retired ONNX model found on disk.
  */
 export type RetiredModel = { id: string; name: string; size_mb: number; replacement_repo: string }
+/**
+ * A request that failed for a reason that may pass (network, server).
+ * The recording is kept; PromptFlow retries on its own.
+ */
+export type RetryState = { 
+/**
+ * Tries so far.
+ */
+attempt: number; 
+/**
+ * Seconds until the next automatic try; `None` once it has given up.
+ */
+next_in_sec: number | null; 
+/**
+ * An on-device model can transcribe the recording instead.
+ */
+can_paste_raw: boolean }
 /**
  * Where "This" got the text from.
  */
@@ -2083,6 +2231,7 @@ export type UpdateInfo = { available: boolean; current_build: number; latest_bui
  * The .dmg to download (or the release page).
  */
 download_url: string }
+export type UpdateProgress = { received: number; total: number | null }
 export type Usage = { today: number; daily_limit: number; plan: string }
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }

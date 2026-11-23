@@ -33,11 +33,13 @@ pub const EXPANDED_HEIGHT: f64 = 360.0;
 
 /// How long a result or an error stays before folding away, unless the
 /// pointer is over it.
-pub const DONE_HOLD: Duration = Duration::from_millis(3200);
+pub const DONE_HOLD: Duration = Duration::from_millis(5000);
 pub const ERROR_HOLD: Duration = Duration::from_millis(4500);
 pub const NOTICE_HOLD: Duration = Duration::from_millis(4000);
 /// An unanswered question folds away after this (the server forgets it at 10 min).
 pub const ASK_HOLD: Duration = Duration::from_secs(9 * 60);
+/// A failed request that's being retried stays up until it's resolved.
+pub const RETRY_HOLD: Duration = Duration::from_secs(120);
 /// A verdict with a fix waits longer: the user has to read the issues.
 pub const VERDICT_HOLD: Duration = Duration::from_secs(20);
 /// How long the fold-away animation runs before the panel is hidden.
@@ -86,6 +88,32 @@ pub enum IslandError {
     PasteFailed,
     /// The question timed out on the server.
     AskExpired,
+    /// Paused from the menu bar.
+    Paused,
+}
+
+/// A one-click redo of the last result, offered as a chip.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum Redo {
+    /// Write it as a prompt instead.
+    AsPrompt,
+    /// Keep the words instead of a prompt.
+    AsWritten,
+    Formal,
+    Shorter,
+}
+
+/// A request that failed for a reason that may pass (network, server).
+/// The recording is kept; PromptFlow retries on its own.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Type)]
+pub struct RetryState {
+    /// Tries so far.
+    pub attempt: u32,
+    /// Seconds until the next automatic try; `None` once it has given up.
+    pub next_in_sec: Option<u32>,
+    /// An on-device model can transcribe the recording instead.
+    pub can_paste_raw: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Type)]
@@ -105,6 +133,8 @@ pub enum IslandView {
         language: String,
         /// This recording answers the question that was showing.
         answering: bool,
+        /// Prompt modes: the AI the prompt is for ("Prompt for Claude").
+        target: Option<String>,
         /// "This": what will go with the prompt.
         context: Option<IslandContext>,
     },
@@ -127,6 +157,10 @@ pub enum IslandView {
         memory: Vec<MemoryChip>,
         /// It was pasted (so ⌘Z can undo it), not just copied.
         pasted: bool,
+        /// One-click redos ("As prompt", "Formal", …).
+        chips: Vec<Redo>,
+        /// It can be rated (the server gave it an id).
+        rateable: bool,
     },
     Verdict {
         good: bool,
@@ -138,6 +172,8 @@ pub enum IslandView {
         /// The server's own explanation, when it gave one.
         message: Option<String>,
         retry_after_sec: Option<u32>,
+        /// The recording is kept and being retried.
+        retry: Option<RetryState>,
     },
     /// A Handy notice from the on-device pipeline (Private mode).
     Notice {
@@ -161,6 +197,7 @@ impl IslandView {
             IslandView::Done { .. } => Some(DONE_HOLD),
             IslandView::Verdict { good: true, .. } => Some(DONE_HOLD),
             IslandView::Verdict { .. } => Some(VERDICT_HOLD),
+            IslandView::Error { retry: Some(_), .. } => Some(RETRY_HOLD),
             IslandView::Error { .. } => Some(ERROR_HOLD),
             IslandView::Notice { .. } => Some(NOTICE_HOLD),
             IslandView::Ask { .. } => Some(ASK_HOLD),
@@ -280,6 +317,7 @@ pub fn show_listening(app: &AppHandle) -> u64 {
             mode,
             language,
             answering: false,
+            target: None,
             context: None,
         },
     )
@@ -313,6 +351,29 @@ pub fn show(app: &AppHandle, view: IslandView) -> u64 {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || apply(&handle, id, view));
     id
+}
+
+/// Updates view `id` in place (same id, same size class), e.g. to add what a
+/// listening prompt is for once that's known. Does nothing if it was replaced.
+pub fn patch(app: &AppHandle, id: u64, update: impl FnOnce(&mut IslandView)) {
+    let view = {
+        let Ok(mut s) = STATE.lock() else {
+            return;
+        };
+        if s.id != id {
+            return;
+        }
+        update(&mut s.view);
+        s.view.clone()
+    };
+    let geometry = current_geometry();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if current_id() != id {
+            return;
+        }
+        let _ = IslandEvent { id, view, geometry }.emit(&handle);
+    });
 }
 
 /// Hides the island if `id` is still the view on screen.
@@ -541,6 +602,7 @@ mod tests {
             mode: IslandMode::Engineer,
             language: "en".into(),
             answering: false,
+            target: None,
             context: None,
         };
         assert!(listening.is_compact());
@@ -563,6 +625,8 @@ mod tests {
             label: None,
             memory: vec![],
             pasted: true,
+            chips: vec![Redo::AsPrompt],
+            rateable: true,
         };
         assert_eq!(done.hold(), Some(DONE_HOLD));
         let good = IslandView::Verdict {

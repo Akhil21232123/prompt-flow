@@ -74,6 +74,10 @@ struct MenuInputs {
     language: Option<LanguageMenu>,
     /// Private mode: the on-device model is in use, so its menu items show.
     private_mode: bool,
+    /// Write's style (`None`: Smart).
+    style_preset: Option<crate::flow::settings::StylePreset>,
+    spoken_language: String,
+    paused: bool,
 }
 
 /// What the language submenu shows: `(code, name)` entries, with codes as
@@ -397,8 +401,126 @@ fn compute_desired(app: &AppHandle, icon_state: TrayIconState) -> TrayDesired {
             update_checks_enabled: settings.update_checks_enabled,
             language,
             private_mode: settings.flow.private_mode,
+            style_preset: settings.flow.style_preset,
+            spoken_language: settings.flow.spoken_language.clone(),
+            paused: crate::cloud::is_paused(),
         },
     }
+}
+
+/// The spoken languages the cloud understands, by their own names.
+const SPOKEN: &[(&str, &str)] = &[
+    ("en", "English"),
+    ("hi", "हिन्दी"),
+    ("te", "తెలుగు"),
+    ("ta", "தமிழ்"),
+    ("kn", "ಕನ್ನಡ"),
+    ("ml", "മലയാളം"),
+    ("mr", "मराठी"),
+    ("bn", "বাংলা"),
+    ("gu", "ગુજરાતી"),
+    ("pa", "ਪੰਜਾਬੀ"),
+    ("ur", "اردو"),
+];
+
+fn style_submenu(
+    app: &AppHandle,
+    strings: &crate::tray_i18n::TrayStrings,
+    current: Option<crate::flow::settings::StylePreset>,
+) -> tauri::Result<Submenu<tauri::Wry>> {
+    use crate::flow::settings::StylePreset;
+    let submenu = Submenu::with_id(app, "style_submenu", &strings.write_style, true)?;
+    let items: [(&str, Option<StylePreset>, &str); 7] = [
+        ("smart", None, &strings.style_smart),
+        ("clean", Some(StylePreset::Clean), &strings.style_clean),
+        ("formal", Some(StylePreset::Formal), &strings.style_formal),
+        ("short", Some(StylePreset::Short), &strings.style_short),
+        ("casual", Some(StylePreset::Casual), &strings.style_casual),
+        (
+            "bullets",
+            Some(StylePreset::Bullets),
+            &strings.style_bullets,
+        ),
+        ("custom", Some(StylePreset::Custom), &strings.style_custom),
+    ];
+    for (id, preset, label) in items {
+        submenu.append(&CheckMenuItem::with_id(
+            app,
+            format!("style:{id}"),
+            label,
+            true,
+            current == preset,
+            None::<&str>,
+        )?)?;
+    }
+    Ok(submenu)
+}
+
+fn speak_submenu(
+    app: &AppHandle,
+    strings: &crate::tray_i18n::TrayStrings,
+    current: &str,
+) -> tauri::Result<Submenu<tauri::Wry>> {
+    let submenu = Submenu::with_id(app, "speak_submenu", &strings.spoken_language, true)?;
+    for (code, name) in SPOKEN {
+        submenu.append(&CheckMenuItem::with_id(
+            app,
+            format!("speak:{code}"),
+            *name,
+            true,
+            current == *code,
+            None::<&str>,
+        )?)?;
+    }
+    submenu.append(&PredefinedMenuItem::separator(app)?)?;
+    submenu.append(&CheckMenuItem::with_id(
+        app,
+        "speak:auto",
+        &strings.auto_language,
+        true,
+        current == "auto",
+        None::<&str>,
+    )?)?;
+    Ok(submenu)
+}
+
+/// Applies a quick switch picked in the menu. Returns whether `id` was one.
+pub fn handle_quick_switch(app: &AppHandle, id: &str) -> bool {
+    use crate::flow::settings::StylePreset;
+    let mut settings = settings::get_settings(app);
+    let before = settings.flow.clone();
+    if let Some(style) = id.strip_prefix("style:") {
+        settings.flow.style_preset = match style {
+            "clean" => Some(StylePreset::Clean),
+            "formal" => Some(StylePreset::Formal),
+            "short" => Some(StylePreset::Short),
+            "casual" => Some(StylePreset::Casual),
+            "bullets" => Some(StylePreset::Bullets),
+            "custom" => Some(StylePreset::Custom),
+            _ => None,
+        };
+    } else if let Some(code) = id.strip_prefix("speak:") {
+        if crate::flow::settings::SPOKEN_LANGUAGES.contains(&code) {
+            settings.flow.spoken_language = code.to_string();
+        }
+    } else if id == "private_mode" {
+        settings.flow.private_mode = !settings.flow.private_mode;
+    } else if id == "pause" {
+        crate::cloud::set_paused(!crate::cloud::is_paused());
+        rebuild_tray_menu(app);
+        return true;
+    } else {
+        return false;
+    }
+    let patch = crate::cloud::commands::synced_patch(&before, &settings.flow);
+    settings::write_settings(app, settings);
+    if let Some(patch) = patch {
+        crate::cloud::commands::push_settings(app, patch);
+    }
+    use tauri::Emitter;
+    let _ = app.emit("settings-changed", serde_json::json!({"setting": "flow"}));
+    rebuild_tray_menu(app);
+    true
 }
 
 /// The language submenu for `model`, mirroring the settings window's picker:
@@ -713,16 +835,47 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
             ],
         )?
     } else if !inputs.private_mode {
-        // The cloud transcribes: no local model or language to pick here.
+        // The cloud transcribes: no local model to pick, just quick switches.
+        let style = style_submenu(app, &strings, inputs.style_preset)?;
+        let speak = speak_submenu(app, &strings, &inputs.spoken_language)?;
+        let private = CheckMenuItem::with_id(
+            app,
+            "private_mode",
+            &strings.private_mode,
+            true,
+            false,
+            None::<&str>,
+        )?;
+        let pause = CheckMenuItem::with_id(
+            app,
+            "pause",
+            &strings.pause,
+            true,
+            inputs.paused,
+            None::<&str>,
+        )?;
+        let report = MenuItem::with_id(
+            app,
+            "report_problem",
+            &strings.report_problem,
+            true,
+            None::<&str>,
+        )?;
         Menu::with_items(
             app,
             &[
                 &version_i,
                 &separator()?,
+                &style,
+                &speak,
+                &private,
+                &pause,
+                &separator()?,
                 &copy_last_transcript_i,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
+                &report,
                 &separator()?,
                 &quit_i,
             ],
@@ -762,9 +915,32 @@ fn build_menu(app: &AppHandle, inputs: &MenuInputs) -> tauri::Result<(Menu<tauri
                 &separator()?,
                 &model_submenu,
                 &unload_model_i,
+                &CheckMenuItem::with_id(
+                    app,
+                    "private_mode",
+                    &strings.private_mode,
+                    true,
+                    true,
+                    None::<&str>,
+                )?,
+                &CheckMenuItem::with_id(
+                    app,
+                    "pause",
+                    &strings.pause,
+                    true,
+                    inputs.paused,
+                    None::<&str>,
+                )?,
                 &separator()?,
                 &settings_i,
                 &check_updates_i,
+                &MenuItem::with_id(
+                    app,
+                    "report_problem",
+                    &strings.report_problem,
+                    true,
+                    None::<&str>,
+                )?,
                 &separator()?,
                 &quit_i,
             ],
@@ -1008,6 +1184,9 @@ mod tests {
             update_checks_enabled: true,
             language: None,
             private_mode: true,
+            style_preset: None,
+            spoken_language: "en".to_string(),
+            paused: false,
         }
     }
 

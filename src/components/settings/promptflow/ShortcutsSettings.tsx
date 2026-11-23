@@ -4,6 +4,7 @@ import { ShortcutInput } from "../ShortcutInput";
 import { ShortcutActivationSetting } from "../ShortcutActivation";
 import { PfCard, PfPage } from "./ui";
 import { PermissionRows, useMacPermissions } from "./PermissionsCard";
+import { FnKeyCard } from "./FnKeyCard";
 
 const SHORTCUTS = [
   "transcribe",
@@ -19,7 +20,10 @@ export const ShortcutsSettings: React.FC = () => {
   const { state } = useMacPermissions();
   return (
     <PfPage title={t("shortcuts.title")} subtitle={t("shortcuts.subtitle")}>
-      <PfCard>
+      <PfCard bare>
+        <FnKeyCard />
+      </PfCard>
+      <PfCard title={t("shortcuts.keys")}>
         {SHORTCUTS.map((id) => (
           <ShortcutInput
             key={id}

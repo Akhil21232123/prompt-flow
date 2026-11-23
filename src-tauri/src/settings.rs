@@ -605,7 +605,8 @@ fn default_start_hidden() -> bool {
 }
 
 fn default_autostart_enabled() -> bool {
-    false
+    // PromptFlow lives in the menu bar; it should be there after a restart.
+    true
 }
 
 fn default_update_checks_enabled() -> bool {

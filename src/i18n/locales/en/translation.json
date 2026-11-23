@@ -1,6 +1,6 @@
 {
   "tray": {
-    "settings": "Settings...",
+    "settings": "Open PromptFlow",
     "checkUpdates": "Check for Updates...",
     "copyLastTranscript": "Copy Last Transcript",
     "unloadModel": "Unload Model",
@@ -10,7 +10,19 @@
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input",
     "language": "Language",
     "autoLanguage": "Auto",
-    "otherLanguages": "Other Languages"
+    "otherLanguages": "Other Languages",
+    "writeStyle": "Write Style",
+    "styleSmart": "Smart (fits the app)",
+    "styleClean": "Clean",
+    "styleFormal": "Formal",
+    "styleShort": "Short & punchy",
+    "styleCasual": "Casual",
+    "styleBullets": "Bullet points",
+    "styleCustom": "Custom",
+    "spokenLanguage": "I Speak",
+    "privateMode": "Private Mode",
+    "pause": "Pause PromptFlow",
+    "reportProblem": "Report a Problem…"
   },
   "sidebar": {
     "general": "General",
@@ -30,7 +42,8 @@
     "sound": "Mic & sound",
     "private": "Private mode",
     "signedIn": "Signed in",
-    "signedOut": "Not signed in"
+    "signedOut": "Not signed in",
+    "help": "Help"
   },
   "onboarding": {
     "customModelDescription": "Not officially supported",
@@ -349,8 +362,8 @@
         "pressKeys": "Press keys...",
         "bindings": {
           "transcribe": {
-            "name": "Dictate",
-            "description": "Hold and speak; PromptFlow writes it where you're typing."
+            "name": "Write",
+            "description": "Your words, cleaned up in your style. Never turns into a prompt."
           },
           "cancel": {
             "name": "Cancel",
@@ -361,8 +374,8 @@
             "description": "Optional: A dedicated hotkey that always applies AI post-processing to your transcription."
           },
           "prompt_engineer": {
-            "name": "Prompt Engineer",
-            "description": "Turns what you say into a clear prompt for the AI app you're in."
+            "name": "Prompt",
+            "description": "Turns what you say into a structured prompt for the AI app you're in."
           },
           "this": {
             "name": "This",
@@ -1264,10 +1277,10 @@
   },
   "dictation": {
     "title": "Dictation",
-    "subtitle": "How PromptFlow writes what you say.",
+    "subtitle": "How Write (⌥Space) cleans up your words. Prompt (⌃⌥P) always writes for the AI you're in.",
     "style": {
       "title": "Writing style",
-      "description": "Used by the dictation shortcut. Prompts are always written for the AI you're using.",
+      "description": "Used by Write. It only cleans up your words: it never turns them into a prompt.",
       "customLabel": "Your style",
       "customPlaceholder": "e.g. Friendly but brief, British spelling, no emoji",
       "options": {
@@ -1357,10 +1370,11 @@
   },
   "shortcuts": {
     "title": "Shortcuts",
-    "subtitle": "Hold a shortcut and talk, or tap it to start and tap again to stop.",
+    "subtitle": "Write keeps your words; Prompt turns them into a prompt. Hold a shortcut and talk, or tap to start and tap again to stop.",
     "activation": "How shortcuts work",
     "permissions": "Permissions",
-    "permissionsDescription": "macOS asks for these once. After an update it may ask again."
+    "permissionsDescription": "macOS asks for these once. After an update it may ask again.",
+    "keys": "Keyboard shortcuts"
   },
   "permissions": {
     "allow": "Allow",
@@ -1401,22 +1415,22 @@
   },
   "guide": {
     "title": "How to use PromptFlow",
-    "subtitle": "Five shortcuts, one island. Here's everything in two minutes.",
+    "subtitle": "Two keys to remember, one island to watch.",
     "hero": {
-      "title": "Hold a shortcut, say it, let go.",
-      "body": "PromptFlow writes it into whatever app you're in: a message, an email, or a prompt shaped for Claude, ChatGPT, Cursor and the rest. Watch the island at the top of your screen to see what it's doing."
+      "title": "Write or Prompt. Hold, talk, let go.",
+      "body": "Write (⌥Space) puts your own words where you're typing, cleaned up in your style; it never turns them into a prompt. Prompt (⌃⌥P) turns what you say into a structured prompt for the AI app you're in: Claude, ChatGPT, Gemini, Cursor and more. The island at the top shows which one is running."
     },
     "shortcutsTitle": "The shortcuts",
     "features": {
       "dictate": {
-        "title": "Dictate",
-        "body": "Talk naturally. Fillers and false starts disappear, punctuation appears, and the tone fits the app.",
+        "title": "Write",
+        "body": "Your words, cleaned up in your style: fillers go, punctuation comes, the tone fits the app. Never turns into a prompt.",
         "example": "\"um so can you send me the deck by friday thanks\" → \"Can you send me the deck by Friday? Thanks!\""
       },
       "prompt": {
-        "title": "Prompt Engineer",
-        "body": "Describe what you want from an AI. PromptFlow writes a clear, complete prompt for the AI app you're in.",
-        "example": "\"make me a landing page for my puzzle brand with a waitlist\" → a structured prompt with goals, sections and constraints."
+        "title": "Prompt",
+        "body": "Describe what you want from an AI. PromptFlow turns it into a structured prompt for the AI app you're in.",
+        "example": "\"make me a landing page for my puzzle brand with a waitlist\" → a prompt with the goal, sections and constraints, written for Claude."
       },
       "this": {
         "title": "This",
@@ -1446,7 +1460,7 @@
       "states": {
         "listening": {
           "title": "Listening",
-          "body": "Live waveform, timer and your language."
+          "body": "Says what's running: Writing, or Prompt for Claude."
         },
         "working": {
           "title": "Working",
@@ -1464,7 +1478,7 @@
     },
     "tipsTitle": "Tips",
     "tips": {
-      "holdOrTap": "Hold the shortcut while you talk, or tap it once to start and again to stop.",
+      "holdOrTap": "Hold 🌐 (Fn) to Write and double-tap-and-hold it for Prompt, or use ⌥Space and ⌃⌥P. Tap a shortcut once to start and again to stop.",
       "escape": "Press Esc while recording to cancel. Nothing is pasted.",
       "undo": "Didn't like the result? Click Undo in the island, or press ⌘Z.",
       "anyLanguage": "Speak Hindi, Telugu, Tamil and more. Prompts come out in English if you want.",
@@ -1529,8 +1543,9 @@
       "transcribing": "Transcribing…",
       "polishing": "Polishing…",
       "writing": "Writing your prompt…",
-      "writingFor": "Writing for {{app}}…",
-      "checking": "Checking the answer…"
+      "writingFor": "Writing a prompt for {{app}}…",
+      "checking": "Checking the answer…",
+      "cleaning": "Cleaning up…"
     },
     "ask": {
       "title": "Quick question",
@@ -1546,7 +1561,11 @@
       "undo": "Undo",
       "undoKey": "⌘Z",
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "good": "Good result",
+      "bad": "Bad result",
+      "thanks": "Thanks",
+      "onClipboard": "On your clipboard"
     },
     "verdict": {
       "good": "The answer looks right",
@@ -1608,7 +1627,34 @@
       "ask_expired": {
         "title": "That question expired",
         "body": "Say your request again."
+      },
+      "paused": {
+        "title": "PromptFlow is paused",
+        "body": "Resume it from the menu bar."
       }
+    },
+    "active": {
+      "write": "Writing",
+      "edit": "Editing",
+      "prompt": "Prompt",
+      "promptFor": "Prompt for {{app}}",
+      "this": "Prompt about this",
+      "thisFor": "Prompt about this for {{app}}"
+    },
+    "redo": {
+      "as_prompt": "As prompt",
+      "as_written": "As written",
+      "formal": "Formal",
+      "shorter": "Shorter"
+    },
+    "retry": {
+      "title": "Couldn't reach PromptFlow",
+      "safe": "Your recording is safe.",
+      "inSeconds": "Trying again in {{seconds}} s…",
+      "trying": "Trying again…",
+      "gaveUp": "Still can't get through. Try again when you're back online.",
+      "now": "Retry",
+      "pasteRaw": "Paste raw text"
     }
   },
   "onboardingPf": {
@@ -1621,8 +1667,8 @@
       "body": "Dictate anywhere on your Mac, and turn rambling thoughts into prompts any AI understands.",
       "start": "Get started",
       "points": {
-        "speak": "Hold a shortcut and speak, in English or your own language.",
-        "prompts": "Get prompts written for Claude, ChatGPT, Cursor and more.",
+        "speak": "Write: hold ⌥Space and talk. Your words, cleaned up, never turned into a prompt.",
+        "prompts": "Prompt: hold ⌃⌥P to turn what you say into a structured prompt for the AI you're in.",
         "this": "Ask about what's on screen with \"This\".",
         "autopilot": "Check an AI's answer and fix it in one click."
       }
@@ -1647,7 +1693,7 @@
     },
     "try": {
       "title": "Try it live",
-      "body": "Click in the box, then hold the shortcut and say something like \"Hi, I'm trying PromptFlow and it's pretty great\".",
+      "body": "Try Write now: click in the box, hold 🌐 (or ⌥Space) and say something like \"Hi, I'm trying PromptFlow and it's pretty great\".",
       "holdHint": "Hold while you talk, let go to finish",
       "placeholder": "Your words appear here…",
       "idle": "Watch the top of your screen: the island shows when PromptFlow is listening.",
@@ -1656,7 +1702,15 @@
       "problem": "Something went wrong. Check the island at the top of your screen, then try again.",
       "worked": "That's it. It works anywhere you can type.",
       "next": "Continue",
-      "skip": "Skip for now"
+      "skip": "Skip for now",
+      "write": {
+        "title": "Write",
+        "body": "Your words, cleaned up. Never a prompt."
+      },
+      "prompt": {
+        "title": "Prompt",
+        "body": "A structured prompt for the AI app you're in."
+      }
     },
     "done": {
       "title": "You're all set",
@@ -1685,6 +1739,50 @@
     "checking": "Checking…",
     "versionBuild": "v{{version}} (build {{build}})",
     "versionOnly": "v{{version}}",
-    "builtOnHandy": "Built on Handy, the open-source dictation app"
+    "builtOnHandy": "Built on Handy, the open-source dictation app",
+    "availableBuild": "Build {{build}} is available",
+    "thisBuild": "You have build {{build}}.",
+    "install": "Update",
+    "opened": "PromptFlow.dmg is open: drag PromptFlow onto Applications and choose Replace, then open PromptFlow again."
+  },
+  "fnKey": {
+    "title": "Hold 🌐 (Fn) to talk",
+    "body": "Hold 🌐 to Write, release to paste. Double-tap and hold 🌐, or hold 🌐 and Control, for Prompt.",
+    "fix": "Set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings.",
+    "openKeyboard": "Open Keyboard settings",
+    "needsAccessibility": "Starts working once PromptFlow is allowed in Accessibility.",
+    "conflict": {
+      "change_input_source": "macOS switches your keyboard language when you press 🌐.",
+      "show_emoji": "macOS opens the emoji picker when you press 🌐.",
+      "start_dictation": "macOS starts its own dictation when you press 🌐.",
+      "unknown": "macOS may do something else when you press 🌐."
+    }
+  },
+  "cloudHistory": {
+    "title": "History",
+    "subtitle": "Everything you've dictated, on every device.",
+    "search": "Search what you said or what was written",
+    "empty": "Nothing here yet",
+    "noMatch": "Nothing matches that search",
+    "signInFirst": "Sign in to see your history.",
+    "more": "Show more",
+    "youSaid": "You said",
+    "pasteAgain": "Paste again",
+    "mode": {
+      "dictate": "Write",
+      "engineer": "Prompt",
+      "command": "Edit"
+    }
+  },
+  "help": {
+    "title": "Help",
+    "report": {
+      "title": "Report a problem",
+      "placeholder": "What happened? What did you expect?",
+      "includeLast": "Include my last result",
+      "send": "Send",
+      "thanks": "Thanks. The PromptFlow team will look at it.",
+      "signIn": "Sign in to send a report."
+    }
   }
 }

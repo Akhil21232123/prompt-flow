@@ -558,7 +558,7 @@ body {
     rgba(255, 255, 255, 0.55) var(--ring, 100%),
     rgba(255, 255, 255, 0.12) 0
   );
-  animation: i-ring 3.2s linear forwards;
+  animation: i-ring 5s linear forwards;
 }
 .i-ring.paused {
   animation-play-state: paused;
@@ -590,4 +590,50 @@ body {
   .i-spinner {
     animation-duration: 2.4s;
   }
+}
+
+/* What's running: "Writing" (violet-pink) or "Prompt for Claude" (blue). */
+.i-active {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--pf-pink) 55%, #fff);
+}
+.i-active.mode-engineer,
+.i-active.mode-this {
+  color: color-mix(in srgb, var(--pf-blue) 60%, #fff);
+}
+
+/* Redo chips: quieter than buttons, so the result stays the focus. */
+.i-btn.chip {
+  height: 26px;
+  padding: 0 10px;
+  font-weight: 500;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--i-line);
+  color: var(--i-muted);
+}
+.i-btn.chip:hover:not(:disabled) {
+  color: var(--i-text);
+  background: var(--i-fill);
+}
+.i-rate {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+.i-rate .i-icon-btn {
+  background: transparent;
+}
+.i-rate .i-icon-btn:hover {
+  background: var(--i-fill);
+}
+.i-rate-thanks,
+.i-hint-inline {
+  font-size: 11.5px;
+  color: var(--i-faint);
+}
+.i-wave.mode-engineer i,
+.i-wave.mode-this i {
+  background: linear-gradient(var(--pf-blue), #8fb4ff);
 }
