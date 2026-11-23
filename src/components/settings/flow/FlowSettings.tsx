@@ -78,6 +78,7 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   prompts_in_english: flow?.prompts_in_english ?? true,
   ask_back: flow?.ask_back ?? true,
   memory_enabled: flow?.memory_enabled ?? true,
+  fn_key: flow?.fn_key ?? true,
 });
 
 const newId = () =>

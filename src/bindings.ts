@@ -1267,6 +1267,23 @@ async screenRecordingAllowed() : Promise<boolean> {
  */
 async requestScreenRecording() : Promise<boolean> {
     return await TAURI_INVOKE("request_screen_recording");
+},
+/**
+ * Whether the Fn key works and what macOS does with it on its own.
+ */
+async fnKeyStatus() : Promise<FnKeyStatus> {
+    return await TAURI_INVOKE("fn_key_status");
+},
+/**
+ * Opens System Settings → Keyboard, where "Press 🌐 key to" lives.
+ */
+async openKeyboardSettings() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_keyboard_settings") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1587,7 +1604,21 @@ ask_back?: boolean;
 /**
  * PromptFlow remembers durable facts and adds the relevant ones to prompts.
  */
-memory_enabled?: boolean }
+memory_enabled?: boolean; 
+/**
+ * Hold Fn/🌐 to Write; double-tap and hold, or Fn+Control, to Prompt.
+ */
+fn_key?: boolean }
+export type FnKeyStatus = { 
+/**
+ * The tap is listening (Accessibility is granted and the setting is on).
+ */
+active: boolean; usage: FnUsage }
+/**
+ * What macOS does when the 🌐/Fn key is pressed on its own
+ * (System Settings → Keyboard → "Press 🌐 key to").
+ */
+export type FnUsage = "do_nothing" | "change_input_source" | "show_emoji" | "start_dictation" | "unknown"
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**

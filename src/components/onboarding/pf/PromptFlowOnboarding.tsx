@@ -16,6 +16,7 @@ import type { IslandView } from "@/bindings";
 import { SignIn } from "@/components/account/SignIn";
 import { Keycaps } from "@/components/shared/Keycaps";
 import { Switch } from "@/components/ui/Switch";
+import { FnKeyCard } from "@/components/settings/promptflow/FnKeyCard";
 import { useSettings } from "@/hooks/useSettings";
 import { useOsType } from "@/hooks/useOsType";
 import { useAccount } from "@/lib/cloud";
@@ -355,6 +356,7 @@ const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
         <p className="text-[14.5px] text-pf-muted leading-relaxed">
           {t("onboardingPf.try.body")}
         </p>
+        <FnKeyCard compact />
         <div className="pf-card divide-y divide-pf-border">
           {[
             { key: "write", b: binding },

@@ -12,6 +12,7 @@ mod cloud;
 mod commands;
 pub mod engine_supervisor;
 mod flow;
+mod fn_key;
 mod helpers;
 mod input;
 mod island;
@@ -604,6 +605,8 @@ fn specta_builder() -> Builder<tauri::Wry> {
             cloud::commands::open_privacy_settings,
             cloud::commands::screen_recording_allowed,
             cloud::commands::request_screen_recording,
+            fn_key::fn_key_status,
+            fn_key::open_keyboard_settings,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -1215,6 +1218,9 @@ pub fn run(cli_args: CliArgs) {
             }
 
             initialize_core_logic(&app_handle);
+
+            // Hold Fn/🌐 to talk (starts listening once Accessibility is on).
+            fn_key::init(&app_handle);
 
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates

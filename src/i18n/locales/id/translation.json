@@ -1360,7 +1360,8 @@
     "subtitle": "Hold a shortcut and talk, or tap it to start and tap again to stop.",
     "activation": "How shortcuts work",
     "permissions": "Permissions",
-    "permissionsDescription": "macOS asks for these once. After an update it may ask again."
+    "permissionsDescription": "macOS asks for these once. After an update it may ask again.",
+    "keys": "Keyboard shortcuts"
   },
   "permissions": {
     "allow": "Allow",
@@ -1703,5 +1704,18 @@
     "versionBuild": "v{{version}} (build {{build}})",
     "versionOnly": "v{{version}}",
     "builtOnHandy": "Built on Handy, the open-source dictation app"
+  },
+  "fnKey": {
+    "title": "Hold 🌐 (Fn) to talk",
+    "body": "Hold 🌐 to Write, release to paste. Double-tap and hold 🌐, or hold 🌐 and Control, for Prompt.",
+    "fix": "Set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings.",
+    "openKeyboard": "Open Keyboard settings",
+    "needsAccessibility": "Starts working once PromptFlow is allowed in Accessibility.",
+    "conflict": {
+      "change_input_source": "macOS switches your keyboard language when you press 🌐.",
+      "show_emoji": "macOS opens the emoji picker when you press 🌐.",
+      "start_dictation": "macOS starts its own dictation when you press 🌐.",
+      "unknown": "macOS may do something else when you press 🌐."
+    }
   }
 }

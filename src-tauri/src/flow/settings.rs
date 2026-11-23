@@ -373,6 +373,9 @@ pub struct FlowSettings {
     /// PromptFlow remembers durable facts and adds the relevant ones to prompts.
     #[serde(default = "default_true")]
     pub memory_enabled: bool,
+    /// Hold Fn/🌐 to Write; double-tap and hold, or Fn+Control, to Prompt.
+    #[serde(default = "default_true")]
+    pub fn_key: bool,
 }
 
 /// Languages the cloud understands, plus "auto".
@@ -404,6 +407,7 @@ impl Default for FlowSettings {
             prompts_in_english: true,
             ask_back: true,
             memory_enabled: true,
+            fn_key: true,
         }
     }
 }
