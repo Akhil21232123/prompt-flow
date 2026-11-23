@@ -165,7 +165,7 @@ export function dedupeParts(p: PromptParts): PromptParts {
   const criteria: string[] = [];
   for (const c of p.acceptance_criteria)
     if (
-      !kept.some((k) => overlap(k, c) >= 0.6) &&
+      !kept.some((k) => overlap(k, c) >= 0.5) &&
       !criteria.some((k) => overlap(k, c) >= 0.8)
     )
       criteria.push(c);
