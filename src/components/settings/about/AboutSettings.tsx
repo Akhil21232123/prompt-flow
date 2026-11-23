@@ -10,6 +10,7 @@ import { AppLanguageSelector } from "../AppLanguageSelector";
 import { ShowWhatsNewOnUpdate } from "../ShowWhatsNewOnUpdate";
 import { ThemeSelector } from "../ThemeSelector";
 import { LogDirectory } from "../debug";
+import { useMacUpdate } from "@/lib/cloud";
 
 export const AboutSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -29,13 +30,7 @@ export const AboutSettings: React.FC = () => {
     fetchVersion();
   }, []);
 
-  const handleDonateClick = async () => {
-    try {
-      await openUrl("https://handy.computer/donate");
-    } catch (error) {
-      console.error("Failed to open donate link:", error);
-    }
-  };
+  const update = useMacUpdate();
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -47,21 +42,37 @@ export const AboutSettings: React.FC = () => {
           description={t("settings.about.version.description")}
           grouped={true}
         >
-          {/* eslint-disable-next-line i18next/no-literal-string */}
-          <span className="text-sm font-mono">v{version}</span>
+          <span className="text-sm font-mono">
+            {update?.current_build
+              ? t("update.versionBuild", {
+                  version,
+                  build: update.current_build,
+                })
+              : t("update.versionOnly", { version })}
+          </span>
+        </SettingContainer>
+
+        <SettingContainer
+          title={t("update.title")}
+          description={t("update.description")}
+          grouped={true}
+        >
+          {update?.available ? (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => openUrl(update.download_url)}
+            >
+              {t("update.downloadButton", { build: update.latest_build ?? "" })}
+            </Button>
+          ) : (
+            <span className="text-sm text-ink-2">
+              {update ? t("update.upToDate") : t("update.checking")}
+            </span>
+          )}
         </SettingContainer>
 
         <ShowWhatsNewOnUpdate descriptionMode="tooltip" grouped={true} />
-
-        <SettingContainer
-          title={t("settings.about.supportDevelopment.title")}
-          description={t("settings.about.supportDevelopment.description")}
-          grouped={true}
-        >
-          <Button variant="primary" size="md" onClick={handleDonateClick}>
-            {t("settings.about.supportDevelopment.button")}
-          </Button>
-        </SettingContainer>
 
         <SettingContainer
           title={t("settings.about.sourceCode.title")}
@@ -72,6 +83,7 @@ export const AboutSettings: React.FC = () => {
             variant="secondary"
             size="md"
             onClick={() => openUrl("https://github.com/cjpais/Handy")}
+            aria-label={t("update.builtOnHandy")}
           >
             {t("settings.about.sourceCode.button")}
           </Button>

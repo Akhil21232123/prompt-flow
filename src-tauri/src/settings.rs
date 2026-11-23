@@ -713,7 +713,8 @@ fn default_sound_theme() -> SoundTheme {
 }
 
 fn default_theme() -> Theme {
-    Theme::System
+    // PromptFlow is designed on ink first, like the phone apps.
+    Theme::Dark
 }
 
 fn default_post_process_enabled() -> bool {

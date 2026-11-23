@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { type } from "@tauri-apps/plugin-os";
 import { ShowOverlay } from "../ShowOverlay";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { CustomWords } from "../CustomWords";
@@ -31,6 +32,10 @@ export const AdvancedSettings: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const experimentalEnabled = getSetting("experimental_enabled") || false;
+  // On-device transcription settings only matter in Private mode; the
+  // island is always on on macOS.
+  const privateMode = getSetting("flow")?.private_mode ?? false;
+  const isMac = type() === "macos";
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -38,8 +43,10 @@ export const AdvancedSettings: React.FC = () => {
         <StartHidden descriptionMode="tooltip" grouped={true} />
         <AutostartToggle descriptionMode="tooltip" grouped={true} />
         <ShowTrayIcon descriptionMode="tooltip" grouped={true} />
-        <ShowOverlay descriptionMode="tooltip" grouped={true} />
-        <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        {!isMac && <ShowOverlay descriptionMode="tooltip" grouped={true} />}
+        {privateMode && (
+          <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
+        )}
         <ExperimentalToggle descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
@@ -52,8 +59,12 @@ export const AdvancedSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>
         <VoiceActivityDetection descriptionMode="tooltip" grouped={true} />
-        <LongFormChunking descriptionMode="tooltip" grouped={true} />
-        <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
+        {privateMode && (
+          <>
+            <LongFormChunking descriptionMode="tooltip" grouped={true} />
+            <FillerWordRemoval descriptionMode="tooltip" grouped={true} />
+          </>
+        )}
         <CustomWords descriptionMode="tooltip" grouped />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
@@ -68,7 +79,9 @@ export const AdvancedSettings: React.FC = () => {
 
       {experimentalEnabled && (
         <SettingsGroup title={t("settings.advanced.groups.experimental")}>
-          <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
+          {privateMode && (
+            <PostProcessingToggle descriptionMode="tooltip" grouped={true} />
+          )}
           <KeyboardImplementationSelector
             descriptionMode="tooltip"
             grouped={true}

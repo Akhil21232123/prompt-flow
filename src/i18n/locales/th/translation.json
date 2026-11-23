@@ -20,7 +20,17 @@
     "history": "ประวัติ",
     "debug": "ดีบัก",
     "about": "เกี่ยวกับ",
-    "flow": "PromptFlow"
+    "flow": "PromptFlow",
+    "label": "Settings",
+    "account": "Account",
+    "dictation": "Dictation",
+    "memory": "Memory",
+    "shortcuts": "Shortcuts",
+    "guide": "How to use",
+    "sound": "Microphone & sound",
+    "private": "Private mode",
+    "signedIn": "Signed in",
+    "signedOut": "Not signed in"
   },
   "onboarding": {
     "customModelDescription": "ไม่รองรับอย่างเป็นทางการ",
@@ -349,6 +359,22 @@
           "transcribe_with_post_process": {
             "name": "ปุ่มลัดปรับแต่งข้อความ",
             "description": "ตัวเลือกเสริม: ปุ่มลัดเฉพาะสำหรับใช้ AI ปรับแต่งข้อความที่ถอดได้ทุกครั้ง"
+          },
+          "prompt_engineer": {
+            "name": "Prompt Engineer",
+            "description": "Turns what you say into a clear prompt for the AI app you're in."
+          },
+          "this": {
+            "name": "This",
+            "description": "Writes a prompt about what's on screen: your selection, or the window's text."
+          },
+          "command_mode": {
+            "name": "Edit with your voice",
+            "description": "Edits the selected text the way you say, or writes new text at the cursor."
+          },
+          "autopilot": {
+            "name": "Check the answer",
+            "description": "Checks the AI's reply against what you asked and offers a fix."
           }
         },
         "errors": {
@@ -1109,7 +1135,10 @@
     "open": "เปิด",
     "copy": "คัดลอก",
     "clear": "ล้าง",
-    "noOptionsFound": "ไม่พบตัวเลือก"
+    "noOptionsFound": "ไม่พบตัวเลือก",
+    "cancel": "Cancel",
+    "save": "Save",
+    "edit": "Edit"
   },
   "errors": {
     "loadDirectory": "เกิดข้อผิดพลาดในการโหลดโฟลเดอร์: {{error}}",
@@ -1176,5 +1205,486 @@
     "learnMore": "วิธีแก้ไข",
     "recorderBlocked": "ไม่สามารถเปลี่ยนปุ่มลัดได้ในขณะนี้ — Secure Input ของ macOS กำลังบล็อกการกดปุ่มอยู่ โปรดแก้ไขคำเตือน Secure Input ก่อน",
     "dismiss": "ปิด"
+  },
+  "app": {
+    "name": "PromptFlow"
+  },
+  "cloud": {
+    "errors": {
+      "network": "Can't reach PromptFlow. Check your internet connection and try again.",
+      "rateLimited": "That was a lot at once. Wait a moment, then try again.",
+      "rateLimitedFor": "That was a lot at once. Try again in {{seconds}} seconds.",
+      "quota": "You've reached today's limit. It resets tomorrow.",
+      "auth": "You've been signed out. Sign in again to keep going.",
+      "generic": "Something went wrong. Please try again."
+    }
+  },
+  "account": {
+    "title": "Account",
+    "subtitle": "Your PromptFlow account works on this Mac and on your phone.",
+    "signedOutSubtitle": "Sign in to dictate, write prompts and keep your memory in sync.",
+    "signInTitle": "Sign in to PromptFlow",
+    "signInWhy": "No password and no API keys. We email you a code.",
+    "plan": "{{plan}} plan",
+    "planBeta": "Beta",
+    "cloudOn": "Cloud",
+    "privateOn": "Private mode on",
+    "signOut": "Sign out",
+    "signIn": {
+      "emailLabel": "Your email",
+      "emailPlaceholder": "you@example.com",
+      "continue": "Email me a code",
+      "noPassword": "We'll email you a sign-in link and a 6-digit code. New here? This creates your account.",
+      "checkEmail": "Check your email",
+      "sentTo": "We sent a link and a code to {{email}}. Enter the code here, or open the link on this Mac.",
+      "codeLabel": "6-digit code",
+      "digit": "Digit {{n}}",
+      "linkHint": "Reading email on your phone? Type the code here. Opening the link on this Mac signs you in automatically.",
+      "differentEmail": "Use a different email",
+      "resend": "Send a new code",
+      "resendIn": "New code in {{seconds}}s"
+    },
+    "usage": {
+      "title": "Today",
+      "ofLimit": "of {{limit}} dictations",
+      "loading": "Loading…",
+      "refresh": "Refresh usage",
+      "resets": "Your daily allowance resets at midnight."
+    },
+    "danger": {
+      "title": "Delete account",
+      "delete": "Delete your account",
+      "deleteDescription": "Removes your account, memory, settings and history from PromptFlow's servers. This can't be undone.",
+      "deleteButton": "Delete account",
+      "confirmTitle": "Delete your PromptFlow account?",
+      "confirmBody": "This permanently deletes {{email}} and everything PromptFlow stored for it, including your memory. You'll be signed out on every device.",
+      "confirmButton": "Delete forever",
+      "deleting": "Deleting…"
+    }
+  },
+  "dictation": {
+    "title": "Dictation",
+    "subtitle": "How PromptFlow writes what you say.",
+    "style": {
+      "title": "Writing style",
+      "description": "Used by the dictation shortcut. Prompts are always written for the AI you're using.",
+      "customLabel": "Your style",
+      "customPlaceholder": "e.g. Friendly but brief, British spelling, no emoji",
+      "options": {
+        "smart": {
+          "name": "Smart",
+          "description": "Matches the app: formal in email, relaxed in chat."
+        },
+        "clean": {
+          "name": "Clean",
+          "description": "Your words, minus the ums, with proper punctuation."
+        },
+        "formal": {
+          "name": "Formal",
+          "description": "Complete sentences, professional tone."
+        },
+        "short": {
+          "name": "Short & punchy",
+          "description": "Straight to the point, half the length."
+        },
+        "casual": {
+          "name": "Casual",
+          "description": "Relaxed, like texting a friend."
+        },
+        "bullets": {
+          "name": "Bullet points",
+          "description": "Turns what you say into a tidy list."
+        },
+        "custom": {
+          "name": "Custom",
+          "description": "Describe the style you want."
+        }
+      }
+    },
+    "language": {
+      "title": "Language",
+      "spoken": "I speak",
+      "spokenDescription": "Pick your language for the best accuracy, or Auto to switch freely.",
+      "promptsEnglish": "Prompts always in English",
+      "promptsEnglishDescription": "Speak any language; prompts for AI apps come out in English. Messages stay in your language.",
+      "names": {
+        "en": "English",
+        "hi": "हिन्दी · Hindi",
+        "te": "తెలుగు · Telugu",
+        "ta": "தமிழ் · Tamil",
+        "kn": "ಕನ್ನಡ · Kannada",
+        "ml": "മലയാളം · Malayalam",
+        "mr": "मराठी · Marathi",
+        "bn": "বাংলা · Bengali",
+        "gu": "ગુજરાતી · Gujarati",
+        "pa": "ਪੰਜਾਬੀ · Punjabi",
+        "ur": "اردو · Urdu",
+        "auto": "Auto-detect"
+      }
+    },
+    "prompts": {
+      "title": "Prompts",
+      "askBack": "Ask me a quick question first",
+      "askBackDescription": "When a request is vague, PromptFlow asks one question in the island before writing the prompt."
+    }
+  },
+  "memory": {
+    "title": "Memory",
+    "subtitle": "Facts PromptFlow remembers about you and adds to prompts when they help. You can see, change and delete all of it.",
+    "enabled": "Use memory",
+    "enabledDescription": "Learn durable facts from your dictations and add the relevant ones to prompts. Never passwords, health or money.",
+    "add": "Add memory",
+    "addPlaceholder": "e.g. I'm building PromptFlow in Swift and Kotlin",
+    "count": "{{n}}/{{max}}",
+    "search": "Search memory",
+    "noMatch": "Nothing matches that search",
+    "emptyTitle": "Nothing remembered yet",
+    "emptyBody": "As you dictate, PromptFlow picks up things like your projects and preferences. You can also add them yourself.",
+    "pinned": "Pinned",
+    "pin": "Pin: always include in prompts",
+    "unpin": "Unpin",
+    "learned": "Learned",
+    "addedByYou": "Added by you",
+    "confirmDelete": "Delete",
+    "signInFirst": "Sign in to see and manage your memory.",
+    "privacy": "Memory is stored in your PromptFlow account and only used for your own prompts.",
+    "kinds": {
+      "fact": "Fact",
+      "preference": "Preference",
+      "project": "Project",
+      "person": "Person"
+    }
+  },
+  "shortcuts": {
+    "title": "Shortcuts",
+    "subtitle": "Hold a shortcut and talk, or tap it to start and tap again to stop.",
+    "activation": "How shortcuts work",
+    "permissions": "Permissions",
+    "permissionsDescription": "macOS asks for these once. After an update it may ask again."
+  },
+  "permissions": {
+    "allow": "Allow",
+    "allowed": "Allowed",
+    "optional": "Optional",
+    "microphone": {
+      "title": "Microphone",
+      "why": "To hear you while you hold a shortcut. Nothing is recorded otherwise."
+    },
+    "accessibility": {
+      "title": "Accessibility",
+      "why": "To notice the shortcut, paste the text where you're typing and read the text \"This\" is about."
+    },
+    "screen_recording": {
+      "title": "Screen Recording",
+      "why": "Lets \"This\" and Autopilot read text in images, PDFs and apps that don't share it. Read on this Mac, never stored."
+    }
+  },
+  "private": {
+    "title": "Private mode",
+    "subtitle": "Keep everything on this Mac: on-device speech recognition and a local AI model.",
+    "onTitle": "Private mode is on",
+    "onBody": "Your voice never leaves this Mac. Memory, ask-back, \"This\" and Autopilot need the cloud, so they're off.",
+    "offTitle": "Using the PromptFlow cloud",
+    "offBody": "Fast, accurate transcription and prompts written for each AI, with nothing to set up. Turn on Private mode to work offline instead.",
+    "toggle": "Private mode",
+    "toggleDescription": "Transcribe with Whisper on this Mac and clean up with a local model (Ollama or Apple Intelligence).",
+    "model": "Speech model",
+    "modelReady": "Using {{model}}.",
+    "modelMissing": "Download a speech model to start dictating in Private mode.",
+    "getModel": "Get a model",
+    "changeModel": "Models",
+    "ai": "On-device AI",
+    "aiDescription": "The local model that cleans up dictation and writes prompts.",
+    "aiOpen": "Set up",
+    "advanced": "Advanced",
+    "advancedDescription": "Fine-tune the on-device pipeline. These settings don't affect the cloud."
+  },
+  "guide": {
+    "title": "How to use PromptFlow",
+    "subtitle": "Five shortcuts, one island. Here's everything in two minutes.",
+    "hero": {
+      "title": "Hold a shortcut, say it, let go.",
+      "body": "PromptFlow writes it into whatever app you're in: a message, an email, or a prompt shaped for Claude, ChatGPT, Cursor and the rest. Watch the island at the top of your screen to see what it's doing."
+    },
+    "shortcutsTitle": "The shortcuts",
+    "features": {
+      "dictate": {
+        "title": "Dictate",
+        "body": "Talk naturally. Fillers and false starts disappear, punctuation appears, and the tone fits the app.",
+        "example": "\"um so can you send me the deck by friday thanks\" → \"Can you send me the deck by Friday? Thanks!\""
+      },
+      "prompt": {
+        "title": "Prompt Engineer",
+        "body": "Describe what you want from an AI. PromptFlow writes a clear, complete prompt for the AI app you're in.",
+        "example": "\"make me a landing page for my puzzle brand with a waitlist\" → a structured prompt with goals, sections and constraints."
+      },
+      "this": {
+        "title": "This",
+        "body": "Ask about what's on screen. PromptFlow uses your selection, or the window's text, and adds it to the prompt.",
+        "example": "Select an error message, hold the shortcut: \"explain this and how to fix it\"."
+      },
+      "edit": {
+        "title": "Edit with your voice",
+        "body": "Select text and say what to change. Nothing selected? It writes new text at the cursor.",
+        "example": "Select a paragraph: \"make this friendlier and half as long\"."
+      },
+      "autopilot": {
+        "title": "Check the answer",
+        "body": "After an AI replies, press it. PromptFlow compares the answer with what you asked and offers a one-click fix.",
+        "example": "\"Used JavaScript; you asked for Python\" → Send fix."
+      }
+    },
+    "island": {
+      "title": "The island",
+      "description": "Everything PromptFlow does shows at the top of your screen, around the notch.",
+      "timer": "0:04",
+      "writing": "Writing for Claude…",
+      "askEyebrow": "Quick question",
+      "askQuestion": "Which language should it use?",
+      "doneLabel": "Prompt · for Claude",
+      "donePreview": "You are an expert Python developer…",
+      "states": {
+        "listening": {
+          "title": "Listening",
+          "body": "Live waveform, timer and your language."
+        },
+        "working": {
+          "title": "Working",
+          "body": "Transcribing, then writing for your app."
+        },
+        "ask": {
+          "title": "Ask-back",
+          "body": "Tap an answer, press the shortcut to say it, or Skip."
+        },
+        "done": {
+          "title": "Done",
+          "body": "What was pasted, with Undo and Copy."
+        }
+      }
+    },
+    "tipsTitle": "Tips",
+    "tips": {
+      "holdOrTap": "Hold the shortcut while you talk, or tap it once to start and again to stop.",
+      "escape": "Press Esc while recording to cancel. Nothing is pasted.",
+      "undo": "Didn't like the result? Click Undo in the island, or press ⌘Z.",
+      "anyLanguage": "Speak Hindi, Telugu, Tamil and more. Prompts come out in English if you want.",
+      "private": "Need to stay offline? Turn on Private mode to keep everything on this Mac."
+    },
+    "whatsNewTitle": "New in PromptFlow 2",
+    "whatsNew": {
+      "accounts": {
+        "title": "One account.",
+        "body": "Sign in with your email on the Mac and your phone. No API keys, ever."
+      },
+      "askBack": {
+        "title": "Ask-back.",
+        "body": "A vague request gets one quick question first, then the full prompt."
+      },
+      "aiSpecific": {
+        "title": "Prompts for each AI.",
+        "body": "Written for the app you're in: Claude, ChatGPT, Gemini, Cursor, image generators."
+      },
+      "languages": {
+        "title": "Indian languages.",
+        "body": "Speak your language and get an English prompt, or keep your language for messages."
+      },
+      "memory": {
+        "title": "Memory you own.",
+        "body": "PromptFlow remembers the facts that make prompts better. See and edit all of it."
+      },
+      "this": {
+        "title": "This.",
+        "body": "Say \"explain this\" and the selection or the screen's text goes into the prompt."
+      },
+      "autopilot": {
+        "title": "Autopilot.",
+        "body": "Checks an AI's answer against what you asked and offers a one-click fix."
+      },
+      "island": {
+        "title": "The island.",
+        "body": "A Dynamic Island that grows out of the notch and shows every step."
+      }
+    }
+  },
+  "island": {
+    "languageAuto": "AUTO",
+    "using": "Using {{chars}} characters",
+    "usingFrom": "Using {{chars}} characters from {{app}}",
+    "answeringByVoice": "Answering the question",
+    "close": "Close",
+    "openApp": "Open PromptFlow",
+    "mode": {
+      "dictate": "Dictate",
+      "engineer": "Prompt",
+      "command": "Edit",
+      "this": "This",
+      "autopilot": "Autopilot"
+    },
+    "source": {
+      "selection": "selection",
+      "window": "window",
+      "ocr": "read on screen"
+    },
+    "step": {
+      "transcribing": "Transcribing…",
+      "polishing": "Polishing…",
+      "writing": "Writing your prompt…",
+      "writingFor": "Writing for {{app}}…",
+      "checking": "Checking the answer…"
+    },
+    "ask": {
+      "title": "Quick question",
+      "skip": "Skip",
+      "voiceHint": "Or press {{shortcut}} and answer out loud",
+      "voiceHintNoKey": "Or press the Prompt shortcut and answer out loud"
+    },
+    "done": {
+      "pasted": "Pasted",
+      "fixPasted": "Fix ready. Press Return to send it",
+      "memoryUsed": "Memory",
+      "more": "+{{n}}",
+      "undo": "Undo",
+      "undoKey": "⌘Z",
+      "copy": "Copy",
+      "copied": "Copied"
+    },
+    "verdict": {
+      "good": "The answer looks right",
+      "goodBody": "It does what you asked.",
+      "missed": "The answer missed something",
+      "sendFix": "Send fix",
+      "dismiss": "Dismiss"
+    },
+    "errors": {
+      "sign_in": {
+        "title": "Sign in to start",
+        "body": "Open PromptFlow and sign in with your email."
+      },
+      "session_ended": {
+        "title": "You've been signed out",
+        "body": "Sign in again to keep dictating."
+      },
+      "nothing_heard": {
+        "title": "Didn't catch that",
+        "body": "Nothing was pasted. Try again a little closer to the mic."
+      },
+      "rate_limited": {
+        "title": "Slow down a moment",
+        "body": "Try again in {{seconds}} seconds.",
+        "ready": "You can try again now."
+      },
+      "quota": {
+        "title": "Daily limit reached",
+        "body": "You've used today's dictations. They reset tomorrow."
+      },
+      "network": {
+        "title": "You're offline",
+        "body": "Can't reach PromptFlow. Check your internet connection."
+      },
+      "server": {
+        "title": "Something went wrong",
+        "body": "PromptFlow had a problem. Please try again."
+      },
+      "provider": {
+        "title": "The AI didn't answer",
+        "body": "Please try again in a moment."
+      },
+      "bad_request": {
+        "title": "Couldn't do that",
+        "body": "Please try again."
+      },
+      "nothing_to_check": {
+        "title": "Nothing to check yet",
+        "body": "Send a prompt with PromptFlow first, then check the AI's reply."
+      },
+      "no_answer_found": {
+        "title": "Can't see an answer",
+        "body": "Select the AI's reply, then press the shortcut again."
+      },
+      "paste_failed": {
+        "title": "Couldn't paste",
+        "body": "It's on your clipboard. Press ⌘V to paste it."
+      },
+      "ask_expired": {
+        "title": "That question expired",
+        "body": "Say your request again."
+      }
+    }
+  },
+  "onboardingPf": {
+    "back": "Back",
+    "later": "I'll do this later",
+    "granted": "Allowed. Nice.",
+    "welcome": {
+      "title": "Talk.",
+      "titleAccent": "PromptFlow writes it.",
+      "body": "Dictate anywhere on your Mac, and turn rambling thoughts into prompts any AI understands.",
+      "start": "Get started",
+      "points": {
+        "speak": "Hold a shortcut and speak, in English or your own language.",
+        "prompts": "Get prompts written for Claude, ChatGPT, Cursor and more.",
+        "this": "Ask about what's on screen with \"This\".",
+        "autopilot": "Check an AI's answer and fix it in one click."
+      }
+    },
+    "signin": {
+      "title": "Sign in",
+      "body": "Your account keeps your style, memory and settings in sync with your phone. No password, no API keys.",
+      "done": "Signed in as {{email}}"
+    },
+    "microphone": {
+      "title": "Let PromptFlow hear you",
+      "body": "PromptFlow only listens while you hold a shortcut. Click below and choose Allow.",
+      "allow": "Allow microphone"
+    },
+    "accessibility": {
+      "title": "Let PromptFlow type for you",
+      "body": "Accessibility lets PromptFlow notice your shortcut and paste the text where your cursor is.",
+      "open": "Open System Settings",
+      "step1": "In Privacy & Security → Accessibility, find PromptFlow.",
+      "step2": "Switch it on. You may need your Mac password.",
+      "step3": "Come back here. This page moves on by itself."
+    },
+    "try": {
+      "title": "Try it live",
+      "body": "Click in the box, then hold the shortcut and say something like \"Hi, I'm trying PromptFlow and it's pretty great\".",
+      "holdHint": "Hold while you talk, let go to finish",
+      "placeholder": "Your words appear here…",
+      "idle": "Watch the top of your screen: the island shows when PromptFlow is listening.",
+      "listening": "Listening… let go when you're done.",
+      "working": "Writing it up…",
+      "problem": "Something went wrong. Check the island at the top of your screen, then try again.",
+      "worked": "That's it. It works anywhere you can type.",
+      "next": "Continue",
+      "skip": "Skip for now"
+    },
+    "done": {
+      "title": "You're all set",
+      "body": "PromptFlow lives in your menu bar. Open it any time from there to change settings or see how to use it.",
+      "screenTitle": "Read text on screen (optional)",
+      "screenBody": "Lets \"This\" read images and PDFs.",
+      "atLogin": "Open PromptFlow when I log in",
+      "finish": "Start using PromptFlow"
+    }
+  },
+  "recovery": {
+    "title": "PromptFlow needs your permission again",
+    "allSet": "All set",
+    "body": "macOS sometimes forgets permissions after PromptFlow updates. Allow these again and you'll be right back to dictating.",
+    "stuckTitle": "Already switched on, but still not working?",
+    "stuckBody": "In System Settings, select PromptFlow in the list, remove it with the minus button, then add it again with plus (it's in Applications). macOS then trusts the new version.",
+    "continueAnyway": "Continue without them"
+  },
+  "update": {
+    "available": "Update available",
+    "download": "Download the new version",
+    "title": "Updates",
+    "description": "PromptFlow checks for a new build every few hours.",
+    "downloadButton": "Download build {{build}}",
+    "upToDate": "You're up to date",
+    "checking": "Checking…",
+    "versionBuild": "v{{version}} (build {{build}})",
+    "versionOnly": "v{{version}}",
+    "builtOnHandy": "Built on Handy, the open-source dictation app"
   }
 }

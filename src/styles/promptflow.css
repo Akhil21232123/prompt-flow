@@ -1,0 +1,211 @@
+/* PromptFlow's visual language, shared with the phone apps: an ink
+ * background, layered surfaces, a violet → pink gradient for dictation and
+ * blue for Prompt mode. Imported by the settings window and the island.
+ *
+ * Surfaces follow the theme: the dark values are the phones' palette; the
+ * light ones are their daylight counterparts.
+ */
+
+:root {
+  --pf-ink: #0b0b12;
+  --pf-violet: #8b7cff;
+  --pf-pink: #ff6fb5;
+  --pf-blue: #4f8bff;
+  --pf-mint: #45d6a4;
+  --pf-amber: #ffb547;
+  --pf-red: #ff6b6b;
+  --pf-gradient: linear-gradient(135deg, var(--pf-violet), var(--pf-pink));
+  --pf-gradient-soft: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--pf-violet) 18%, transparent),
+    color-mix(in srgb, var(--pf-pink) 14%, transparent)
+  );
+
+  --pf-bg: #f7f6fb;
+  --pf-surface: #ffffff;
+  --pf-surface-2: #f0eff6;
+  --pf-border: rgba(24, 22, 48, 0.08);
+  --pf-border-strong: rgba(24, 22, 48, 0.16);
+  --pf-text: #14131c;
+  --pf-muted: #63617a;
+
+  /* A spring, sampled for CSS (WebKit 17.2+); the fallback is close. */
+  --pf-spring: cubic-bezier(0.2, 1.1, 0.3, 1);
+  --pf-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@supports (transition-timing-function: linear(0, 1)) {
+  :root {
+    --pf-spring: linear(
+      0,
+      0.009,
+      0.035 2.1%,
+      0.141 4.4%,
+      0.723 12.9%,
+      0.938 16.7%,
+      1.017 19.4%,
+      1.077,
+      1.121 24.5%,
+      1.149 27.4%,
+      1.159 30.6%,
+      1.149 34%,
+      1.121 37.7%,
+      1.01 50%,
+      0.991 55.4%,
+      0.985 61%,
+      0.998 76.6%,
+      1
+    );
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --pf-bg: #0b0b12;
+    --pf-surface: #15151f;
+    --pf-surface-2: #1e1e2b;
+    --pf-border: rgba(255, 255, 255, 0.07);
+    --pf-border-strong: rgba(255, 255, 255, 0.14);
+    --pf-text: #f3f2fa;
+    --pf-muted: #9a98b3;
+  }
+}
+
+:root[data-theme="dark"] {
+  --pf-bg: #0b0b12;
+  --pf-surface: #15151f;
+  --pf-surface-2: #1e1e2b;
+  --pf-border: rgba(255, 255, 255, 0.07);
+  --pf-border-strong: rgba(255, 255, 255, 0.14);
+  --pf-text: #f3f2fa;
+  --pf-muted: #9a98b3;
+}
+
+/* Text painted with the brand gradient. */
+.pf-gradient-text {
+  background: var(--pf-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Cards and pages that appear: a short rise. */
+@keyframes pf-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.pf-rise {
+  animation: pf-rise 380ms var(--pf-ease-out) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pf-rise {
+    animation: none;
+  }
+}
+
+/* ---- shared building blocks ------------------------------------------ */
+
+.pf-card {
+  background: var(--pf-surface);
+  border: 1px solid var(--pf-border);
+  border-radius: 18px;
+  overflow: visible;
+}
+
+.pf-button-primary,
+.pf-button-secondary,
+.pf-button-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    transform 180ms var(--pf-spring),
+    filter 160ms ease,
+    background 160ms ease,
+    border-color 160ms ease,
+    opacity 160ms ease;
+}
+.pf-button-primary:active:not(:disabled),
+.pf-button-secondary:active:not(:disabled),
+.pf-button-danger:active:not(:disabled) {
+  transform: scale(0.97);
+}
+.pf-button-primary:disabled,
+.pf-button-secondary:disabled,
+.pf-button-danger:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.pf-button-primary {
+  height: 46px;
+  padding: 0 20px;
+  border-radius: 14px;
+  font-size: 15px;
+  color: #fff;
+  background: var(--pf-gradient);
+  box-shadow: 0 10px 26px -12px var(--pf-violet);
+}
+.pf-button-primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.pf-button-primary.small {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 11px;
+  font-size: 13px;
+  box-shadow: 0 6px 18px -10px var(--pf-violet);
+}
+.pf-button-secondary {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--pf-text);
+  background: var(--pf-surface-2);
+  border: 1px solid var(--pf-border);
+}
+.pf-button-secondary:hover:not(:disabled) {
+  border-color: var(--pf-border-strong);
+}
+.pf-button-danger {
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--pf-red);
+  background: color-mix(in srgb, var(--pf-red) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pf-red) 28%, transparent);
+}
+.pf-button-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--pf-red) 18%, transparent);
+}
+.pf-button-danger.small {
+  height: 28px;
+  font-size: 12px;
+}
+
+/* The guide's still of the listening island. */
+@keyframes pf-guide-wave {
+  50% {
+    transform: scaleY(0.45);
+  }
+}
+.pf-guide-wave {
+  animation: pf-guide-wave 1s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pf-guide-wave {
+    animation: none;
+  }
+}

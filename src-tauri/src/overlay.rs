@@ -19,7 +19,7 @@ use log::debug;
 use tauri::WebviewWindowBuilder;
 
 #[cfg(target_os = "macos")]
-use tauri::WebviewUrl;
+use tauri::{Manager, WebviewUrl};
 
 #[cfg(target_os = "macos")]
 use tauri_nspanel::{tauri_panel, CollectionBehavior, PanelBuilder, PanelLevel, StyleMask};
