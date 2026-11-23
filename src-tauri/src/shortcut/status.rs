@@ -17,6 +17,7 @@ pub fn set_capturing(on: bool) {
     CAPTURING.store(on, Ordering::Relaxed);
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // used by the Fn key
 pub fn capturing() -> bool {
     CAPTURING.load(Ordering::Relaxed)
 }

@@ -48,7 +48,8 @@ pub const MIN_PROMPT_WORDS: usize = 4;
 /// server: a selection is edited, an AI app or code editor gets a prompt
 /// (from four words), anything else gets the speaker's words.
 pub fn resolve_auto(category: AppCategory, selection: Option<&str>, transcript: &str) -> FlowMode {
-    if selection.is_some_and(|s| !s.trim().is_empty()) {
+    // A highlight in a terminal is output, never something to rewrite.
+    if category != AppCategory::Terminal && selection.is_some_and(|s| !s.trim().is_empty()) {
         FlowMode::Command
     } else if category.is_ai_target() && word_count(transcript) >= MIN_PROMPT_WORDS {
         FlowMode::PromptEngineer
@@ -323,6 +324,11 @@ mod tests {
         assert_eq!(
             resolve_auto(AppCategory::AiChat, Some("  "), long),
             FlowMode::PromptEngineer
+        );
+        assert_eq!(
+            resolve_auto(AppCategory::Terminal, Some("error: build failed"), long),
+            FlowMode::PromptEngineer,
+            "terminal output is never edited"
         );
     }
 

@@ -24,13 +24,22 @@ pub struct PermissionHealth {
 
 #[derive(Serialize, Deserialize, Default)]
 struct Seen {
+    /// This Mac has trusted PromptFlow with Accessibility before.
     accessibility: bool,
+    /// The build that last showed the "re-allow" island at launch.
+    #[serde(default)]
+    warned_build: Option<u32>,
 }
 
-/// Not trusted now, but trusted before (or set up already, which needs
-/// it): macOS dropped the grant rather than the user never giving it.
-pub fn looks_reset(trusted: bool, seen_before: bool, onboarded: bool) -> bool {
-    !trusted && (seen_before || onboarded)
+/// Not trusted now, but trusted before (recorded on this Mac): macOS
+/// dropped the grant rather than the user never giving it ("Later").
+pub fn looks_reset(trusted: bool, seen_before: bool) -> bool {
+    !trusted && seen_before
+}
+
+/// The launch island says so at most once per build.
+pub fn should_warn_at_launch(reset: bool, warned_build: Option<u32>, build: u32) -> bool {
+    reset && warned_build != Some(build)
 }
 
 pub fn accessibility_trusted() -> bool {
@@ -80,10 +89,9 @@ pub fn health(app: &AppHandle) -> PermissionHealth {
         seen.accessibility = true;
         write_seen(app, &seen);
     }
-    let onboarded = crate::settings::get_settings(app).onboarding_completed;
     PermissionHealth {
         accessibility: trusted,
-        accessibility_reset: looks_reset(trusted, seen.accessibility, onboarded),
+        accessibility_reset: looks_reset(trusted, seen.accessibility),
         input_monitoring: crate::fn_key::input_monitoring_allowed(),
     }
 }
@@ -117,7 +125,11 @@ pub fn check_at_startup(app: &AppHandle) {
     std::thread::spawn(move || {
         std::thread::sleep(std::time::Duration::from_secs(4));
         let h = health(&app);
-        if h.accessibility_reset {
+        let build = crate::cloud::update::current_build();
+        let mut seen = read_seen(&app);
+        if should_warn_at_launch(h.accessibility_reset, seen.warned_build, build) {
+            seen.warned_build = Some(build);
+            write_seen(&app, &seen);
             log::warn!("macOS no longer trusts PromptFlow with Accessibility (likely an update)");
             let handle = app.clone();
             let _ = app.run_on_main_thread(move || {
@@ -136,9 +148,16 @@ mod tests {
 
     #[test]
     fn a_dropped_grant_is_told_apart_from_a_new_install() {
-        assert!(!looks_reset(true, true, true));
-        assert!(!looks_reset(false, false, false), "never allowed yet");
-        assert!(looks_reset(false, true, false));
-        assert!(looks_reset(false, false, true), "set up before this build");
+        assert!(!looks_reset(true, true));
+        assert!(!looks_reset(false, false), "never allowed (chose Later)");
+        assert!(looks_reset(false, true));
+    }
+
+    #[test]
+    fn the_launch_warning_shows_once_per_build() {
+        assert!(should_warn_at_launch(true, None, 14));
+        assert!(!should_warn_at_launch(true, Some(14), 14));
+        assert!(should_warn_at_launch(true, Some(13), 14));
+        assert!(!should_warn_at_launch(false, None, 14));
     }
 }

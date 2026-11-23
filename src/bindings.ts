@@ -1782,7 +1782,11 @@ fn_key?: boolean;
 /**
  * Tell a user who had the old shortcuts about the two keys, once.
  */
-new_keys_notice?: boolean }
+new_keys_notice?: boolean; 
+/**
+ * The "set 🌐 to Do Nothing" tip was shown (it's shown once).
+ */
+fn_tip_shown?: boolean }
 export type FnKeyStatus = { 
 /**
  * The tap is listening (permissions granted and the setting is on).
@@ -1847,10 +1851,6 @@ export type IslandError = "sign_in" | "session_ended" | "nothing_heard" | "rate_
  */
 "timeout" | 
 /**
- * macOS does something else when 🌐/Fn is pressed ("Press 🌐 key to").
- */
-"fn_conflict" | 
-/**
  * macOS dropped PromptFlow's Accessibility grant (an update changed its
  * signature) though System Settings still shows it on.
  */
@@ -1898,7 +1898,16 @@ export type IslandStep =
  * Autopilot is reading the answer.
  */
 "checking"
-export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null; hint: SmartHint | null; hands_free: boolean } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
+/**
+ * A one-time tip shown under a result, with a button that fixes it.
+ */
+export type IslandTip = 
+/**
+ * "Press 🌐 key to" isn't "Do Nothing": macOS may also open the emoji
+ * picker (or switch input source) when Fn is used.
+ */
+"fn_also_used_by_macos"
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null; hint: SmartHint | null; hands_free: boolean } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean; tip: IslandTip | null } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
 /**
  * A Handy notice from the on-device pipeline (Private mode).
  */

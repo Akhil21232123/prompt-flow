@@ -468,7 +468,6 @@ pub async fn island_fix(app: AppHandle, id: u64) -> Result<(), String> {
     }
     island::dismiss(&app, id);
     match error {
-        island::IslandError::FnConflict => crate::fn_key::open_keyboard_settings(),
         island::IslandError::PermissionsReset => crate::permissions::fix_accessibility(app).await,
         _ => Ok(()),
     }

@@ -65,6 +65,8 @@ jobs:
           P12="$RUNNER_TEMP/promptflow-sign.p12"
           printf '%s' "$MAC_SIGN_P12" | base64 --decode > "$P12"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          # Recorded at once, so the cleanup step runs even if a later one fails.
+          echo "PROMPTFLOW_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
           security set-keychain-settings -lut 21600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security import "$P12" -k "$KEYCHAIN" -P "$MAC_SIGN_PASSWORD" \
@@ -83,7 +85,6 @@ jobs:
           fi
           echo "Signing with identity $IDENTITY"
           echo "APPLE_SIGNING_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-          echo "PROMPTFLOW_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
       - name: Build
         env:
           # Compared with the release's build number by "Update available".

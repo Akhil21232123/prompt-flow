@@ -1687,10 +1687,6 @@
         "title": "PromptFlow took too long",
         "body": "Try again in a moment."
       },
-      "fn_conflict": {
-        "title": "macOS uses 🌐 for something else",
-        "body": "Set “Press 🌐 key to” to “Do Nothing” in Keyboard settings, then hold Fn again."
-      },
       "permissions_reset": {
         "title": "Re-allow PromptFlow",
         "body": "macOS needs you to re-allow PromptFlow after updating: remove it from the Accessibility list with –, then add it again."
@@ -1730,8 +1726,11 @@
       "edit": "Edit selection"
     },
     "fix": {
-      "fn_conflict": "Open Keyboard Settings",
       "permissions_reset": "Fix it"
+    },
+    "tip": {
+      "fn_also_used_by_macos": "macOS may also open the emoji picker when you use Fn. Set 🌐 to Do Nothing.",
+      "open": "Keyboard Settings"
     }
   },
   "onboardingPf": {
@@ -1838,14 +1837,14 @@
   "fnKey": {
     "title": "Hold Fn",
     "body": "PromptFlow writes it right for the app: a prompt in AI apps, a message everywhere else, an edit when text is selected. Double-tap Fn for hands-free; tap it again to finish.",
-    "fix": "Set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings.",
+    "fix": "PromptFlow works anyway; set \"Press 🌐 key to\" to \"Do Nothing\" in Keyboard settings so macOS stays out of the way.",
     "openKeyboard": "Open Keyboard settings",
     "needsAccessibility": "Fn starts working once PromptFlow is allowed in Accessibility and Input Monitoring.",
     "conflict": {
-      "change_input_source": "macOS switches your keyboard language when you press 🌐.",
-      "show_emoji": "macOS opens the emoji picker when you press 🌐.",
-      "start_dictation": "macOS starts its own dictation when you press 🌐.",
-      "unknown": "macOS may do something else when you press 🌐."
+      "change_input_source": "macOS may also switch your keyboard language when you press 🌐.",
+      "show_emoji": "macOS may also open the emoji picker when you press 🌐.",
+      "start_dictation": "macOS may also start its own dictation when you press 🌐.",
+      "unknown": "macOS may also do something else when you press 🌐."
     },
     "inputMonitoring": "Fn also needs Input Monitoring.",
     "allow": "Allow"

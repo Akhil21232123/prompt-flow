@@ -644,3 +644,20 @@ body {
 .island button:focus-visible {
   outline: none;
 }
+
+/* A one-time tip under a result. */
+.i-tip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--i-line);
+  font-size: 11.5px;
+  color: var(--i-muted);
+}
+.i-tip-text {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.4;
+}

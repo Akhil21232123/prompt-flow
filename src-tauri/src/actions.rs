@@ -749,6 +749,12 @@ impl ShortcutAction for TranscribeAction {
                         }
                     }
 
+                    // A Fn press holds its island back a moment (it may turn
+                    // out to be Fn+arrow); the chime waits with it.
+                    if let Some(wait) = crate::island::pending_reveal() {
+                        std::thread::sleep(wait);
+                    }
+
                     if !rm_clone.is_recording_readiness_current(generation) {
                         debug!("Microphone became ready for an inactive recording");
                         return;
@@ -872,7 +878,7 @@ impl ShortcutAction for TranscribeAction {
                 // selected, which would turn every dictation into an edit.
                 // (The cloud read it when recording started.)
                 FlowMode::Auto if !cloud => Some(tauri::async_runtime::spawn_blocking(
-                    crate::cloud::context::selected_text,
+                    crate::cloud::context::editable_selection,
                 )),
                 _ => None,
             };

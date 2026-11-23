@@ -35,6 +35,8 @@ pub const EXPANDED_HEIGHT: f64 = 360.0;
 /// pointer is over it.
 pub const DONE_HOLD: Duration = Duration::from_millis(5000);
 pub const ERROR_HOLD: Duration = Duration::from_millis(4500);
+/// A result with a tip under it.
+pub const TIP_HOLD: Duration = Duration::from_secs(12);
 pub const NOTICE_HOLD: Duration = Duration::from_millis(4000);
 /// An unanswered question folds away after this (the server forgets it at 10 min).
 pub const ASK_HOLD: Duration = Duration::from_secs(9 * 60);
@@ -111,11 +113,18 @@ pub enum IslandError {
     Paused,
     /// The server took too long; it may still have finished.
     Timeout,
-    /// macOS does something else when 🌐/Fn is pressed ("Press 🌐 key to").
-    FnConflict,
     /// macOS dropped PromptFlow's Accessibility grant (an update changed its
     /// signature) though System Settings still shows it on.
     PermissionsReset,
+}
+
+/// A one-time tip shown under a result, with a button that fixes it.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum IslandTip {
+    /// "Press 🌐 key to" isn't "Do Nothing": macOS may also open the emoji
+    /// picker (or switch input source) when Fn is used.
+    FnAlsoUsedByMacos,
 }
 
 /// A one-click redo of the last result, offered as a chip.
@@ -194,6 +203,8 @@ pub enum IslandView {
         chips: Vec<Redo>,
         /// It can be rated (the server gave it an id).
         rateable: bool,
+        /// A one-time tip with a fix button.
+        tip: Option<IslandTip>,
     },
     Verdict {
         good: bool,
@@ -227,13 +238,15 @@ impl IslandView {
     /// something replaces it.
     pub fn hold(&self) -> Option<Duration> {
         match self {
+            // A tip to read and maybe act on: a little longer.
+            IslandView::Done { tip: Some(_), .. } => Some(TIP_HOLD),
             IslandView::Done { .. } => Some(DONE_HOLD),
             IslandView::Verdict { good: true, .. } => Some(DONE_HOLD),
             IslandView::Verdict { .. } => Some(VERDICT_HOLD),
             IslandView::Error { retry: Some(_), .. } => Some(RETRY_HOLD),
             // A fix the user has to go and make: long enough to read and click.
             IslandView::Error {
-                error: IslandError::FnConflict | IslandError::PermissionsReset,
+                error: IslandError::PermissionsReset,
                 ..
             } => Some(VERDICT_HOLD),
             IslandView::Error { .. } => Some(ERROR_HOLD),
@@ -376,6 +389,29 @@ pub fn show_working(app: &AppHandle, step: IslandStep) -> u64 {
 }
 
 /// Shows `view`, replacing whatever was there. Returns the view's id.
+/// The next Listening view waits this long before it shows (set by the
+/// Fn key, so a press that turns out to be Fn+arrow cancels unseen).
+static DEFER_NEXT_LISTENING: Mutex<Option<Duration>> = Mutex::new(None);
+/// A Listening view waiting to show: its id and when.
+static PENDING_REVEAL: Mutex<Option<(u64, Instant)>> = Mutex::new(None);
+
+/// Hold the next Listening view back for `delay`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // used by the Fn key
+pub fn defer_listening(delay: Duration) {
+    if let Ok(mut d) = DEFER_NEXT_LISTENING.lock() {
+        *d = Some(delay);
+    }
+}
+
+/// How much longer the Listening view on screen waits to show, if it does:
+/// the start chime waits too.
+pub fn pending_reveal() -> Option<Duration> {
+    let (id, at) = (*PENDING_REVEAL.lock().ok()?)?;
+    (current_id() == id)
+        .then(|| at.saturating_duration_since(Instant::now()))
+        .filter(|d| !d.is_zero())
+}
+
 pub fn show(app: &AppHandle, view: IslandView) -> u64 {
     let id = {
         let Ok(mut s) = STATE.lock() else {
@@ -386,6 +422,30 @@ pub fn show(app: &AppHandle, view: IslandView) -> u64 {
         s.id
     };
     if !enabled(app) && view != IslandView::Hidden {
+        return id;
+    }
+    let delay = matches!(view, IslandView::Listening { .. })
+        .then(|| DEFER_NEXT_LISTENING.lock().ok().and_then(|mut d| d.take()))
+        .flatten()
+        .filter(|d| !d.is_zero());
+    if let Some(delay) = delay {
+        if let Ok(mut p) = PENDING_REVEAL.lock() {
+            *p = Some((id, Instant::now() + delay));
+        }
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            // Shown as it is by then (patches included), unless replaced.
+            let (current, view) = current();
+            if current == id {
+                let h = handle.clone();
+                let _ = handle.run_on_main_thread(move || {
+                    if current_id() == id {
+                        apply(&h, id, view)
+                    }
+                });
+            }
+        });
         return id;
     }
     let handle = app.clone();
@@ -683,6 +743,7 @@ mod tests {
             sent: false,
             chips: vec![Redo::AsPrompt],
             rateable: true,
+            tip: None,
         };
         assert_eq!(done.hold(), Some(DONE_HOLD));
         let good = IslandView::Verdict {

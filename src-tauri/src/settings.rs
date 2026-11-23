@@ -1024,19 +1024,24 @@ fn retire_old_shortcuts(
             b.default_binding = String::new();
         }
     }
-    let mut alias = old_plain.to_string();
+    // The second key goes back on ⌥Space only for someone whose Plain key
+    // was still ⌥Space: a user who moved Plain elsewhere chose that.
+    let mut moved = bindings.get("transcribe").is_none();
     if let Some(b) = bindings.get_mut("transcribe") {
         b.default_binding = new_plain.to_string();
         if b.current_binding == old_plain {
             b.current_binding = new_plain.to_string();
+            moved = true;
         }
     }
-    if bindings
+    let taken = bindings
         .values()
-        .any(|b| b.id != "transcribe_alt" && b.current_binding == old_plain)
-    {
-        alias.clear();
-    }
+        .any(|b| b.id != "transcribe_alt" && b.current_binding == old_plain);
+    let alias = if moved && !taken {
+        old_plain.to_string()
+    } else {
+        String::new()
+    };
     if !bindings.contains_key("transcribe_alt") {
         bindings.insert(
             "transcribe_alt".to_string(),
@@ -1972,6 +1977,16 @@ mod tests {
         assert_eq!(bindings["autopilot"].current_binding, "");
         assert_eq!(bindings["transcribe_with_post_process"].current_binding, "");
         assert_eq!(bindings["cancel"].current_binding, "escape");
+    }
+
+    #[test]
+    fn a_plain_key_moved_off_option_space_keeps_it_free() {
+        // Plain was moved to F13 on purpose: ⌥Space isn't taken back.
+        let mut bindings: HashMap<String, ShortcutBinding> =
+            [binding("transcribe", "f13")].into_iter().collect();
+        retire_old_shortcuts(&mut bindings, MAC_RETIRED_SHORTCUTS, MAC_PLAIN_MOVE);
+        assert_eq!(bindings["transcribe"].current_binding, "f13");
+        assert_eq!(bindings["transcribe_alt"].current_binding, "");
     }
 
     #[test]

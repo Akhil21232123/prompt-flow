@@ -133,6 +133,28 @@ fn resolved_mode(server_mode: &str) -> FlowMode {
     }
 }
 
+/// What kind of app is in front, as Smart (and the server) sees it.
+fn smart_category(
+    app: Option<&AppContext>,
+    flow: &crate::flow::settings::FlowSettings,
+) -> crate::flow::settings::AppCategory {
+    app.map(|ctx| crate::flow::app_context::classify(ctx, &flow.app_overrides))
+        .unwrap_or_default()
+}
+
+/// The selection Smart may edit: only text selected in a field the user can
+/// type into, and never in a terminal (a highlight there is output, and
+/// pasting an "edit" of it could run as a command).
+fn smart_selection(
+    field: &context::FieldContext,
+    category: crate::flow::settings::AppCategory,
+) -> Option<String> {
+    if category == crate::flow::settings::AppCategory::Terminal || !field.selected_editable {
+        return None;
+    }
+    field.selected.clone().filter(|s| !s.trim().is_empty())
+}
+
 /// What Smart is about to write, from what's in front as recording starts:
 /// a selection is edited, an AI (or code editor) gets a prompt, anything
 /// else gets a message for that app.
@@ -141,11 +163,7 @@ fn smart_hint(
     field: &context::FieldContext,
     category: crate::flow::settings::AppCategory,
 ) -> SmartHint {
-    if field
-        .selected
-        .as_deref()
-        .is_some_and(|s| !s.trim().is_empty())
-    {
+    if smart_selection(field, category).is_some() {
         return SmartHint {
             kind: SmartKind::Edit,
             app: None,
@@ -305,10 +323,7 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
             let wait = Duration::from_millis(1200);
             let app_ctx = crate::flow::app_context::peek(wait);
             let field = context::peek_field(wait).unwrap_or_default();
-            let category = match (&app_ctx, flow.app_aware) {
-                (Some(ctx), true) => crate::flow::app_context::classify(ctx, &flow.app_overrides),
-                _ => crate::flow::settings::AppCategory::Other,
-            };
+            let category = smart_category(app_ctx.as_ref(), &flow);
             let hint = smart_hint(app_ctx.as_ref(), &field, category);
             island::patch(&handle, listening_id, |view| {
                 if let IslandView::Listening { hint: h, .. } = view {
@@ -417,6 +432,11 @@ where
     // ask the browser (web apps have no address to ask for; their title
     // and name say what they are).
     let mut captured = captured;
+    // Smart edits only a selection it may edit (the hint said so too).
+    if rec.mode == FlowMode::Auto {
+        let category = smart_category(rec.app_context.as_ref(), &settings.flow);
+        captured.field.selected = smart_selection(&captured.field, category);
+    }
     if captured.field.url.is_none() {
         if let Some(bundle) = rec
             .app_context
@@ -1107,6 +1127,7 @@ fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::Mem
                 Vec::new()
             },
             rateable: result.dictation_id.is_some(),
+            tip: crate::fn_key::take_tip(app),
         },
     );
     *lock(&LAST_RESULT) = Some(result);
@@ -1508,6 +1529,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                     sent: false,
                     chips: Vec::new(),
                     rateable: false,
+                    tip: None,
                 },
             );
             *lock(&LAST_RESULT) = Some(LastResult {
@@ -1650,8 +1672,25 @@ mod tests {
         );
         let selected = context::FieldContext {
             selected: Some("Dear team".into()),
+            selected_editable: true,
             ..Default::default()
         };
+        // A highlight on a read-only page, or in a terminal, isn't an edit.
+        let read_only = context::FieldContext {
+            selected: Some("Dear team".into()),
+            selected_editable: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            smart_hint(Some(&mail), &read_only, AppCategory::Email).kind,
+            SmartKind::Message
+        );
+        assert_eq!(smart_selection(&read_only, AppCategory::Email), None);
+        assert_eq!(smart_selection(&selected, AppCategory::Terminal), None);
+        assert_eq!(
+            smart_selection(&selected, AppCategory::Email).as_deref(),
+            Some("Dear team")
+        );
         assert_eq!(
             smart_hint(Some(&mail), &selected, AppCategory::Email).kind,
             SmartKind::Edit

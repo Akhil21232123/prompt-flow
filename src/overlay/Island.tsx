@@ -15,6 +15,7 @@ import {
   CornerUpLeft,
   Eye,
   HelpCircle,
+  Keyboard,
   MessageSquare,
   Mic,
   Pencil,
@@ -73,7 +74,7 @@ const HINT_ICON: Record<SmartKind, LucideIcon> = {
 };
 
 /** Errors the island can fix with one click (opens the right pane). */
-const FIXABLE: IslandError[] = ["fn_conflict", "permissions_reset"];
+const FIXABLE: IslandError[] = ["permissions_reset"];
 
 /** Every island button: never focusable, so no key can press it. */
 const IslandButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = (
@@ -661,6 +662,20 @@ const Island: React.FC = () => {
           </IslandButton>
         </div>
       );
+      // A one-time tip under the result, with its fix.
+      const tipRow = view.tip && (
+        <div className="i-tip pf-rise">
+          <Keyboard size={12} />
+          <span className="i-tip-text">{t(`island.tip.${view.tip}`)}</span>
+          <IslandButton
+            className="i-btn ghost"
+            onClick={() => void commands.openKeyboardSettings()}
+          >
+            {t("island.tip.open")}
+            <ArrowUpRight size={11} />
+          </IslandButton>
+        </div>
+      );
       const rating = view.rateable && (
         <span className="i-rate">
           {rated ? (
@@ -725,6 +740,7 @@ const Island: React.FC = () => {
             <p className="i-preview">{view.preview}</p>
             {memoryRow}
             {buttons}
+            {tipRow}
           </div>
         </>
       );

@@ -80,6 +80,7 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   memory_enabled: flow?.memory_enabled ?? true,
   fn_key: flow?.fn_key ?? true,
   new_keys_notice: flow?.new_keys_notice ?? false,
+  fn_tip_shown: flow?.fn_tip_shown ?? false,
 });
 
 const newId = () =>

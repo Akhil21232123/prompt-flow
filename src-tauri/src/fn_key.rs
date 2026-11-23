@@ -23,6 +23,9 @@ use std::time::{Duration, Instant};
 
 /// A press this long becomes a recording; shorter is a tap.
 pub const START_DELAY: Duration = Duration::from_millis(160);
+/// Until this long after the press, a talk press shows nothing (no island,
+/// no chime), so Fn+arrow held a little long cancels unseen.
+pub const SILENT_UNTIL: Duration = Duration::from_millis(300);
 /// The second press of a double tap must come this soon after the first.
 pub const DOUBLE_TAP: Duration = Duration::from_millis(420);
 /// A hands-free recording that isn't running this long after it started
@@ -141,22 +144,6 @@ impl Gesture {
         }
     }
 
-    /// The press for `generation` can't record (macOS uses 🌐 for
-    /// something else): ignore it until Fn comes up.
-    pub fn on_blocked(&mut self, generation: u64) {
-        if self.state == State::Pending && generation == self.generation {
-            self.state = State::Chord;
-        }
-    }
-
-    /// A double tap that can't record (macOS uses 🌐): ignore it until Fn
-    /// comes up, so the next tap doesn't count as "finish".
-    pub fn block_hands_free(&mut self) {
-        if matches!(self.state, State::HandsFree { .. }) {
-            self.state = State::Chord;
-        }
-    }
-
     pub fn on_fn_up(&mut self, now: Instant) -> Option<Action> {
         let state = std::mem::replace(&mut self.state, State::Idle);
         match state {
@@ -183,6 +170,15 @@ impl Gesture {
             _ if down => None,
             State::Idle | State::HandsFree { down: false, .. } => None,
             _ => self.on_fn_up(now),
+        }
+    }
+
+    /// A media or brightness key (Fn+F1…) arrived while Fn is down: a
+    /// chord, so a start that hasn't happened yet never does.
+    pub fn on_system_key(&mut self) {
+        self.last_tap = None;
+        if self.state == State::Pending {
+            self.state = State::Chord;
         }
     }
 
@@ -240,15 +236,43 @@ impl FnUsage {
     }
 }
 
-/// What to tell the user when Fn is pressed and macOS also uses it: `None`
-/// when 🌐 does nothing on its own (or the setting can't be read, so as
-/// never to block Fn on a guess).
-pub fn conflict(usage: FnUsage) -> Option<crate::island::IslandError> {
+/// The one-time tip for a Mac where 🌐 may also do something else: never a
+/// reason to block Fn (an unset "Press 🌐 key to" is the norm, and PromptFlow
+/// records either way), just a pointer to "Do Nothing". `None` when 🌐 does
+/// nothing on its own or the setting can't be read.
+pub fn tip_for(usage: FnUsage) -> Option<crate::island::IslandTip> {
     match usage {
         FnUsage::DoNothing | FnUsage::Unknown => None,
         FnUsage::ChangeInputSource | FnUsage::ShowEmoji | FnUsage::StartDictation => {
-            Some(crate::island::IslandError::FnConflict)
+            Some(crate::island::IslandTip::FnAlsoUsedByMacos)
         }
+    }
+}
+
+/// A tip found while Fn was held, waiting for the next result card.
+static TIP_PENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The Fn tip for the result card, once ever: taking it marks it shown.
+pub fn take_tip(app: &tauri::AppHandle) -> Option<crate::island::IslandTip> {
+    use std::sync::atomic::Ordering;
+    if !TIP_PENDING.swap(false, Ordering::Relaxed) {
+        return None;
+    }
+    let mut settings = crate::settings::get_settings(app);
+    if settings.flow.fn_tip_shown {
+        return None;
+    }
+    settings.flow.fn_tip_shown = true;
+    crate::settings::write_settings(app, settings);
+    Some(crate::island::IslandTip::FnAlsoUsedByMacos)
+}
+
+/// Reads "Press 🌐 key to" (a short subprocess, never on the tap's thread)
+/// and queues the tip if it's still worth giving.
+fn note_tip(app: &tauri::AppHandle) {
+    use std::sync::atomic::Ordering;
+    if tip_for(usage()).is_some() && !crate::settings::get_settings(app).flow.fn_tip_shown {
+        TIP_PENDING.store(true, Ordering::Relaxed);
     }
 }
 
@@ -420,11 +444,11 @@ pub fn input_monitoring_allowed() -> bool {
 
 #[cfg(target_os = "macos")]
 mod platform {
-    use super::{Action, Gesture, BINDING, START_DELAY};
+    use super::{Action, Gesture, BINDING, SILENT_UNTIL, START_DELAY};
     use crate::settings::{get_settings, ShortcutActivation};
     use once_cell::sync::OnceCell;
     use std::ffi::c_void;
-    use std::sync::atomic::{AtomicBool, AtomicPtr, AtomicU8, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicPtr, Ordering};
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
     use tauri::{AppHandle, Manager};
@@ -441,6 +465,8 @@ mod platform {
     const LISTEN_ONLY: u32 = 1;
     const KEY_DOWN: u32 = 10;
     const FLAGS_CHANGED: u32 = 12;
+    /// NSSystemDefined: media and brightness keys (Fn+F1…).
+    const SYSTEM_DEFINED: u32 = 14;
     const TAP_DISABLED_BY_TIMEOUT: u32 = 0xFFFF_FFFE;
     const TAP_DISABLED_BY_USER: u32 = 0xFFFF_FFFF;
     const FLAG_FN: u64 = 0x0080_0000;
@@ -488,9 +514,6 @@ mod platform {
     static FN_DOWN: AtomicBool = AtomicBool::new(false);
     static ACTIVE: AtomicBool = AtomicBool::new(false);
     static TAP: AtomicPtr<c_void> = AtomicPtr::new(std::ptr::null_mut());
-    /// The last "Press 🌐 key to" check: 0 unknown, 1 fine, 2 conflicts.
-    static CONFLICT: AtomicU8 = AtomicU8::new(0);
-
     pub fn is_active() -> bool {
         ACTIVE.load(Ordering::Relaxed)
     }
@@ -532,43 +555,19 @@ mod platform {
         unsafe { CGEventSourceFlagsState(COMBINED_SESSION_STATE) & FLAG_FN != 0 }
     }
 
-    /// Reads "Press 🌐 key to" (a short subprocess, so never on the tap's
-    /// thread) and remembers whether it gets in the way.
-    fn check_conflict() -> Option<crate::island::IslandError> {
-        let found = super::conflict(super::usage());
-        CONFLICT.store(if found.is_some() { 2 } else { 1 }, Ordering::Relaxed);
-        found
-    }
-
-    fn show_conflict(app: &AppHandle, error: crate::island::IslandError) {
-        log::info!("Fn pressed, but macOS uses 🌐 for something else; showing the fix");
-        let app = app.clone();
-        let _ = app.clone().run_on_main_thread(move || {
-            crate::cloud::pipeline::show_error(&app, error);
-        });
-    }
-
     fn run(action: Action) {
         let Some(app) = APP.get().cloned() else {
             return;
         };
         match action {
             Action::ScheduleStart { generation } => {
+                // Whether to give the "Do Nothing" tip: off to the side, so
+                // it can never hold up or block the press.
+                let tip_app = app.clone();
+                std::thread::spawn(move || super::note_tip(&tip_app));
                 std::thread::spawn(move || {
-                    let started = Instant::now();
-                    let conflict = check_conflict();
-                    std::thread::sleep(START_DELAY.saturating_sub(started.elapsed()));
+                    std::thread::sleep(START_DELAY);
                     let held = fn_held_now();
-                    if held {
-                        if let Some(error) = conflict {
-                            step(|g| {
-                                g.on_blocked(generation);
-                                None
-                            });
-                            show_conflict(&app, error);
-                            return;
-                        }
-                    }
                     step(|g| {
                         // Released in the meantime without our seeing it:
                         // it was a tap, not a talk press.
@@ -580,10 +579,22 @@ mod platform {
                     });
                 });
             }
-            Action::Start => send(&app, true, ShortcutActivation::PushToTalk),
+            Action::Start => {
+                // Fn+arrow or Fn+Delete held a beat too long still cancels
+                // before anyone sees or hears it: the island (and the start
+                // chime) wait until the press is surely a talk press.
+                crate::island::defer_listening(SILENT_UNTIL.saturating_sub(START_DELAY));
+                send(&app, true, ShortcutActivation::PushToTalk)
+            }
             Action::Stop => send(&app, false, ShortcutActivation::PushToTalk),
             Action::StartHandsFree => send(&app, true, ShortcutActivation::Toggle),
-            Action::StopHandsFree => send(&app, true, ShortcutActivation::Toggle),
+            // Only ever stops: after Esc there's nothing to stop, and a
+            // toggle would start a recording nobody asked for.
+            Action::StopHandsFree => {
+                if let Some(c) = app.try_state::<crate::TranscriptionCoordinator>() {
+                    c.finish();
+                }
+            }
             Action::Cancel => {
                 let _ = app.run_on_main_thread({
                     let app = app.clone();
@@ -656,20 +667,7 @@ mod platform {
                     // (Control+Fn+arrow) is a shortcut.
                     if fn_down && !was_down && enabled() && flags & OTHER_MODIFIERS == 0 {
                         let recording = recording();
-                        step(|g| {
-                            let action = g.on_fn_down(now, recording);
-                            // The first tap's check ran a moment ago.
-                            if action == Some(Action::StartHandsFree)
-                                && CONFLICT.load(Ordering::Relaxed) == 2
-                            {
-                                g.block_hands_free();
-                                if let Some(app) = APP.get() {
-                                    show_conflict(app, crate::island::IslandError::FnConflict);
-                                }
-                                return None;
-                            }
-                            action
-                        });
+                        step(|g| g.on_fn_down(now, recording));
                     } else if !fn_down && was_down {
                         step(|g| g.on_fn_up(now));
                     }
@@ -684,6 +682,10 @@ mod platform {
                 }
             }
             KEY_DOWN if FN_DOWN.load(Ordering::Relaxed) => step(|g| g.on_other_key()),
+            SYSTEM_DEFINED if FN_DOWN.load(Ordering::Relaxed) => step(|g| {
+                g.on_system_key();
+                None
+            }),
             _ => {}
         }
         event
@@ -699,7 +701,8 @@ mod platform {
             .spawn(|| {
                 let mut warned = false;
                 loop {
-                    let mask = (1u64 << FLAGS_CHANGED) | (1u64 << KEY_DOWN);
+                    let mask =
+                        (1u64 << FLAGS_CHANGED) | (1u64 << KEY_DOWN) | (1u64 << SYSTEM_DEFINED);
                     let tap = unsafe {
                         CGEventTapCreate(
                             SESSION_TAP,
@@ -857,36 +860,6 @@ mod tests {
     }
 
     #[test]
-    fn a_press_macos_uses_never_records() {
-        let t = Instant::now();
-        let mut g = Gesture::default();
-        let gen = scheduled(g.on_fn_down(t, false));
-        g.on_blocked(gen);
-        assert_eq!(g.on_timer(gen), None);
-        assert_eq!(g.on_fn_up(ms(t, 900)), None);
-    }
-
-    #[test]
-    fn a_blocked_double_tap_never_records() {
-        let t = Instant::now();
-        let mut g = Gesture::default();
-        g.on_fn_down(t, false);
-        g.on_fn_up(ms(t, 90));
-        assert_eq!(
-            g.on_fn_down(ms(t, 250), false),
-            Some(Action::StartHandsFree)
-        );
-        g.block_hands_free();
-        assert!(!g.hands_free());
-        assert_eq!(g.on_fn_up(ms(t, 330)), None);
-        // The next press is a fresh one, not "finish".
-        assert!(matches!(
-            g.on_fn_down(ms(t, 900), false),
-            Some(Action::ScheduleStart { .. })
-        ));
-    }
-
-    #[test]
     fn a_missed_release_still_ends_the_press() {
         let t = Instant::now();
         let mut g = Gesture::default();
@@ -939,17 +912,33 @@ mod tests {
     }
 
     #[test]
-    fn fn_conflicts_say_how_to_fix_them() {
-        use crate::island::IslandError;
-        assert_eq!(conflict(FnUsage::DoNothing), None);
-        assert_eq!(conflict(FnUsage::Unknown), None);
-        for usage in [
-            FnUsage::ShowEmoji,
-            FnUsage::ChangeInputSource,
-            FnUsage::StartDictation,
-        ] {
-            assert_eq!(conflict(usage), Some(IslandError::FnConflict));
+    fn fn_is_never_blocked_only_tipped() {
+        use crate::island::IslandTip;
+        assert_eq!(tip_for(FnUsage::DoNothing), None);
+        assert_eq!(tip_for(FnUsage::Unknown), None);
+        // Never set (the default on most Macs) counts as "may open emoji".
+        assert_eq!(
+            tip_for(FnUsage::from_defaults(None)),
+            Some(IslandTip::FnAlsoUsedByMacos)
+        );
+        for usage in [FnUsage::ChangeInputSource, FnUsage::StartDictation] {
+            assert_eq!(tip_for(usage), Some(IslandTip::FnAlsoUsedByMacos));
         }
+    }
+
+    #[test]
+    fn media_keys_with_fn_never_start_recording() {
+        let t = Instant::now();
+        let mut g = Gesture::default();
+        let gen = scheduled(g.on_fn_down(t, false));
+        g.on_system_key();
+        assert_eq!(g.on_timer(gen), None);
+        assert_eq!(g.on_fn_up(ms(t, 600)), None);
+        // During a recording, a system key changes nothing.
+        let gen = scheduled(g.on_fn_down(ms(t, 2000), false));
+        assert_eq!(g.on_timer(gen), Some(Action::Start));
+        g.on_system_key();
+        assert_eq!(g.on_fn_up(ms(t, 3000)), Some(Action::Stop));
     }
 
     fn hotkeys(entry_64: &str) -> Vec<u8> {

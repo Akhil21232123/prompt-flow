@@ -380,6 +380,9 @@ pub struct FlowSettings {
     /// Tell a user who had the old shortcuts about the two keys, once.
     #[serde(default)]
     pub new_keys_notice: bool,
+    /// The "set 🌐 to Do Nothing" tip was shown (it's shown once).
+    #[serde(default)]
+    pub fn_tip_shown: bool,
 }
 
 /// Languages the cloud understands, plus "auto".
@@ -413,6 +416,7 @@ impl Default for FlowSettings {
             memory_enabled: true,
             fn_key: true,
             new_keys_notice: false,
+            fn_tip_shown: false,
         }
     }
 }
