@@ -46,7 +46,17 @@ jobs:
             https://huggingface.co/handy-computer/silero-vad-v6.2-gguf/resolve/main/silero-vad-v6.2-F32.gguf
       - run: bun install --frozen-lockfile
       - name: Build
+        env:
+          # Compared with the release's build number by "Update available".
+          PROMPTFLOW_BUILD: ${{ github.run_number }}
         run: bun run tauri build --bundles app,dmg
+      - name: Keep the dmg from branch builds
+        if: github.ref != 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PromptFlow-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 7
       - name: Publish to the mac-latest release
         if: github.ref == 'refs/heads/main'
         env:
@@ -58,3 +68,7 @@ jobs:
             gh release create mac-latest --prerelease --title "PromptFlow for Mac (latest build)" \
               --notes "Apple silicon. Open PromptFlow.dmg, drag PromptFlow to Applications, then on first launch: System Settings → Privacy & Security → Open Anyway."
           gh release upload mac-latest PromptFlow.dmg --clobber
+          # The app reads this to offer "Update available".
+          gh release edit mac-latest --notes "Apple silicon. Open PromptFlow.dmg, drag PromptFlow to Applications, then on first launch: System Settings → Privacy & Security → Open Anyway.
+
+          build:${{ github.run_number }}"

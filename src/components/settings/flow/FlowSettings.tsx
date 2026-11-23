@@ -75,6 +75,11 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   local_ai_defaults_applied: flow?.local_ai_defaults_applied ?? true,
   style_preset: flow?.style_preset ?? null,
   custom_style: flow?.custom_style ?? "",
+  private_mode: flow?.private_mode ?? false,
+  spoken_language: flow?.spoken_language ?? "en",
+  prompts_in_english: flow?.prompts_in_english ?? true,
+  ask_back: flow?.ask_back ?? true,
+  memory_enabled: flow?.memory_enabled ?? true,
 });
 
 const GROQ_LLM = "openai/gpt-oss-120b";
