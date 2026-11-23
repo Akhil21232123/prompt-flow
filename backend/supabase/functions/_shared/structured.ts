@@ -137,6 +137,24 @@ function overlap(a: string, b: string): number {
 }
 
 /**
+ * Lines that are the prompt engineer's own rules echoed into the prompt
+ * ("Do not mention the app or window details"), not something the user said.
+ */
+const ECHOED_RULE =
+  /\b(?:app or window|window details|the app (?:this|it) is typed|unrelated (?:code|refactor\w*|features?|shortcuts?|examples?|content|details?)|not mentioned (?:here|above)|anything (?:not|they didn't) (?:said|mention\w*)|invent\w*|assumptions?)\b/i;
+
+/** Drops echoed rules, unless the user's own words contain them. */
+export function dropEchoedRules(p: PromptParts, said: string): PromptParts {
+  if (ECHOED_RULE.test(said)) return p;
+  const keep = (xs: string[]) => xs.filter((x) => !ECHOED_RULE.test(x));
+  return {
+    ...p,
+    requirements: keep(p.requirements),
+    acceptance_criteria: keep(p.acceptance_criteria),
+  };
+}
+
+/**
  * Drops points the model wrote twice: a requirement repeated in the list,
  * or a success criterion that only restates a requirement.
  */

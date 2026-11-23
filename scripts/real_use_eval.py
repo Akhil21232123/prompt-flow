@@ -51,7 +51,8 @@ MEMORIES = [
 ]
 
 # Never in a prompt unless the user said it in that dictation.
-INVENTED = [r"funding engineer", r"claude desktop", r"com\.anthropic", r"com\.apple", r"\bassum", r"bundle"]
+INVENTED = [r"funding engineer", r"claude desktop", r"com\.anthropic", r"com\.apple", r"\bassum", r"bundle",
+            r"window details", r"unrelated (code|shortcuts|features|refactor)"]
 
 
 def words(t):
@@ -89,7 +90,7 @@ CASES = [
                                  "selection": "hey can u send the deck by tmrw thx"}, "command",
      [["deck"]], [r"<task>"], ""),
     ("'my backend' uses the stack from memory", {"text": "write a readme for my backend project please", "mode": "auto",
-                                                 "app": CLAUDE}, "engineer", [["supabase"]], INVENTED[:1], "memory"),
+                                                 "app": CLAUDE}, "engineer", [["supabase"]], INVENTED, "memory"),
 ]
 
 

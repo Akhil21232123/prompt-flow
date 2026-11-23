@@ -2,7 +2,10 @@
 import { describe, expect, test } from "bun:test";
 import { autoMode } from "../supabase/functions/_shared/handlers.ts";
 import { relevantMemories } from "../supabase/functions/_shared/memory.ts";
-import { dedupeParts } from "../supabase/functions/_shared/structured.ts";
+import {
+  dedupeParts,
+  dropEchoedRules,
+} from "../supabase/functions/_shared/structured.ts";
 
 const BUG_REPORT =
   "hey so there are a lot of bugs in the app like this Fn key not working and sometimes it is opening the feedback one when I hold some keys, go through every feature test everything, and by natively holding fn should turn the text into a structured prompt so the user doesn't need to press ctrl plus option plus p";
@@ -135,5 +138,35 @@ describe("near-duplicates in different words", () => {
       prose: "",
     });
     expect(p.acceptance_criteria).toEqual([]);
+  });
+});
+
+describe("the prompt engineer's own rules stay out of the prompt", () => {
+  const parts = {
+    task: "Explain the shortcuts",
+    context: "",
+    requirements: [
+      "Do not mention the app or window details",
+      "Do not add any unrelated shortcuts or features",
+      "Cover both shortcuts",
+    ],
+    output_format: "",
+    acceptance_criteria: ["No unrelated code or refactoring notes are present"],
+    examples: [],
+    prose: "",
+  };
+  test("echoed rules are dropped", () => {
+    const p = dropEchoedRules(
+      parts,
+      "what's the difference between the two shortcuts",
+    );
+    expect(p.requirements).toEqual(["Cover both shortcuts"]);
+    expect(p.acceptance_criteria).toEqual([]);
+  });
+  test("kept when the user said it", () => {
+    expect(
+      dropEchoedRules(parts, "don't add unrelated features").requirements
+        .length,
+    ).toBe(3);
   });
 });

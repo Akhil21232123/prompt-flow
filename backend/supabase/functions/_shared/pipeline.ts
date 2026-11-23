@@ -16,6 +16,7 @@ import {
   playbookFor,
 } from "./targets.ts";
 import {
+  dropEchoedRules,
   JSON_RETRY_NOTE,
   layoutFor,
   parseDraft,
@@ -278,7 +279,8 @@ async function engineer(
           ? "coding_agent"
           : "chat_assistant"));
   const layout = layoutFor(ai, target, s.format);
-  const render = (p: PromptParts) => renderPrompt(p, layout, req.screen);
+  const render = (p: PromptParts) =>
+    renderPrompt(dropEchoedRules(p, req.text), layout, req.screen);
 
   let parts = draft?.parts;
   // Still no JSON: use the reply's text as it is, unless it's broken JSON.

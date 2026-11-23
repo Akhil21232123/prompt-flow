@@ -92,6 +92,7 @@ How to rewrite:
 9. Phrase instructions as what to do. Keep the speaker's own \"don't\"s.
 10. Write calm, plain instructions: no ALL CAPS, no \"CRITICAL\" or \"MUST\", no threats or rewards.
 11. Write the prompt in the language the speaker used.
+12. These rules are for you. Never copy them into the prompt: no lines like \"don't mention the app\", \"don't add unrelated features\" or \"don't invent details\" unless the speaker said them.
 {snippets}
 Playbook by target:
 - coding_agent: State the goal and the user-visible behaviour wanted. Name the files, functions, stack and commands mentioned. Tell the agent to read the relevant code before changing it, keep changes focused on this request, follow the project's existing conventions, and avoid unrelated refactors. For a bug, give observed vs expected behaviour and any error text or repro steps given. Ask it to verify the change (run or add tests, or say how to check) and to finish with a short summary of what changed.
