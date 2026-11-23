@@ -239,7 +239,7 @@ def v2_checks(token, check):
         answer = (asked.get("options") or ["Python"])[0]
         r = dictate(token, None, "engineer", clarify_session=asked["clarify_session"], answer_text=answer)
         check("ask-back: answering by text writes the prompt", r["_status"] == 200 and bool(r.get("text")) and not r.get("needs_clarification"),
-              f"{r['_ms']} ms, answer={answer!r}, label={r.get('label')!r}")
+              f"{r['_status']} {r.get('code')} {r.get('error')!r} {r['_ms']} ms, answer={answer!r}, label={r.get('label')!r}")
         r = dictate(token, None, "engineer", clarify_session=asked["clarify_session"], answer_text=answer)
         check("ask-back: a question can only be answered once", r["_status"] == 400, f"{r['_status']} {r.get('error')}")
     skipped = None
@@ -249,12 +249,12 @@ def v2_checks(token, check):
             skipped = dictate(token, None, "engineer", clarify_session=r["clarify_session"], skip_clarify=True)
             break
     check("ask-back: skipping writes the prompt", skipped is not None and skipped["_status"] == 200 and bool(skipped.get("text")),
-          f"label={skipped and skipped.get('label')!r}")
+          f"{skipped and skipped.get('_status')} {skipped and skipped.get('error')!r} label={skipped and skipped.get('label')!r}")
     r = dictate(token, speak(CLEAR), "engineer", app=CLAUDE)
     check("ask-back: a clear request is not questioned", r["_status"] == 200 and not r.get("needs_clarification") and bool(r.get("text")),
           f"question={r.get('question')!r}")
     r = dictate(token, speak(VAGUE[0]), "engineer", app=CLAUDE, ask_back=False)
-    check("ask-back: ask_back=false never asks", r["_status"] == 200 and not r.get("needs_clarification"), r.get("label", ""))
+    check("ask-back: ask_back=false never asks", r["_status"] == 200 and not r.get("needs_clarification"), f"{r['_status']} {r.get('code')} {r.get('error')!r} label={r.get('label')!r} q={r.get('question')!r}")
 
     # AI-specific prompts: XML for Claude, Markdown for ChatGPT.
     ramble = speak(RAMBLE)
@@ -355,7 +355,7 @@ def main():
         money = speak("remind me to pay 2500 rupees to Rahul on the 15th of December")
         hinglish = speak("kal ki meeting 5 baje hai, please confirm with Priya", voice="Rishi")
         edit = speak("make this more formal and shorter")
-        long_text = speak(" ".join([MESSAGE, RAMBLE, MESSAGE]))
+        long_text = speak(" ".join([MESSAGE, RAMBLE, "and then after that we should also review the hiring plan for next quarter, update the budget sheet, and send the investor update by Friday evening"]))
 
         # 1. Silence and noise must never produce text.
         for label, clip in [("silence 2s", silence(2)), ("room noise 3s", room_noise(3)), ("hum + fan 3s", hum(3))]:

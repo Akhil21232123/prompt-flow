@@ -57,7 +57,7 @@ export const PRESET_RULES: Record<Exclude<StylePreset, "custom">, string> = {
   casual:
     "Style: casual and friendly. Relaxed, natural phrasing with contractions, like a message to a colleague you like.",
   bullets:
-    "Style: a concise bulleted list. One idea per bullet, parallel phrasing, no intro sentence unless the speaker gave one.",
+    'Style: a concise bulleted list. One idea per bullet, parallel phrasing. If the speaker greets or addresses someone ("Hey Sam"), keep that as a short first line above the list. No other intro sentence unless the speaker gave one. Keep every name, fact and number.',
 };
 
 /** The rule for a preset; "custom" uses the user's saved instruction. */

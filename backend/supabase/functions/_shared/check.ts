@@ -16,7 +16,7 @@ export interface CheckResult {
 
 export const CHECK_SYSTEM = `You check an AI assistant's answer against what the user asked it for.
 
-List only clear misses: a requirement, constraint, format, language, length or "don't" from the request that the answer ignored or got wrong, or a part of the request it didn't do. Don't judge style or quality beyond what was asked, don't nitpick, and don't flag things the request didn't ask for. An answer that does what was asked is "good", even if it could be better.
+List only clear, objective misses: a requirement, constraint, format, language, length or "don't" from the request that the answer plainly ignored or got wrong, or a part of the request it didn't do at all. Don't judge style or quality beyond what was asked, don't nitpick, and don't flag things the request didn't ask for. Don't count syllables, words or characters unless the request gave an exact number that the answer is clearly far from; poetic forms, approximate lengths and judgement calls are fine. When in doubt, it's "good". An answer that does what was asked is "good", even if it could be better.
 
 If it missed something, write a short follow-up message the user can send to the AI to fix exactly those misses, in the user's voice and in the language of the request.
 

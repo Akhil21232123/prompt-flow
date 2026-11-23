@@ -95,6 +95,18 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
         signal: AbortSignal.timeout(45_000),
       });
     let res = await call(opts.model ?? GROQ_FAST_MODEL);
+    // Busy (rate limited or overloaded): wait briefly once and retry.
+    if (res.status === 429 || res.status === 503) {
+      const wait = Number(res.headers.get("retry-after"));
+      await res.body?.cancel();
+      await new Promise((r) =>
+        setTimeout(
+          r,
+          Number.isFinite(wait) && wait > 0 ? Math.min(wait, 4) * 1000 : 1500,
+        ),
+      );
+      res = await call(opts.model ?? GROQ_FAST_MODEL);
+    }
     // Groq retires models often; fall back to one that's always served.
     if (res.status === 404 && opts.model && opts.model !== GROQ_SMART_MODEL)
       res = await call(GROQ_SMART_MODEL);
