@@ -4,7 +4,11 @@ import { ArrowLeft, Loader2, Mail } from "lucide-react";
 import { commands } from "@/bindings";
 import { apiErrorMessage } from "@/lib/cloud";
 
-const CODE_LENGTH = 6;
+/** Codes are 6 digits, but the email service may send up to 8. */
+const CODE_MIN = 6;
+const CODE_MAX = 8;
+/** A 6- or 7-digit code is sent once typing pauses this long (an 8-digit one at once). */
+const PAUSE_MS = 900;
 const RESEND_AFTER_S = 30;
 
 interface SignInProps {
@@ -24,11 +28,13 @@ export const SignIn: React.FC<SignInProps> = ({
   const { t } = useTranslation();
   const [step, setStep] = useState<"email" | "code">("email");
   const [email, setEmail] = useState("");
-  const [digits, setDigits] = useState<string[]>(Array(CODE_LENGTH).fill(""));
+  const [code, setCode] = useState("");
+  const [focused, setFocused] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [resendIn, setResendIn] = useState(0);
-  const boxes = useRef<Array<HTMLInputElement | null>>([]);
+  const codeRef = useRef<HTMLInputElement>(null);
+  const tried = useRef("");
   const emailRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -42,9 +48,21 @@ export const SignIn: React.FC<SignInProps> = ({
   }, [resendIn]);
 
   useEffect(() => {
-    if (step === "code") boxes.current[0]?.focus();
+    if (step === "code") codeRef.current?.focus();
     else emailRef.current?.focus();
   }, [step]);
+
+  // Send the code when it's complete: at once at 8 digits, or when typing
+  // pauses at 6 or 7. A code that already failed isn't sent again.
+  useEffect(() => {
+    if (step !== "code" || busy || code.length < CODE_MIN) return;
+    if (code === tried.current) return;
+    const timer = setTimeout(
+      () => void verify(code),
+      code.length >= CODE_MAX ? 0 : PAUSE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [code, step, busy]);
 
   const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
 
@@ -56,58 +74,27 @@ export const SignIn: React.FC<SignInProps> = ({
     setBusy(false);
     if (r.status === "ok") {
       setStep("code");
-      setDigits(Array(CODE_LENGTH).fill(""));
+      setCode("");
+      tried.current = "";
       setResendIn(RESEND_AFTER_S);
     } else {
       setError(apiErrorMessage(t, r.error));
     }
   };
 
-  const verify = async (code: string) => {
-    if (busy) return;
+  const verify = async (value: string) => {
+    if (busy || value.length < CODE_MIN) return;
+    tried.current = value;
     setBusy(true);
     setError(null);
-    const r = await commands.authVerifyCode(email.trim(), code);
+    const r = await commands.authVerifyCode(email.trim(), value);
     setBusy(false);
     if (r.status === "ok") {
       onSignedIn?.();
     } else {
       setError(apiErrorMessage(t, r.error));
-      setDigits(Array(CODE_LENGTH).fill(""));
-      boxes.current[0]?.focus();
-    }
-  };
-
-  const setDigit = (index: number, value: string) => {
-    const clean = value.replace(/\D/g, "");
-    if (!clean) {
-      setDigits((d) => d.map((x, i) => (i === index ? "" : x)));
-      return;
-    }
-    // Typing or pasting several digits fills the boxes from here on.
-    const next = [...digits];
-    let i = index;
-    for (const ch of clean) {
-      if (i >= CODE_LENGTH) break;
-      next[i] = ch;
-      i += 1;
-    }
-    setDigits(next);
-    if (i < CODE_LENGTH) boxes.current[i]?.focus();
-    else boxes.current[CODE_LENGTH - 1]?.blur();
-    const code = next.join("");
-    if (code.length === CODE_LENGTH && !next.includes("")) void verify(code);
-  };
-
-  const onKeyDown = (index: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace" && !digits[index] && index > 0) {
-      boxes.current[index - 1]?.focus();
-      setDigits((d) => d.map((x, i) => (i === index - 1 ? "" : x)));
-      e.preventDefault();
-    } else if (e.key === "ArrowLeft" && index > 0) {
-      boxes.current[index - 1]?.focus();
-    } else if (e.key === "ArrowRight" && index < CODE_LENGTH - 1) {
-      boxes.current[index + 1]?.focus();
+      // Leave the code to fix: select it so typing replaces it.
+      requestAnimationFrame(() => codeRef.current?.select());
     }
   };
 
@@ -177,36 +164,65 @@ export const SignIn: React.FC<SignInProps> = ({
           {t("account.signIn.sentTo", { email: email.trim() })}
         </p>
       </div>
-      <div
-        className="flex gap-2"
-        role="group"
-        aria-label={t("account.signIn.codeLabel")}
-      >
-        {digits.map((d, i) => (
-          <input
-            key={i}
-            ref={(el) => (boxes.current[i] = el)}
-            value={d}
-            inputMode="numeric"
-            autoComplete={i === 0 ? "one-time-code" : "off"}
-            aria-label={t("account.signIn.digit", { n: i + 1 })}
-            maxLength={CODE_LENGTH}
-            disabled={busy}
-            onChange={(e) => setDigit(i, e.target.value)}
-            onKeyDown={(e) => onKeyDown(i, e)}
-            onFocus={(e) => e.target.select()}
-            className={`w-11 h-13 text-center text-[22px] font-semibold rounded-xl bg-pf-surface-2 border outline-none transition-all text-pf-text ${
-              d ? "border-pf-violet" : "border-pf-border"
-            } focus:border-pf-violet focus:ring-2 focus:ring-pf-violet/30`}
-            style={{ height: 52 }}
-          />
-        ))}
-        {busy && (
-          <Loader2
-            size={18}
-            className="animate-spin text-pf-muted self-center ms-1"
-          />
-        )}
+      <div className="relative self-start">
+        {/* One real field (typing, paste, autofill of any length) drawn as slots. */}
+        <input
+          ref={codeRef}
+          value={code}
+          inputMode="numeric"
+          autoComplete="one-time-code"
+          aria-label={t("account.signIn.codeLabel")}
+          maxLength={CODE_MAX + 4}
+          disabled={busy}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          onChange={(e) => {
+            setError(null);
+            setCode(e.target.value.replace(/\D/g, "").slice(0, CODE_MAX));
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && code.length >= CODE_MIN) {
+              tried.current = "";
+              void verify(code);
+            }
+          }}
+          className="absolute inset-0 w-full h-full opacity-0 cursor-text"
+        />
+        <div className="flex gap-2 pointer-events-none" aria-hidden="true">
+          {Array.from({
+            length: code.length > CODE_MIN ? CODE_MAX : CODE_MIN,
+          }).map((_, i) => {
+            const d = code[i] ?? "";
+            const active =
+              focused && !busy && i === Math.min(code.length, CODE_MAX - 1);
+            return (
+              <div
+                key={i}
+                className={`w-11 flex items-center justify-center text-[22px] font-semibold rounded-xl bg-pf-surface-2 border transition-all text-pf-text ${
+                  i >= CODE_MIN ? "pf-rise" : ""
+                } ${
+                  active
+                    ? "border-pf-violet ring-2 ring-pf-violet/30"
+                    : d
+                      ? "border-pf-violet/60"
+                      : "border-pf-border"
+                }`}
+                style={{ height: 52 }}
+              >
+                {d}
+                {active && !d && (
+                  <span className="w-px h-6 bg-pf-violet animate-pulse" />
+                )}
+              </div>
+            );
+          })}
+          {busy && (
+            <Loader2
+              size={18}
+              className="animate-spin text-pf-muted self-center ms-1"
+            />
+          )}
+        </div>
       </div>
       {errorBox}
       <p className="text-[12px] text-pf-muted leading-relaxed">

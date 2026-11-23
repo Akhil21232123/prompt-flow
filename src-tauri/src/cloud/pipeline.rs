@@ -87,12 +87,6 @@ fn cloud_mode(mode: FlowMode) -> CloudMode {
     }
 }
 
-/// The friendly name of an app for "Writing for Claude…".
-fn target_name(app: Option<&AppContext>) -> Option<String> {
-    app.and_then(|a| a.app_name.clone())
-        .filter(|n| !n.trim().is_empty())
-}
-
 pub fn island_error(e: &ApiError) -> IslandError {
     match e.code {
         ErrorCode::Auth if crate::cloud::session::is_signed_in() => IslandError::SessionEnded,
@@ -173,8 +167,9 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
     island::set_session(island_mode, &language);
     let view = IslandView::Listening {
         mode: island_mode,
-        language: language.clone(),
+        language,
         answering,
+        target: None,
         context: None,
     };
     let listening_id = island::show(app, view);
@@ -182,25 +177,60 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
     let wants_screen = mode == FlowMode::This && !answering;
     let handle = app.clone();
     context::begin_capture(wants_screen, move |screen| {
-        // Show "Using: 2,140 chars from Safari" while still listening.
-        if island::current_id() != listening_id {
-            return;
-        }
+        // Show "Using 2,140 characters from Safari" while still listening.
         let app_name = crate::flow::app_context::peek_name(Duration::from_millis(600));
-        island::show(
-            &handle,
-            IslandView::Listening {
-                mode: island_mode,
-                language,
-                answering,
-                context: Some(IslandContext {
-                    chars: screen.text.chars().count() as u32,
-                    source: screen.source,
-                    app: app_name,
-                }),
-            },
-        );
+        let context = IslandContext {
+            chars: screen.text.chars().count() as u32,
+            source: screen.source,
+            app: app_name,
+        };
+        island::patch(&handle, listening_id, |view| {
+            if let IslandView::Listening { context: c, .. } = view {
+                *c = Some(context);
+            }
+        });
     });
+
+    // Prompt modes say what the prompt is for: "Prompt for Claude".
+    if island_mode != IslandMode::Dictate && island_mode != IslandMode::Command {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            let wait = Duration::from_millis(1200);
+            let app_ctx = crate::flow::app_context::peek(wait);
+            let field = context::peek_field(wait).unwrap_or_default();
+            let Some(target) = resolve_target(app_ctx.as_ref(), &field) else {
+                return;
+            };
+            island::patch(&handle, listening_id, |view| {
+                if let IslandView::Listening { target: t, .. } = view {
+                    *t = Some(target);
+                }
+            });
+        });
+    }
+}
+
+/// Whether the app is a browser or a web app saved from one: its page, not
+/// the app, says which AI is in front.
+fn shows_web_pages(app: Option<&AppContext>) -> bool {
+    app.is_some_and(|a| {
+        crate::flow::app_context::is_browser(a)
+            || crate::flow::app_context::is_web_app(a.bundle_id.as_deref())
+    })
+}
+
+/// What a prompt is written for, as the island names it.
+fn resolve_target(app: Option<&AppContext>, field: &context::FieldContext) -> Option<String> {
+    let title = field
+        .window_title
+        .as_deref()
+        .or(app.and_then(|a| a.window_title.as_deref()));
+    context::target_name(
+        app.and_then(|a| a.app_name.as_deref()),
+        shows_web_pages(app),
+        field.url.as_deref(),
+        title,
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -253,10 +283,29 @@ where
     } else {
         rec.mode
     };
+    // A browser whose page address the accessibility tree didn't give:
+    // ask the browser (web apps have no address to ask for; their title
+    // and name say what they are).
+    let mut captured = captured;
+    if captured.field.url.is_none() {
+        if let Some(bundle) = rec
+            .app_context
+            .as_ref()
+            .filter(|a| crate::flow::app_context::is_browser(a))
+            .filter(|a| !crate::flow::app_context::is_web_app(a.bundle_id.as_deref()))
+            .and_then(|a| a.bundle_id.clone())
+        {
+            captured.field.url =
+                tauri::async_runtime::spawn_blocking(move || context::browser_url(&bundle))
+                    .await
+                    .ok()
+                    .flatten();
+        }
+    }
     let target = pending
         .as_ref()
         .and_then(|p| p.target.clone())
-        .or_else(|| target_name(rec.app_context.as_ref()));
+        .or_else(|| resolve_target(rec.app_context.as_ref(), &captured.field));
     let working_id = island::show(
         app,
         IslandView::Working {
@@ -345,7 +394,11 @@ fn meta_input(
         app: MetaApp {
             name: app.and_then(|a| a.app_name.clone()),
             bundle_id: app.and_then(|a| a.bundle_id.clone()),
-            title: app.and_then(|a| a.window_title.clone()),
+            // The window's title from Accessibility (read as recording
+            // starts) is the most reliable; System Events' is the fallback.
+            title: field
+                .window_title
+                .or_else(|| app.and_then(|a| a.window_title.clone())),
             surrounding_text: field.before_cursor,
             url: field.url,
         },
@@ -447,18 +500,41 @@ async fn handle_outcome(
     }
 }
 
-/// The first line of `text`, short enough for the island.
+/// Removes `<tag>`-style markup, so an XML-sectioned prompt previews as words.
+fn strip_tags(line: &str) -> String {
+    let mut out = String::with_capacity(line.len());
+    let mut in_tag = false;
+    for c in line.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    // An unclosed `<` was not a tag after all.
+    if in_tag {
+        return line.to_string();
+    }
+    out
+}
+
+/// The first line of words in `text`, short enough for the island.
 pub fn preview(text: &str) -> String {
     let line = text
         .lines()
-        .map(str::trim)
+        .map(|l| {
+            strip_tags(l)
+                .trim()
+                .trim_start_matches(['#', '*', '-', '>', ' '])
+                .to_string()
+        })
         .find(|l| !l.is_empty())
         .unwrap_or_default();
-    let line = line.trim_start_matches(['#', '*', '-', '>', ' ']);
     if line.chars().count() > 140 {
-        format!("{}…", context::head_chars(line, 139).trim_end())
+        format!("{}…", context::head_chars(&line, 139).trim_end())
     } else {
-        line.to_string()
+        line
     }
 }
 
@@ -525,11 +601,7 @@ async fn deliver(
 async fn paste_blocking(app: &AppHandle, text: String, never_submit: bool) -> Result<(), String> {
     let handle = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let outcome = if never_submit {
-            crate::clipboard::paste_without_submit(text, handle)
-        } else {
-            crate::clipboard::paste(text, handle)
-        };
+        let outcome = crate::clipboard::paste_cloud(text, handle, never_submit);
         match outcome {
             Ok(crate::clipboard::PasteOutcome::Pasted) => Ok(()),
             Ok(crate::clipboard::PasteOutcome::Blocked) => {
@@ -748,6 +820,11 @@ mod tests {
     fn preview_is_the_first_real_line() {
         assert_eq!(preview("\n\n## Goal\nBuild it"), "Goal");
         assert_eq!(preview("  hello world  "), "hello world");
+        assert_eq!(
+            preview("<task>\n<goal>Rename photos by date</goal>\n</task>"),
+            "Rename photos by date"
+        );
+        assert_eq!(preview("if a < b then"), "if a < b then");
         let long = "word ".repeat(60);
         let p = preview(&long);
         assert!(p.ends_with('…'));

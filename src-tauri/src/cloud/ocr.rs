@@ -102,7 +102,7 @@ fn capture_and_read(x: f64, y: f64, w: f64, h: f64, png: &std::path::Path) -> Op
 }
 
 /// Runs `cmd`, killing it after `timeout`.
-fn run_with_timeout(
+pub(super) fn run_with_timeout(
     cmd: &mut std::process::Command,
     timeout: Duration,
 ) -> Option<std::process::Output> {

@@ -366,6 +366,20 @@ const Island: React.FC = () => {
           <span>{t("island.answeringByVoice")}</span>
         </div>
       );
+      // Which shortcut is running, in its own words: "Writing" never makes
+      // a prompt; "Prompt for Claude" does.
+      const activeLabel =
+        view.mode === "dictate"
+          ? t("island.active.write")
+          : view.mode === "command"
+            ? t("island.active.edit")
+            : view.mode === "this"
+              ? view.target
+                ? t("island.active.thisFor", { app: view.target })
+                : t("island.active.this")
+              : view.target
+                ? t("island.active.promptFor", { app: view.target })
+                : t("island.active.prompt");
       content = notch ? (
         <>
           {header(
@@ -378,18 +392,17 @@ const Island: React.FC = () => {
               {langChip(view.language)}
             </>,
           )}
-          {(contextChip || answeringChip) && (
-            <div className="i-body tight">
-              {answeringChip}
-              {contextChip}
-            </div>
-          )}
+          <div className="i-body tight center">
+            <span className={`i-active mode-${view.mode}`}>{activeLabel}</span>
+            {answeringChip}
+            {contextChip}
+          </div>
         </>
       ) : (
         <>
           <div className="i-row pill">
             {glyph}
-            <span className="i-mode-label">{modeLabel(view.mode)}</span>
+            <span className={`i-active mode-${view.mode}`}>{activeLabel}</span>
             {wave}
             <span className="i-timer">{fmtTime(elapsed)}</span>
             {langChip(view.language)}
@@ -411,7 +424,7 @@ const Island: React.FC = () => {
           : view.step === "transcribing"
             ? t("island.step.transcribing")
             : view.mode === "dictate"
-              ? t("island.step.polishing")
+              ? t("island.step.cleaning")
               : view.target
                 ? t("island.step.writingFor", { app: view.target })
                 : t("island.step.writing");

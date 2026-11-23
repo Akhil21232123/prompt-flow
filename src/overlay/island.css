@@ -591,3 +591,15 @@ body {
     animation-duration: 2.4s;
   }
 }
+
+/* What's running: "Writing" (violet-pink) or "Prompt for Claude" (blue). */
+.i-active {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--pf-pink) 55%, #fff);
+}
+.i-active.mode-engineer,
+.i-active.mode-this {
+  color: color-mix(in srgb, var(--pf-blue) 60%, #fff);
+}

@@ -318,7 +318,9 @@ const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const os = useOsType();
-  const binding = getSetting("bindings")?.transcribe?.current_binding ?? "";
+  const bindings = getSetting("bindings");
+  const binding = bindings?.transcribe?.current_binding ?? "";
+  const promptBinding = bindings?.prompt_engineer?.current_binding ?? "";
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<IslandView["kind"]>("hidden");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -353,12 +355,24 @@ const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
         <p className="text-[14.5px] text-pf-muted leading-relaxed">
           {t("onboardingPf.try.body")}
         </p>
-        {binding && (
-          <div className="flex items-center gap-3 text-[13px] text-pf-muted">
-            <Keycaps binding={binding} osType={os} />
-            <span>{t("onboardingPf.try.holdHint")}</span>
-          </div>
-        )}
+        <div className="pf-card divide-y divide-pf-border">
+          {[
+            { key: "write", b: binding },
+            { key: "prompt", b: promptBinding },
+          ].map(({ key, b }) => (
+            <div key={key} className="px-4 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13.5px] font-semibold">
+                  {t(`onboardingPf.try.${key}.title`)}
+                </div>
+                <div className="text-[12.5px] text-pf-muted leading-snug">
+                  {t(`onboardingPf.try.${key}.body`)}
+                </div>
+              </div>
+              {b && <Keycaps binding={b} osType={os} size="line" />}
+            </div>
+          ))}
+        </div>
       </div>
       <div
         className={`pf-card p-1 transition-all ${

@@ -53,6 +53,9 @@ pub struct FieldContext {
     pub selected: Option<String>,
     /// The page's address, when the window shows a web page.
     pub url: Option<String>,
+    /// The focused window's title (for web apps and browsers, usually the
+    /// page's title: the best clue to which AI is in front).
+    pub window_title: Option<String>,
 }
 
 /// Everything captured for one recording.
@@ -71,6 +74,22 @@ const MIN_WINDOW_TEXT: usize = 200;
 const WINDOW_TEXT_BUDGET: usize = super::dictate::SCREEN_MAX_CHARS;
 
 static PENDING: Mutex<Option<JoinHandle<Captured>>> = Mutex::new(None);
+/// The latest capture's field, readable before the capture finishes.
+static LATEST_FIELD: Mutex<Option<FieldContext>> = Mutex::new(None);
+
+/// The field read by the latest `begin_capture`, waiting up to `wait`.
+pub fn peek_field(wait: std::time::Duration) -> Option<FieldContext> {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if let Some(f) = LATEST_FIELD.lock().ok().and_then(|f| f.clone()) {
+            return Some(f);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+}
 
 /// Starts reading the focused field (and, for "This", the screen) on a
 /// background thread. Call when recording starts, while the user's app is in
@@ -79,8 +98,14 @@ pub fn begin_capture<F>(want_screen: bool, on_screen: F)
 where
     F: FnOnce(&MetaScreen) + Send + 'static,
 {
+    if let Ok(mut latest) = LATEST_FIELD.lock() {
+        *latest = None;
+    }
     let handle = std::thread::spawn(move || {
         let field = platform::focused_field();
+        if let Ok(mut latest) = LATEST_FIELD.lock() {
+            *latest = Some(field.clone());
+        }
         let screen = if want_screen {
             screen_text(&field)
         } else {
@@ -162,6 +187,121 @@ pub fn answer_text(max: usize) -> Option<(String, ScreenSource)> {
     }
     let ocr = super::ocr::read_focused_window().map(|t| tidy_text(&t))?;
     (ocr.chars().count() >= 20).then(|| (tail_chars(&ocr, max), ScreenSource::Ocr))
+}
+
+/// AI products people prompt, by a word in their address, app name or page
+/// title, with the name to show ("Prompt for Gemini").
+const AI_PRODUCTS: &[(&str, &str)] = &[
+    ("claude", "Claude"),
+    ("chatgpt", "ChatGPT"),
+    ("chat.openai", "ChatGPT"),
+    ("gemini", "Gemini"),
+    ("aistudio.google", "AI Studio"),
+    ("notebooklm", "NotebookLM"),
+    ("perplexity", "Perplexity"),
+    ("copilot", "Copilot"),
+    ("grok", "Grok"),
+    ("deepseek", "DeepSeek"),
+    ("chat.mistral", "Le Chat"),
+    ("meta.ai", "Meta AI"),
+    ("poe.com", "Poe"),
+    ("midjourney", "Midjourney"),
+    ("lovable", "Lovable"),
+    ("bolt.new", "Bolt"),
+    ("v0.dev", "v0"),
+    ("v0.app", "v0"),
+    ("cursor", "Cursor"),
+];
+
+fn known_ai(haystack: &str) -> Option<&'static str> {
+    let h = haystack.to_lowercase();
+    AI_PRODUCTS
+        .iter()
+        .find(|(needle, _)| h.contains(needle))
+        .map(|(_, name)| *name)
+}
+
+/// The name of what a prompt is written for: a known AI from the page's
+/// address or title in a browser or web app, otherwise the app's own name.
+/// `None` for a browser showing something unrecognised.
+pub fn target_name(
+    app_name: Option<&str>,
+    in_browser: bool,
+    url: Option<&str>,
+    title: Option<&str>,
+) -> Option<String> {
+    let host = url
+        .and_then(|u| url::Url::parse(u).ok())
+        .and_then(|u| u.host_str().map(str::to_string));
+    let found = host
+        .as_deref()
+        .and_then(known_ai)
+        .or_else(|| app_name.and_then(known_ai))
+        .or_else(|| in_browser.then(|| title.and_then(known_ai)).flatten());
+    if let Some(name) = found {
+        return Some(name.to_string());
+    }
+    if in_browser {
+        return None;
+    }
+    app_name
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && !n.eq_ignore_ascii_case("web app"))
+        .map(str::to_string)
+}
+
+/// The front tab's address, asked of the browser by AppleScript, for when
+/// its accessibility tree doesn't say. macOS asks the user once per browser.
+pub fn browser_url(bundle_id: &str) -> Option<String> {
+    let script = browser_url_script(bundle_id)?;
+    #[cfg(target_os = "macos")]
+    {
+        let out = super::ocr::run_with_timeout(
+            std::process::Command::new("/usr/bin/osascript").args(["-e", &script]),
+            std::time::Duration::from_millis(2500),
+        )?;
+        let url = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        (out.status.success() && (url.starts_with("http://") || url.starts_with("https://")))
+            .then_some(url)
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = script;
+        None
+    }
+}
+
+fn browser_url_script(bundle_id: &str) -> Option<String> {
+    // Bundle ids are plain reverse-DNS; refuse anything that could break
+    // out of the script's string.
+    if !bundle_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-')
+    {
+        return None;
+    }
+    let lower = bundle_id.to_ascii_lowercase();
+    let safari = ["com.apple.safari", "com.apple.safaritechnologypreview"];
+    let chromium = [
+        "com.google.chrome",
+        "com.google.chrome.canary",
+        "com.brave.browser",
+        "com.microsoft.edgemac",
+        "com.vivaldi.vivaldi",
+        "company.thebrowser.browser",
+        "com.operasoftware.opera",
+    ];
+    if safari.contains(&lower.as_str()) {
+        Some(format!(
+            r#"tell application id "{bundle_id}" to return URL of front document"#
+        ))
+    } else if chromium.contains(&lower.as_str()) {
+        Some(format!(
+            r#"tell application id "{bundle_id}" to return URL of active tab of front window"#
+        ))
+    } else {
+        None
+    }
 }
 
 /// The focused window's frame in global points (top-left origin), for OCR.
@@ -383,7 +523,12 @@ mod platform {
             }
         }
         if let Some(window) = attr(app.0, "AXFocusedWindow") {
-            out.url = find_url(window.0);
+            out.window_title = attr_string(window.0, "AXTitle").filter(|t| !t.trim().is_empty());
+            // Safari (and its web apps) name the page in the window's
+            // document; other browsers only in the web area.
+            out.url = attr_string(window.0, "AXDocument")
+                .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+                .or_else(|| find_url(window.0));
         }
         out
     }
@@ -400,18 +545,26 @@ mod platform {
         }
     }
 
-    /// The first web area's address, looking a few levels into the window.
+    /// The first web area's address: breadth-first, so the page (a few
+    /// levels down) is reached before the toolbar's many buttons are walked.
     fn find_url(window: AXUIElementRef) -> Option<String> {
-        let deadline = Instant::now() + Duration::from_millis(300);
-        let mut stack: Vec<(Cf, usize)> =
+        let deadline = Instant::now() + Duration::from_millis(500);
+        let mut queue: std::collections::VecDeque<(Cf, usize)> =
             attr_children(window).into_iter().map(|c| (c, 1)).collect();
         let mut visited = 0;
-        while let Some((el, depth)) = stack.pop() {
+        while let Some((el, depth)) = queue.pop_front() {
             visited += 1;
-            if visited > 400 || Instant::now() > deadline {
+            if visited > 1500 || Instant::now() > deadline {
                 break;
             }
-            if attr_string(el.0, "AXRole").as_deref() == Some("AXWebArea") {
+            let role = attr_string(el.0, "AXRole").unwrap_or_default();
+            if matches!(
+                role.as_str(),
+                "AXToolbar" | "AXMenuBar" | "AXButton" | "AXStaticText"
+            ) {
+                continue;
+            }
+            if role == "AXWebArea" {
                 let url = attr(el.0, "AXURL")?;
                 if unsafe { CFGetTypeID(url.0) } == unsafe { CFURLGetTypeID() } {
                     let s = rust_string(unsafe { CFURLGetString(url.0) })?;
@@ -419,8 +572,8 @@ mod platform {
                 }
                 return rust_string(url.0);
             }
-            if depth < 8 {
-                stack.extend(attr_children(el.0).into_iter().map(|c| (c, depth + 1)));
+            if depth < 10 {
+                queue.extend(attr_children(el.0).into_iter().map(|c| (c, depth + 1)));
             }
         }
         None
@@ -520,6 +673,54 @@ mod tests {
         assert_eq!(head_chars("héllo", 2), "hé");
         assert_eq!(tail_chars("héllo", 3), "llo");
         assert_eq!(tail_chars("ab", 5), "ab");
+    }
+
+    #[test]
+    fn targets_come_from_the_page_or_the_app() {
+        assert_eq!(
+            target_name(Some("Gemini"), false, None, None).as_deref(),
+            Some("Gemini")
+        );
+        assert_eq!(
+            target_name(
+                Some("Safari"),
+                true,
+                Some("https://gemini.google.com/app/1"),
+                None
+            )
+            .as_deref(),
+            Some("Gemini")
+        );
+        assert_eq!(
+            target_name(Some("Web App"), true, None, Some("Google Gemini")).as_deref(),
+            Some("Gemini")
+        );
+        assert_eq!(
+            target_name(Some("Claude"), false, None, Some("Chat")).as_deref(),
+            Some("Claude")
+        );
+        assert_eq!(
+            target_name(Some("Safari"), true, None, Some("BBC News")),
+            None
+        );
+        assert_eq!(
+            target_name(Some("Slack"), false, None, Some("claude talk")).as_deref(),
+            Some("Slack"),
+            "titles only count in browsers"
+        );
+    }
+
+    #[test]
+    fn browser_url_scripts() {
+        assert!(browser_url_script("com.apple.Safari")
+            .unwrap()
+            .contains("front document"));
+        assert!(browser_url_script("com.google.Chrome")
+            .unwrap()
+            .contains("active tab"));
+        assert!(browser_url_script("com.apple.Safari.WebApp.X").is_none());
+        assert!(browser_url_script("org.mozilla.firefox").is_none());
+        assert!(browser_url_script("evil\" to do shell script").is_none());
     }
 
     #[test]

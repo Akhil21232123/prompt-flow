@@ -1530,7 +1530,8 @@
       "polishing": "Polishing…",
       "writing": "Writing your prompt…",
       "writingFor": "Writing for {{app}}…",
-      "checking": "Checking the answer…"
+      "checking": "Checking the answer…",
+      "cleaning": "Cleaning up…"
     },
     "ask": {
       "title": "Quick question",
@@ -1609,6 +1610,14 @@
         "title": "That question expired",
         "body": "Say your request again."
       }
+    },
+    "active": {
+      "write": "Writing",
+      "edit": "Editing",
+      "prompt": "Prompt",
+      "promptFor": "Prompt for {{app}}",
+      "this": "Prompt about this",
+      "thisFor": "Prompt about this for {{app}}"
     }
   },
   "onboardingPf": {
@@ -1656,7 +1665,15 @@
       "problem": "Something went wrong. Check the island at the top of your screen, then try again.",
       "worked": "That's it. It works anywhere you can type.",
       "next": "Continue",
-      "skip": "Skip for now"
+      "skip": "Skip for now",
+      "write": {
+        "title": "Write",
+        "body": "Your words, cleaned up. Never a prompt."
+      },
+      "prompt": {
+        "title": "Prompt",
+        "body": "A structured prompt for the AI app you're in."
+      }
     },
     "done": {
       "title": "You're all set",

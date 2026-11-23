@@ -105,6 +105,8 @@ pub enum IslandView {
         language: String,
         /// This recording answers the question that was showing.
         answering: bool,
+        /// Prompt modes: the AI the prompt is for ("Prompt for Claude").
+        target: Option<String>,
         /// "This": what will go with the prompt.
         context: Option<IslandContext>,
     },
@@ -280,6 +282,7 @@ pub fn show_listening(app: &AppHandle) -> u64 {
             mode,
             language,
             answering: false,
+            target: None,
             context: None,
         },
     )
@@ -313,6 +316,29 @@ pub fn show(app: &AppHandle, view: IslandView) -> u64 {
     let handle = app.clone();
     let _ = app.run_on_main_thread(move || apply(&handle, id, view));
     id
+}
+
+/// Updates view `id` in place (same id, same size class), e.g. to add what a
+/// listening prompt is for once that's known. Does nothing if it was replaced.
+pub fn patch(app: &AppHandle, id: u64, update: impl FnOnce(&mut IslandView)) {
+    let view = {
+        let Ok(mut s) = STATE.lock() else {
+            return;
+        };
+        if s.id != id {
+            return;
+        }
+        update(&mut s.view);
+        s.view.clone()
+    };
+    let geometry = current_geometry();
+    let handle = app.clone();
+    let _ = app.run_on_main_thread(move || {
+        if current_id() != id {
+            return;
+        }
+        let _ = IslandEvent { id, view, geometry }.emit(&handle);
+    });
 }
 
 /// Hides the island if `id` is still the view on screen.
@@ -541,6 +567,7 @@ mod tests {
             mode: IslandMode::Engineer,
             language: "en".into(),
             answering: false,
+            target: None,
             context: None,
         };
         assert!(listening.is_compact());
