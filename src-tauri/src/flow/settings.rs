@@ -373,9 +373,13 @@ pub struct FlowSettings {
     /// PromptFlow remembers durable facts and adds the relevant ones to prompts.
     #[serde(default = "default_true")]
     pub memory_enabled: bool,
-    /// Hold Fn/🌐 to Write; double-tap and hold, or Fn+Control, to Prompt.
+    /// Hold Fn/🌐 for Smart: a prompt in AI apps, a message everywhere
+    /// else. Double-tap for hands-free.
     #[serde(default = "default_true")]
     pub fn_key: bool,
+    /// Tell a user who had the old shortcuts about the two keys, once.
+    #[serde(default)]
+    pub new_keys_notice: bool,
 }
 
 /// Languages the cloud understands, plus "auto".
@@ -408,6 +412,7 @@ impl Default for FlowSettings {
             ask_back: true,
             memory_enabled: true,
             fn_key: true,
+            new_keys_notice: false,
         }
     }
 }

@@ -14,6 +14,9 @@ pub enum CloudMode {
     Dictate,
     Engineer,
     Command,
+    /// Smart (the Fn key): the server decides. Text selected → command; an
+    /// AI app or code editor and 4+ words → engineer; else dictate.
+    Auto,
 }
 
 impl CloudMode {
@@ -22,6 +25,7 @@ impl CloudMode {
             CloudMode::Dictate => "dictate",
             CloudMode::Engineer => "engineer",
             CloudMode::Command => "command",
+            CloudMode::Auto => "auto",
         }
     }
 }
@@ -74,7 +78,11 @@ pub struct DictateMeta {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<&'static str>,
     pub language: String,
-    pub output_language: &'static str,
+    /// Absent for Smart: the server picks by the mode it settles on
+    /// (English prompts when the user asked for them, words in their own
+    /// language).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_language: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub app: Option<MetaApp>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -148,8 +156,9 @@ pub fn build_meta(
             "auto".to_string()
         };
     let output_language = match mode {
-        CloudMode::Engineer if flow.prompts_in_english => "en",
-        _ => "same",
+        CloudMode::Engineer if flow.prompts_in_english => Some("en"),
+        CloudMode::Auto => None,
+        _ => Some("same"),
     };
     let app = MetaApp {
         name: clean(input.app.name),
@@ -179,18 +188,22 @@ pub fn build_meta(
         mode: mode.as_str(),
         duration_sec: input.duration_sec.map(|d| (d * 10.0).round() / 10.0),
         preset: match mode {
-            CloudMode::Dictate => flow.style_preset.map(preset_str),
+            // Plain (⌘Space) is your words, cleaned up: a preset also tells
+            // the server never to turn it into a prompt.
+            CloudMode::Dictate => Some(preset_str(flow.style_preset.unwrap_or(StylePreset::Clean))),
+            // Smart writes for the app unless the user picked a style.
+            CloudMode::Auto => flow.style_preset.map(preset_str),
             _ => None,
         },
         language,
         output_language,
         app: (!app.is_empty()).then_some(app),
         selection: match mode {
-            CloudMode::Command => clean(input.selection),
+            CloudMode::Command | CloudMode::Auto => clean(input.selection),
             _ => None,
         },
         screen,
-        ask_back: flow.ask_back && mode == CloudMode::Engineer,
+        ask_back: flow.ask_back && matches!(mode, CloudMode::Engineer | CloudMode::Auto),
         clarify_session,
         answer_text,
         skip_clarify,
@@ -453,9 +466,58 @@ mod tests {
         let meta = build_meta(CloudMode::Dictate, &f, MetaInput::default(), None);
         assert_eq!(meta.preset, Some("bullets"));
         assert_eq!(meta.language, "te");
-        assert_eq!(meta.output_language, "same");
+        assert_eq!(meta.output_language, Some("same"));
         assert!(!meta.ask_back, "ask-back is engineer only");
         assert!(meta.app.is_none());
+    }
+
+    #[test]
+    fn plain_is_always_clean_words() {
+        // ⌘Space with no style picked: "clean", so never a prompt.
+        let meta = build_meta(CloudMode::Dictate, &flow(), MetaInput::default(), None);
+        let v = serde_json::to_value(&meta).unwrap();
+        assert_eq!(v["mode"], "dictate");
+        assert_eq!(v["preset"], "clean");
+        assert_eq!(v["output_language"], "same");
+    }
+
+    #[test]
+    fn smart_sends_auto_with_the_selection() {
+        let mut f = flow();
+        f.ask_back = true;
+        let input = MetaInput {
+            duration_sec: Some(2.0),
+            app: MetaApp {
+                name: Some("Mail".into()),
+                bundle_id: Some("com.apple.mail".into()),
+                ..Default::default()
+            },
+            selection: Some("  Dear team, see you  ".into()),
+            screen: None,
+        };
+        let v = serde_json::to_value(build_meta(CloudMode::Auto, &f, input, None)).unwrap();
+        assert_eq!(
+            v,
+            json!({
+                "mode": "auto",
+                "duration_sec": 2.0,
+                "language": "en",
+                "app": {"name": "Mail", "bundle_id": "com.apple.mail"},
+                "selection": "Dear team, see you",
+                "ask_back": true,
+                "device": "mac"
+            })
+        );
+        // No selection, a style picked on purpose: the style goes along.
+        f.style_preset = Some(StylePreset::Casual);
+        let input = MetaInput {
+            selection: Some("   ".into()),
+            ..Default::default()
+        };
+        let v = serde_json::to_value(build_meta(CloudMode::Auto, &f, input, None)).unwrap();
+        assert!(v.get("selection").is_none());
+        assert!(v.get("output_language").is_none());
+        assert_eq!(v["preset"], "casual");
     }
 
     #[test]
@@ -464,7 +526,7 @@ mod tests {
         f.prompts_in_english = false;
         f.spoken_language = "klingon".into();
         let meta = build_meta(CloudMode::Engineer, &f, MetaInput::default(), None);
-        assert_eq!(meta.output_language, "same");
+        assert_eq!(meta.output_language, Some("same"));
         assert_eq!(meta.language, "auto");
     }
 

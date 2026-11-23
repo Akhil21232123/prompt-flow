@@ -5,6 +5,7 @@ import {
   ArrowRight,
   Check,
   Eye,
+  Keyboard,
   Mic,
   MonitorUp,
   ShieldCheck,
@@ -22,14 +23,17 @@ import { useOsType } from "@/hooks/useOsType";
 import { useAccount } from "@/lib/cloud";
 import {
   askFor,
+  ResetBanner,
   useMacPermissions,
 } from "@/components/settings/promptflow/PermissionsCard";
+import { SpotlightStep } from "@/components/settings/promptflow/ShortcutsSettings";
 
 const STEPS = [
   "welcome",
   "signin",
   "microphone",
   "accessibility",
+  "keys",
   "try",
   "done",
 ] as const;
@@ -44,7 +48,8 @@ const savedStep = (): Step => {
 export const clearPromptFlowOnboarding = () =>
   localStorage.removeItem(STEP_KEY);
 
-/** The first run: welcome → sign in → microphone → accessibility → try it → done. */
+/** The first run: welcome → sign in → microphone → accessibility (and
+ *  Input Monitoring) → the two keys → try it → done. */
 export const PromptFlowOnboarding: React.FC<{ onComplete: () => void }> = ({
   onComplete,
 }) => {
@@ -86,11 +91,21 @@ export const PromptFlowOnboarding: React.FC<{ onComplete: () => void }> = ({
       const timer = setTimeout(next, 700);
       return () => clearTimeout(timer);
     }
-    if (step === "accessibility" && perms?.accessibility) {
+    if (
+      step === "accessibility" &&
+      perms?.accessibility &&
+      perms?.inputMonitoring
+    ) {
       const timer = setTimeout(next, 700);
       return () => clearTimeout(timer);
     }
-  }, [step, account.signedIn, perms?.microphone, perms?.accessibility]);
+  }, [
+    step,
+    account.signedIn,
+    perms?.microphone,
+    perms?.accessibility,
+    perms?.inputMonitoring,
+  ]);
 
   const finish = async () => {
     await updateSetting("autostart_enabled", atLogin);
@@ -166,8 +181,20 @@ export const PromptFlowOnboarding: React.FC<{ onComplete: () => void }> = ({
               title={t("onboardingPf.accessibility.title")}
               body={t("onboardingPf.accessibility.body")}
             >
+              <ResetBanner state={perms} />
               {perms?.accessibility ? (
-                <Granted text={t("onboardingPf.granted")} />
+                <div className="flex flex-col gap-3">
+                  <Granted text={t("onboardingPf.granted")} />
+                  {!perms.inputMonitoring && (
+                    <button
+                      className="pf-button-primary w-full pf-rise"
+                      onClick={() => void askFor("input_monitoring")}
+                    >
+                      <Keyboard size={16} />
+                      {t("onboardingPf.accessibility.inputMonitoring")}
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   <button
@@ -183,6 +210,22 @@ export const PromptFlowOnboarding: React.FC<{ onComplete: () => void }> = ({
                   </ol>
                 </div>
               )}
+            </StepFrame>
+          )}
+          {step === "keys" && (
+            <StepFrame
+              icon={Keyboard}
+              title={t("onboardingPf.keys.title")}
+              body={t("onboardingPf.keys.body")}
+            >
+              <div className="flex flex-col gap-3">
+                <FnKeyCard compact />
+                <KeyRows />
+                <button className="pf-button-primary w-full" onClick={next}>
+                  {t("onboardingPf.try.next")}
+                  <ArrowRight size={16} />
+                </button>
+              </div>
             </StepFrame>
           )}
           {step === "try" && <TryIt onNext={next} />}
@@ -314,14 +357,38 @@ const Welcome: React.FC<{ onNext: () => void }> = ({ onNext }) => {
   );
 };
 
-/** Dictate into a box here, with the real shortcut and the real island. */
-const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
+/** Hold Fn, and ⌘Space (with Spotlight's step while it has ⌘Space). */
+const KeyRows: React.FC = () => {
   const { t } = useTranslation();
   const { getSetting } = useSettings();
   const os = useOsType();
-  const bindings = getSetting("bindings");
-  const binding = bindings?.transcribe?.current_binding ?? "";
-  const promptBinding = bindings?.prompt_engineer?.current_binding ?? "";
+  const plain = getSetting("bindings")?.transcribe?.current_binding ?? "";
+  return (
+    <div className="pf-card divide-y divide-pf-border">
+      {[
+        { key: "smart", b: "fn" },
+        { key: "plain", b: plain },
+      ].map(({ key, b }) => (
+        <div key={key} className="px-4 py-3 flex items-center gap-3">
+          <div className="flex-1 min-w-0">
+            <div className="text-[13.5px] font-semibold">
+              {t(`onboardingPf.try.${key}.title`)}
+            </div>
+            <div className="text-[12.5px] text-pf-muted leading-snug">
+              {t(`onboardingPf.try.${key}.body`)}
+            </div>
+          </div>
+          {b && <Keycaps binding={b} osType={os} size="line" />}
+        </div>
+      ))}
+      <SpotlightStep />
+    </div>
+  );
+};
+
+/** Dictate into a box here, with the real keys and the real island. */
+const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
+  const { t } = useTranslation();
   const [text, setText] = useState("");
   const [phase, setPhase] = useState<IslandView["kind"]>("hidden");
   const box = useRef<HTMLTextAreaElement>(null);
@@ -356,25 +423,7 @@ const TryIt: React.FC<{ onNext: () => void }> = ({ onNext }) => {
         <p className="text-[14.5px] text-pf-muted leading-relaxed">
           {t("onboardingPf.try.body")}
         </p>
-        <FnKeyCard compact />
-        <div className="pf-card divide-y divide-pf-border">
-          {[
-            { key: "write", b: binding },
-            { key: "prompt", b: promptBinding },
-          ].map(({ key, b }) => (
-            <div key={key} className="px-4 py-3 flex items-center gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="text-[13.5px] font-semibold">
-                  {t(`onboardingPf.try.${key}.title`)}
-                </div>
-                <div className="text-[12.5px] text-pf-muted leading-snug">
-                  {t(`onboardingPf.try.${key}.body`)}
-                </div>
-              </div>
-              {b && <Keycaps binding={b} osType={os} size="line" />}
-            </div>
-          ))}
-        </div>
+        <KeyRows />
       </div>
       <div
         className={`pf-card p-1 transition-all ${

@@ -121,6 +121,14 @@ where
     }
 }
 
+/// The text selected in the focused field right now, as Accessibility
+/// reports it (no clipboard).
+pub fn selected_text() -> Option<String> {
+    platform::focused_field()
+        .selected
+        .filter(|s| !s.trim().is_empty())
+}
+
 /// Drops the pending capture without waiting for it (its thread finishes
 /// on its own).
 pub fn discard_captured() {
@@ -221,6 +229,24 @@ fn known_ai(haystack: &str) -> Option<&'static str> {
         .map(|(_, name)| *name)
 }
 
+/// A known AI from the page's address or title (in a browser or web app)
+/// or from the app's name; `None` for anything else.
+pub fn known_ai_target(
+    app_name: Option<&str>,
+    in_browser: bool,
+    url: Option<&str>,
+    title: Option<&str>,
+) -> Option<String> {
+    let host = url
+        .and_then(|u| url::Url::parse(u).ok())
+        .and_then(|u| u.host_str().map(str::to_string));
+    host.as_deref()
+        .and_then(known_ai)
+        .or_else(|| app_name.and_then(known_ai))
+        .or_else(|| in_browser.then(|| title.and_then(known_ai)).flatten())
+        .map(str::to_string)
+}
+
 /// The name of what a prompt is written for: a known AI from the page's
 /// address or title in a browser or web app, otherwise the app's own name.
 /// `None` for a browser showing something unrecognised.
@@ -230,16 +256,9 @@ pub fn target_name(
     url: Option<&str>,
     title: Option<&str>,
 ) -> Option<String> {
-    let host = url
-        .and_then(|u| url::Url::parse(u).ok())
-        .and_then(|u| u.host_str().map(str::to_string));
-    let found = host
-        .as_deref()
-        .and_then(known_ai)
-        .or_else(|| app_name.and_then(known_ai))
-        .or_else(|| in_browser.then(|| title.and_then(known_ai)).flatten());
-    if let Some(name) = found {
-        return Some(name.to_string());
+    let found = known_ai_target(app_name, in_browser, url, title);
+    if found.is_some() {
+        return found;
     }
     if in_browser {
         return None;

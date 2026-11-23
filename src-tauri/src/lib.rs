@@ -24,6 +24,7 @@ mod memory;
 mod notices;
 mod overlay;
 mod paste_tx;
+mod permissions;
 pub mod portable;
 #[cfg(target_os = "linux")]
 mod primary_selection;
@@ -372,6 +373,25 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "quit" => {
                 app.exit(0);
             }
+            "finish" => {
+                if let Some(c) = app.try_state::<TranscriptionCoordinator>() {
+                    c.finish();
+                }
+            }
+            "prompt_this" => {
+                // Hands-free: Finish (or Fn, or Esc to cancel) ends it.
+                if crate::cloud::is_paused() {
+                    crate::cloud::pipeline::show_error(app, crate::island::IslandError::Paused);
+                } else if let Some(c) = app.try_state::<TranscriptionCoordinator>() {
+                    c.send_external_input("this", "menu");
+                }
+            }
+            "check_answer" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    crate::cloud::pipeline::autopilot(&app).await;
+                });
+            }
             "report_problem" => {
                 show_main_window(app);
                 let _ = app.emit("open-section", "about");
@@ -621,8 +641,15 @@ fn specta_builder() -> Builder<tauri::Wry> {
             cloud::commands::open_privacy_settings,
             cloud::commands::screen_recording_allowed,
             cloud::commands::request_screen_recording,
+            cloud::commands::island_fix,
             fn_key::fn_key_status,
             fn_key::open_keyboard_settings,
+            fn_key::open_keyboard_shortcuts,
+            fn_key::spotlight_owns_cmd_space,
+            fn_key::request_input_monitoring,
+            permissions::permission_health,
+            permissions::fix_accessibility,
+            shortcut::status::shortcut_problems,
         ])
         .events(collect_events![
             managers::history::HistoryUpdatePayload,
@@ -1238,6 +1265,13 @@ pub fn run(cli_args: CliArgs) {
 
             // Hold Fn/🌐 to talk (starts listening once Accessibility is on).
             fn_key::init(&app_handle);
+            // An update can cost PromptFlow its Accessibility grant while
+            // System Settings still shows it on: say so.
+            permissions::check_at_startup(&app_handle);
+            // After the update that brought the two keys: show what changed.
+            if settings::get_settings(&app_handle).flow.new_keys_notice {
+                show_main_window(&app_handle);
+            }
 
             // Secure Input monitor (macOS): detects stuck secure input that
             // silently blocks keyed shortcuts, warns the user, and activates

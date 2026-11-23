@@ -55,6 +55,25 @@ pub enum IslandMode {
     /// "This": a prompt about what's on screen.
     This,
     Autopilot,
+    /// Smart (hold Fn): PromptFlow decides what to write.
+    Smart,
+}
+
+/// What Smart (Fn) is about to write, as far as PromptFlow can tell while
+/// listening ("Prompt for Claude", "Message for Mail", "Edit selection").
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]
+#[serde(rename_all = "snake_case")]
+pub enum SmartKind {
+    Prompt,
+    Message,
+    Edit,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq, Type)]
+pub struct SmartHint {
+    pub kind: SmartKind,
+    /// The AI (for a prompt) or the app (for a message).
+    pub app: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Type)]
@@ -92,6 +111,11 @@ pub enum IslandError {
     Paused,
     /// The server took too long; it may still have finished.
     Timeout,
+    /// macOS does something else when 🌐/Fn is pressed ("Press 🌐 key to").
+    FnConflict,
+    /// macOS dropped PromptFlow's Accessibility grant (an update changed its
+    /// signature) though System Settings still shows it on.
+    PermissionsReset,
 }
 
 /// A one-click redo of the last result, offered as a chip.
@@ -139,6 +163,10 @@ pub enum IslandView {
         target: Option<String>,
         /// "This": what will go with the prompt.
         context: Option<IslandContext>,
+        /// Smart: what it's about to write.
+        hint: Option<SmartHint>,
+        /// Hands-free: recording stays on until the key is pressed again.
+        hands_free: bool,
     },
     Working {
         mode: IslandMode,
@@ -203,6 +231,11 @@ impl IslandView {
             IslandView::Verdict { good: true, .. } => Some(DONE_HOLD),
             IslandView::Verdict { .. } => Some(VERDICT_HOLD),
             IslandView::Error { retry: Some(_), .. } => Some(RETRY_HOLD),
+            // A fix the user has to go and make: long enough to read and click.
+            IslandView::Error {
+                error: IslandError::FnConflict | IslandError::PermissionsReset,
+                ..
+            } => Some(VERDICT_HOLD),
             IslandView::Error { .. } => Some(ERROR_HOLD),
             IslandView::Notice { .. } => Some(NOTICE_HOLD),
             IslandView::Ask { .. } => Some(ASK_HOLD),
@@ -324,6 +357,8 @@ pub fn show_listening(app: &AppHandle) -> u64 {
             answering: false,
             target: None,
             context: None,
+            hint: None,
+            hands_free: false,
         },
     )
 }
@@ -379,6 +414,19 @@ pub fn patch(app: &AppHandle, id: u64, update: impl FnOnce(&mut IslandView)) {
         }
         let _ = IslandEvent { id, view, geometry }.emit(&handle);
     });
+}
+
+/// The recording on screen now outlives its key (hands-free): say how to
+/// finish it.
+pub fn mark_hands_free(app: &AppHandle) {
+    let (id, view) = current();
+    if matches!(view, IslandView::Listening { .. }) {
+        patch(app, id, |v| {
+            if let IslandView::Listening { hands_free, .. } = v {
+                *hands_free = true;
+            }
+        });
+    }
 }
 
 /// Hides the island if `id` is still the view on screen.
@@ -609,6 +657,8 @@ mod tests {
             answering: false,
             target: None,
             context: None,
+            hint: None,
+            hands_free: false,
         };
         assert!(listening.is_compact());
         assert!(listening.hold().is_none());

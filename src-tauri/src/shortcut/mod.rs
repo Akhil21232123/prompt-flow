@@ -11,6 +11,7 @@
 
 mod handler;
 pub mod handy_keys;
+pub mod status;
 pub mod tauri_impl;
 
 use log::{debug, error, info, warn};
@@ -171,11 +172,6 @@ pub fn change_binding(
     id: String,
     binding: String,
 ) -> Result<BindingResponse, String> {
-    // Reject empty bindings — every shortcut should have a value
-    if binding.trim().is_empty() {
-        return Err("Binding cannot be empty".to_string());
-    }
-
     let mut settings = settings::get_settings(&app);
 
     // Get the binding to modify, or create it from defaults if it doesn't exist
@@ -205,6 +201,10 @@ pub fn change_binding(
         }
     };
 
+    if id == "cancel" && binding.trim().is_empty() {
+        return Err("Cancel needs a key".to_string());
+    }
+
     // If this is the cancel binding, just update the settings and return
     // It's managed dynamically, so we don't register/unregister here
     if id == "cancel" {
@@ -225,6 +225,20 @@ pub fn change_binding(
     if let Err(e) = unregister_shortcut(&app, binding_to_modify.clone()) {
         let error_msg = format!("Failed to unregister shortcut: {}", e);
         error!("change_binding error: {}", error_msg);
+    }
+
+    // An empty binding turns the shortcut off (Cancel always needs a key).
+    if binding.trim().is_empty() {
+        let mut cleared = binding_to_modify.clone();
+        cleared.current_binding = String::new();
+        settings.bindings.insert(id, cleared.clone());
+        settings::write_settings(&app, settings);
+        crate::secure_input::reconcile_fallback(&app);
+        return Ok(BindingResponse {
+            success: true,
+            binding: Some(cleared),
+            error: None,
+        });
     }
 
     // Validate the new shortcut for the current keyboard implementation
@@ -289,6 +303,7 @@ pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, Stri
 /// mid-capture. The "cancel" binding is untouched: it is managed dynamically
 /// by the recording lifecycle.
 pub fn suspend_all_shortcuts(app: &AppHandle) {
+    status::set_capturing(true);
     for (id, binding) in settings::get_bindings(app) {
         if id == "cancel" {
             continue;
@@ -306,6 +321,7 @@ pub fn suspend_all_shortcuts(app: &AppHandle) {
 /// Registering an already-registered shortcut fails cleanly in both
 /// implementations, so this is idempotent and safe on every exit path.
 pub fn resume_all_shortcuts(app: &AppHandle) {
+    status::set_capturing(false);
     let settings = get_settings(app);
     for (id, binding) in &settings.bindings {
         if id == "cancel" {
@@ -516,6 +532,11 @@ fn register_all_shortcuts_for_implementation(
             .get(id)
             .cloned()
             .unwrap_or_else(|| default_binding.clone());
+
+        // Not set: nothing to register.
+        if !status::is_set(&binding) {
+            continue;
+        }
 
         // Validate the shortcut for the target implementation
         if let Err(e) =

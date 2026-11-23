@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Globe, TriangleAlert } from "lucide-react";
+import { Globe, Keyboard, TriangleAlert } from "lucide-react";
 import { commands } from "@/bindings";
 import type { FnKeyStatus } from "@/bindings";
 import { Switch } from "@/components/ui/Switch";
@@ -12,7 +12,10 @@ export const useFnKey = () => {
   useEffect(() => {
     let disposed = false;
     const read = () =>
-      commands.fnKeyStatus().then((s) => !disposed && setStatus(s));
+      commands
+        .fnKeyStatus()
+        .then((s) => !disposed && setStatus(s))
+        .catch((e) => console.warn("Fn key status failed:", e));
     void read();
     const timer = setInterval(read, 2000);
     return () => {
@@ -23,7 +26,7 @@ export const useFnKey = () => {
   return status;
 };
 
-/** Hold 🌐 to talk: the switch, how it works, and fixing macOS's 🌐 setting. */
+/** Hold Fn for Smart: the switch, what it does, and fixing what stops it. */
 export const FnKeyCard: React.FC<{ compact?: boolean }> = ({
   compact = false,
 }) => {
@@ -31,7 +34,13 @@ export const FnKeyCard: React.FC<{ compact?: boolean }> = ({
   const f = useFlow();
   const status = useFnKey();
   const on = f.flow.fn_key ?? true;
-  const conflict = on && status !== null && status.usage !== "do_nothing";
+  const conflict =
+    on &&
+    status !== null &&
+    status.usage !== "do_nothing" &&
+    status.usage !== "unknown";
+  const needsInputMonitoring =
+    on && status !== null && !status.input_monitoring;
 
   return (
     <div className="pf-card divide-y divide-pf-border">
@@ -62,14 +71,28 @@ export const FnKeyCard: React.FC<{ compact?: boolean }> = ({
             {t(`fnKey.conflict.${status.usage}`)} {t("fnKey.fix")}
           </div>
           <button
-            className="pf-button-secondary"
+            className="pf-button-secondary shrink-0"
             onClick={() => void commands.openKeyboardSettings()}
           >
             {t("fnKey.openKeyboard")}
           </button>
         </div>
       )}
-      {on && status && !status.active && (
+      {needsInputMonitoring && (
+        <div className="px-4 py-3 flex items-center gap-3 bg-pf-amber/5 pf-rise">
+          <Keyboard size={16} className="text-pf-amber shrink-0" />
+          <div className="flex-1 text-[12.5px] text-pf-text leading-relaxed">
+            {t("fnKey.inputMonitoring")}
+          </div>
+          <button
+            className="pf-button-secondary shrink-0"
+            onClick={() => void commands.requestInputMonitoring()}
+          >
+            {t("fnKey.allow")}
+          </button>
+        </div>
+      )}
+      {on && status && !status.active && !needsInputMonitoring && (
         <div className="px-4 py-3 text-[12.5px] text-pf-muted">
           {t("fnKey.needsAccessibility")}
         </div>

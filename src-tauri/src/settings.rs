@@ -78,12 +78,13 @@ impl From<LogLevel> for tauri_plugin_log::LogLevel {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Type)]
 pub struct ShortcutBinding {
     pub id: String,
     pub name: String,
     pub description: String,
     pub default_binding: String,
+    /// Empty: not set (the shortcut is off until the user assigns a key).
     pub current_binding: String,
 }
 
@@ -582,7 +583,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 4;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -990,13 +991,75 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     changed
 }
 
+/// The Mac's shortcuts before Fn (Smart) and ⌘Space (Plain) replaced
+/// them: (binding, old default).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MAC_RETIRED_SHORTCUTS: &[(&str, &str)] = &[
+    ("prompt_engineer", "ctrl+option+p"),
+    ("command_mode", "ctrl+option+e"),
+    ("this", "ctrl+option+t"),
+    ("autopilot", "ctrl+option+c"),
+    ("transcribe_with_post_process", "option+shift+space"),
+];
+
+/// Plain moved from ⌥Space to ⌘Space; ⌥Space stays as its second key.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+const MAC_PLAIN_MOVE: (&str, &str) = ("option+space", "command+space");
+
+/// Unbinds each retired shortcut that still has its old default (one the
+/// user changed is theirs and stays), moves Plain to its new key if it
+/// was on the old one, and adds Plain's second key unless something else
+/// already uses it.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn retire_old_shortcuts(
+    bindings: &mut HashMap<String, ShortcutBinding>,
+    retired: &[(&str, &str)],
+    (old_plain, new_plain): (&str, &str),
+) {
+    for (id, old) in retired {
+        if let Some(b) = bindings.get_mut(*id) {
+            if b.current_binding == *old {
+                b.current_binding = String::new();
+            }
+            b.default_binding = String::new();
+        }
+    }
+    let mut alias = old_plain.to_string();
+    if let Some(b) = bindings.get_mut("transcribe") {
+        b.default_binding = new_plain.to_string();
+        if b.current_binding == old_plain {
+            b.current_binding = new_plain.to_string();
+        }
+    }
+    if bindings
+        .values()
+        .any(|b| b.id != "transcribe_alt" && b.current_binding == old_plain)
+    {
+        alias.clear();
+    }
+    if !bindings.contains_key("transcribe_alt") {
+        bindings.insert(
+            "transcribe_alt".to_string(),
+            ShortcutBinding {
+                id: "transcribe_alt".to_string(),
+                name: "Just your words (second key)".to_string(),
+                description: "The same as the main shortcut.".to_string(),
+                default_binding: old_plain.to_string(),
+                current_binding: alias,
+            },
+        );
+    }
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "windows")]
     let default_shortcut = "ctrl+space";
+    // Plain: ⌘Space ("just your words"). Spotlight has it until the user
+    // turns Spotlight's shortcut off, so ⌥Space works too (transcribe_alt).
     #[cfg(target_os = "macos")]
-    let default_shortcut = "option+space";
+    let default_shortcut = "command+space";
     #[cfg(target_os = "linux")]
     let default_shortcut = "ctrl+alt+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1015,8 +1078,10 @@ pub fn get_default_settings() -> AppSettings {
     );
     #[cfg(target_os = "windows")]
     let default_post_process_shortcut = "ctrl+shift+space";
+    // Fn and ⌘Space are the two shortcuts on a Mac; the rest start unbound
+    // and stay assignable under Advanced shortcuts.
     #[cfg(target_os = "macos")]
-    let default_post_process_shortcut = "option+shift+space";
+    let default_post_process_shortcut = "";
     #[cfg(target_os = "linux")]
     let default_post_process_shortcut = "ctrl+alt+shift+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
@@ -1034,7 +1099,7 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     #[cfg(target_os = "macos")]
-    let (default_prompt_shortcut, default_command_shortcut) = ("ctrl+option+p", "ctrl+option+e");
+    let (default_prompt_shortcut, default_command_shortcut) = ("", "");
     #[cfg(not(target_os = "macos"))]
     let (default_prompt_shortcut, default_command_shortcut) = ("ctrl+alt+p", "ctrl+alt+e");
     bindings.insert(
@@ -1060,7 +1125,7 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     #[cfg(target_os = "macos")]
-    let (default_this_shortcut, default_autopilot_shortcut) = ("ctrl+option+t", "ctrl+option+c");
+    let (default_this_shortcut, default_autopilot_shortcut) = ("", "");
     #[cfg(not(target_os = "macos"))]
     let (default_this_shortcut, default_autopilot_shortcut) = ("ctrl+alt+t", "ctrl+alt+c");
     bindings.insert(
@@ -1084,6 +1149,32 @@ pub fn get_default_settings() -> AppSettings {
                 .to_string(),
             default_binding: default_autopilot_shortcut.to_string(),
             current_binding: default_autopilot_shortcut.to_string(),
+        },
+    );
+    #[cfg(target_os = "macos")]
+    let default_plain_alias = "option+space";
+    #[cfg(not(target_os = "macos"))]
+    let default_plain_alias = "";
+    bindings.insert(
+        "transcribe_alt".to_string(),
+        ShortcutBinding {
+            id: "transcribe_alt".to_string(),
+            name: "Just your words (second key)".to_string(),
+            description: "The same as the main shortcut.".to_string(),
+            default_binding: default_plain_alias.to_string(),
+            current_binding: default_plain_alias.to_string(),
+        },
+    );
+    // Smart is the Fn key's; a key can be assigned for keyboards without Fn.
+    bindings.insert(
+        "smart".to_string(),
+        ShortcutBinding {
+            id: "smart".to_string(),
+            name: "Smart".to_string(),
+            description: "What holding Fn does: a prompt in AI apps, a message everywhere else."
+                .to_string(),
+            default_binding: String::new(),
+            current_binding: String::new(),
         },
     );
     bindings.insert(
@@ -1413,6 +1504,21 @@ fn apply_settings_migrations(
         // transcribe.cpp 0.2 replaced integer registry indices with opaque
         // process-local handles. Clear every old index once.
         settings.transcribe_gpu_device = default_transcribe_gpu_device();
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+    if stored_schema_version < 4 {
+        // Fn (Smart) and ⌘Space (Plain) replace the old shortcuts.
+        #[cfg(target_os = "macos")]
+        {
+            retire_old_shortcuts(
+                &mut settings.bindings,
+                MAC_RETIRED_SHORTCUTS,
+                MAC_PLAIN_MOVE,
+            );
+            // Someone who used the old keys hears about the new ones once.
+            settings.flow.new_keys_notice = settings.onboarding_completed;
+        }
         settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
         updated = true;
     }
@@ -1826,6 +1932,71 @@ mod tests {
         assert_eq!(salvaged.paste_delay_ms, default_paste_delay_ms());
         assert_eq!(salvaged.sound_theme, default_sound_theme());
         assert_eq!(salvaged.custom_words, vec!["handy".to_string()]);
+    }
+
+    fn binding(id: &str, current: &str) -> (String, ShortcutBinding) {
+        (
+            id.to_string(),
+            ShortcutBinding {
+                id: id.to_string(),
+                name: id.to_string(),
+                description: String::new(),
+                default_binding: current.to_string(),
+                current_binding: current.to_string(),
+            },
+        )
+    }
+
+    #[test]
+    fn old_mac_shortcuts_are_retired_unless_changed() {
+        let mut bindings: HashMap<String, ShortcutBinding> = [
+            binding("transcribe", "option+space"),
+            binding("prompt_engineer", "ctrl+option+p"),
+            // Changed by the user: kept.
+            binding("command_mode", "ctrl+shift+e"),
+            binding("this", "ctrl+option+t"),
+            binding("autopilot", "ctrl+option+c"),
+            binding("transcribe_with_post_process", "option+shift+space"),
+            binding("cancel", "escape"),
+        ]
+        .into_iter()
+        .collect();
+        retire_old_shortcuts(&mut bindings, MAC_RETIRED_SHORTCUTS, MAC_PLAIN_MOVE);
+        assert_eq!(bindings["transcribe"].current_binding, "command+space");
+        assert_eq!(bindings["transcribe"].default_binding, "command+space");
+        assert_eq!(bindings["transcribe_alt"].current_binding, "option+space");
+        assert_eq!(bindings["prompt_engineer"].current_binding, "");
+        assert_eq!(bindings["command_mode"].current_binding, "ctrl+shift+e");
+        assert_eq!(bindings["command_mode"].default_binding, "");
+        assert_eq!(bindings["this"].current_binding, "");
+        assert_eq!(bindings["autopilot"].current_binding, "");
+        assert_eq!(bindings["transcribe_with_post_process"].current_binding, "");
+        assert_eq!(bindings["cancel"].current_binding, "escape");
+    }
+
+    #[test]
+    fn a_custom_plain_key_stays_and_the_alias_never_collides() {
+        let mut bindings: HashMap<String, ShortcutBinding> = [
+            binding("transcribe", "f13"),
+            binding("prompt_engineer", "option+space"),
+        ]
+        .into_iter()
+        .collect();
+        retire_old_shortcuts(&mut bindings, MAC_RETIRED_SHORTCUTS, MAC_PLAIN_MOVE);
+        assert_eq!(bindings["transcribe"].current_binding, "f13");
+        assert_eq!(bindings["prompt_engineer"].current_binding, "option+space");
+        assert_eq!(bindings["transcribe_alt"].current_binding, "");
+        // Running it again changes nothing.
+        let before = bindings.clone();
+        retire_old_shortcuts(&mut bindings, MAC_RETIRED_SHORTCUTS, MAC_PLAIN_MOVE);
+        assert_eq!(bindings, before);
+    }
+
+    #[test]
+    fn new_bindings_exist_everywhere() {
+        let d = get_default_settings();
+        assert!(d.bindings.contains_key("transcribe_alt"));
+        assert_eq!(d.bindings["smart"].current_binding, "");
     }
 
     #[cfg(target_os = "linux")]

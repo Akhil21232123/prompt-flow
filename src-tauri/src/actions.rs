@@ -860,12 +860,22 @@ impl ShortcutAction for TranscribeAction {
 
             // The selection must be read before anything is pasted; the
             // shortcut keys are up by now.
-            let selection_task = (mode == FlowMode::Command).then(|| {
-                let ah_sel = ah.clone();
-                tauri::async_runtime::spawn_blocking(move || {
-                    crate::clipboard::copy_selection(&ah_sel)
-                })
-            });
+            let selection_task = match mode {
+                FlowMode::Command => {
+                    let ah_sel = ah.clone();
+                    Some(tauri::async_runtime::spawn_blocking(move || {
+                        crate::clipboard::copy_selection(&ah_sel)
+                    }))
+                }
+                // Smart only edits a selection Accessibility reports: ⌘C
+                // copies the whole line in some editors when nothing is
+                // selected, which would turn every dictation into an edit.
+                // (The cloud read it when recording started.)
+                FlowMode::Auto if !cloud => Some(tauri::async_runtime::spawn_blocking(
+                    crate::cloud::context::selected_text,
+                )),
+                _ => None,
+            };
             let app_context_task =
                 tauri::async_runtime::spawn_blocking(crate::flow::app_context::take_captured);
 
@@ -1326,6 +1336,23 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         Arc::new(TranscribeAction {
             post_process: false,
             mode: FlowMode::Dictate,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    // ⌥Space: the same Plain dictation as ⌘Space, for Macs where
+    // Spotlight keeps ⌘Space.
+    map.insert(
+        "transcribe_alt".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: false,
+            mode: FlowMode::Dictate,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    // Smart: what the Fn key runs (and any key the user assigns to it).
+    map.insert(
+        "smart".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: true,
+            mode: FlowMode::Auto,
         }) as Arc<dyn ShortcutAction>,
     );
     map.insert(

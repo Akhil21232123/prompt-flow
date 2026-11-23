@@ -14,6 +14,7 @@ use crate::flow::settings::StylePreset;
 use crate::flow::FlowMode;
 use crate::island::{
     self, IslandContext, IslandError, IslandMode, IslandStep, IslandView, Redo, RetryState,
+    SmartHint, SmartKind,
 };
 use crate::managers::history::HistoryManager;
 use crate::settings::get_settings;
@@ -109,6 +110,7 @@ pub fn island_mode(mode: FlowMode) -> IslandMode {
         FlowMode::PromptEngineer => IslandMode::Engineer,
         FlowMode::Command => IslandMode::Command,
         FlowMode::This => IslandMode::This,
+        FlowMode::Auto => IslandMode::Smart,
     }
 }
 
@@ -117,6 +119,59 @@ fn cloud_mode(mode: FlowMode) -> CloudMode {
         FlowMode::Dictate => CloudMode::Dictate,
         FlowMode::PromptEngineer | FlowMode::This => CloudMode::Engineer,
         FlowMode::Command => CloudMode::Command,
+        FlowMode::Auto => CloudMode::Auto,
+    }
+}
+
+/// The mode the server settled on (`response.mode`), for a Smart request.
+fn resolved_mode(server_mode: &str) -> FlowMode {
+    match server_mode {
+        "engineer" => FlowMode::PromptEngineer,
+        "command" => FlowMode::Command,
+        "auto" => FlowMode::Auto,
+        _ => FlowMode::Dictate,
+    }
+}
+
+/// What Smart is about to write, from what's in front as recording starts:
+/// a selection is edited, an AI (or code editor) gets a prompt, anything
+/// else gets a message for that app.
+fn smart_hint(
+    app: Option<&AppContext>,
+    field: &context::FieldContext,
+    category: crate::flow::settings::AppCategory,
+) -> SmartHint {
+    if field
+        .selected
+        .as_deref()
+        .is_some_and(|s| !s.trim().is_empty())
+    {
+        return SmartHint {
+            kind: SmartKind::Edit,
+            app: None,
+        };
+    }
+    let web = shows_web_pages(app);
+    let app_name = app.and_then(|a| a.app_name.clone());
+    let title = field
+        .window_title
+        .as_deref()
+        .or(app.and_then(|a| a.window_title.as_deref()));
+    let ai = context::known_ai_target(app_name.as_deref(), web, field.url.as_deref(), title);
+    match ai {
+        Some(ai) => SmartHint {
+            kind: SmartKind::Prompt,
+            app: Some(ai),
+        },
+        None if category.is_ai_target() => SmartHint {
+            kind: SmartKind::Prompt,
+            app: app_name,
+        },
+        // A browser's name says nothing about the page: just "Message".
+        None => SmartHint {
+            kind: SmartKind::Message,
+            app: if web { None } else { app_name },
+        },
     }
 }
 
@@ -219,6 +274,8 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
         answering,
         target: None,
         context: None,
+        hint: None,
+        hands_free: false,
     };
     let listening_id = island::show(app, view);
 
@@ -239,8 +296,33 @@ pub fn on_recording_start(app: &AppHandle, mode: FlowMode) {
         });
     });
 
+    // Smart says what it's about to do: "Prompt for Claude", "Message for
+    // Mail", "Edit selection".
+    if island_mode == IslandMode::Smart {
+        let handle = app.clone();
+        let flow = settings.flow.clone();
+        std::thread::spawn(move || {
+            let wait = Duration::from_millis(1200);
+            let app_ctx = crate::flow::app_context::peek(wait);
+            let field = context::peek_field(wait).unwrap_or_default();
+            let category = match (&app_ctx, flow.app_aware) {
+                (Some(ctx), true) => crate::flow::app_context::classify(ctx, &flow.app_overrides),
+                _ => crate::flow::settings::AppCategory::Other,
+            };
+            let hint = smart_hint(app_ctx.as_ref(), &field, category);
+            island::patch(&handle, listening_id, |view| {
+                if let IslandView::Listening { hint: h, .. } = view {
+                    *h = Some(hint);
+                }
+            });
+        });
+    }
+
     // Prompt modes say what the prompt is for: "Prompt for Claude".
-    if island_mode != IslandMode::Dictate && island_mode != IslandMode::Command {
+    if !matches!(
+        island_mode,
+        IslandMode::Dictate | IslandMode::Command | IslandMode::Smart
+    ) {
         let handle = app.clone();
         std::thread::spawn(move || {
             let wait = Duration::from_millis(1200);
@@ -523,10 +605,15 @@ async fn handle_outcome(
                     log::error!("Failed to save history entry: {e}");
                 }
             }
+            // Smart: show and remember it as what the server made of it.
+            let mode = match ctx.mode {
+                FlowMode::Auto => resolved_mode(&finished.mode),
+                mode => mode,
+            };
             deliver(
                 app,
                 Delivery {
-                    mode: ctx.mode,
+                    mode,
                     finished,
                     input: ctx.input,
                     working_id: ctx.working_id,
@@ -918,7 +1005,8 @@ pub fn chips_for(mode: FlowMode) -> Vec<Redo> {
     match mode {
         FlowMode::Dictate => vec![Redo::AsPrompt, Redo::Formal, Redo::Shorter],
         FlowMode::PromptEngineer | FlowMode::This => vec![Redo::AsWritten],
-        FlowMode::Command => Vec::new(),
+        // A Smart result is shown as the mode the server settled on.
+        FlowMode::Command | FlowMode::Auto => Vec::new(),
     }
 }
 
@@ -1542,6 +1630,69 @@ mod tests {
         assert!(!same_app(Some("com.apple.Safari"), Some("com.apple.mail")));
         assert!(!same_app(None, Some("com.apple.mail")));
         assert!(!same_app(Some("com.apple.mail"), None));
+    }
+
+    #[test]
+    fn smart_says_what_it_will_write() {
+        use crate::flow::settings::AppCategory;
+        let mail = AppContext {
+            app_name: Some("Mail".into()),
+            bundle_id: Some("com.apple.mail".into()),
+            window_title: None,
+        };
+        let empty = context::FieldContext::default();
+        assert_eq!(
+            smart_hint(Some(&mail), &empty, AppCategory::Email),
+            SmartHint {
+                kind: SmartKind::Message,
+                app: Some("Mail".into())
+            }
+        );
+        let selected = context::FieldContext {
+            selected: Some("Dear team".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            smart_hint(Some(&mail), &selected, AppCategory::Email).kind,
+            SmartKind::Edit
+        );
+        let cursor = AppContext {
+            app_name: Some("Cursor".into()),
+            bundle_id: Some("com.todesktop.230313mzl4w4u92".into()),
+            window_title: None,
+        };
+        assert_eq!(
+            smart_hint(Some(&cursor), &empty, AppCategory::Code).kind,
+            SmartKind::Prompt
+        );
+        let safari = AppContext {
+            app_name: Some("Safari".into()),
+            bundle_id: Some("com.apple.Safari".into()),
+            window_title: None,
+        };
+        let claude_page = context::FieldContext {
+            url: Some("https://claude.ai/new".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            smart_hint(Some(&safari), &claude_page, AppCategory::Other),
+            SmartHint {
+                kind: SmartKind::Prompt,
+                app: Some("Claude".into())
+            }
+        );
+        assert_eq!(
+            smart_hint(Some(&safari), &empty, AppCategory::Other),
+            SmartHint {
+                kind: SmartKind::Message,
+                app: None
+            }
+        );
+        assert_eq!(resolved_mode("engineer"), FlowMode::PromptEngineer);
+        assert_eq!(resolved_mode("command"), FlowMode::Command);
+        assert_eq!(resolved_mode("dictate"), FlowMode::Dictate);
+        assert_eq!(cloud_mode(FlowMode::Auto), CloudMode::Auto);
+        assert_eq!(island_mode(FlowMode::Auto), IslandMode::Smart);
     }
 
     #[test]

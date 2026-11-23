@@ -15,6 +15,7 @@ import {
   CornerUpLeft,
   Eye,
   HelpCircle,
+  MessageSquare,
   Mic,
   Pencil,
   RotateCw,
@@ -35,11 +36,14 @@ import type {
   IslandGeometry,
   IslandMode,
   IslandView,
+  SmartHint,
+  SmartKind,
 } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 import { noticeDisplay } from "@/lib/notices";
 import { formatKeyCombination } from "@/lib/utils/keyboard";
 import { prefersReducedMotion } from "@/lib/utils/motion";
+import { islandButtonProps } from "./noFocus";
 
 const WAVE_BARS = 11;
 const NO_GEOMETRY: IslandGeometry = {
@@ -58,7 +62,23 @@ const MODE_ICON: Record<IslandMode, LucideIcon> = {
   command: Pencil,
   this: Eye,
   autopilot: ShieldCheck,
+  smart: Wand2,
 };
+
+/** Smart's hint icon: what it's about to write. */
+const HINT_ICON: Record<SmartKind, LucideIcon> = {
+  prompt: Sparkles,
+  message: MessageSquare,
+  edit: Pencil,
+};
+
+/** Errors the island can fix with one click (opens the right pane). */
+const FIXABLE: IslandError[] = ["fn_conflict", "permissions_reset"];
+
+/** Every island button: never focusable, so no key can press it. */
+const IslandButton: React.FC<React.ButtonHTMLAttributes<HTMLButtonElement>> = (
+  props,
+) => <button {...props} {...islandButtonProps} />;
 
 /** A spring toward `target`, written straight to the element's style. */
 const useSpringSize = (
@@ -135,6 +155,17 @@ const errorText = (
     title: t(`${k}.title`),
     body: t(`${k}.body`, { seconds: retry ?? 0 }),
   };
+};
+
+const hintText = (t: TFunction, hint: SmartHint): string => {
+  if (hint.kind === "edit") return t("island.smart.edit");
+  if (hint.kind === "prompt")
+    return hint.app
+      ? t("island.smart.promptFor", { app: hint.app })
+      : t("island.smart.prompt");
+  return hint.app
+    ? t("island.smart.messageFor", { app: hint.app })
+    : t("island.smart.message");
 };
 
 const Island: React.FC = () => {
@@ -388,20 +419,51 @@ const Island: React.FC = () => {
           <span>{t("island.answeringByVoice")}</span>
         </div>
       );
-      // Which shortcut is running, in its own words: "Writing" never makes
-      // a prompt; "Prompt for Claude" does.
+      // Smart: "Listening", and what it's about to write.
+      const hint = view.mode === "smart" && view.hint;
+      const HintIcon = hint ? HINT_ICON[hint.kind] : null;
+      const hintChip = hint && HintIcon && (
+        <div className="i-context pf-rise">
+          <HintIcon size={12} />
+          <span>{hintText(t, hint)}</span>
+        </div>
+      );
+      const handsFreeChip = view.hands_free && (
+        <div className="i-context pf-rise">
+          <Mic size={12} />
+          <span>{t("island.handsFree")}</span>
+        </div>
+      );
+      // Which key is running, in its own words: "Just your words" never
+      // makes a prompt; "Prompt for Claude" does.
       const activeLabel =
-        view.mode === "dictate"
-          ? t("island.active.write")
-          : view.mode === "command"
-            ? t("island.active.edit")
-            : view.mode === "this"
-              ? view.target
-                ? t("island.active.thisFor", { app: view.target })
-                : t("island.active.this")
-              : view.target
-                ? t("island.active.promptFor", { app: view.target })
-                : t("island.active.prompt");
+        view.mode === "smart"
+          ? t("island.listening")
+          : view.mode === "dictate"
+            ? t("island.active.write")
+            : view.mode === "command"
+              ? t("island.active.edit")
+              : view.mode === "this"
+                ? view.target
+                  ? t("island.active.thisFor", { app: view.target })
+                  : t("island.active.this")
+                : view.target
+                  ? t("island.active.promptFor", { app: view.target })
+                  : t("island.active.prompt");
+      const chips = (
+        <>
+          {answeringChip}
+          {hintChip}
+          {contextChip}
+          {handsFreeChip}
+        </>
+      );
+      const hasChips = !!(
+        answeringChip ||
+        hintChip ||
+        contextChip ||
+        handsFreeChip
+      );
       content = notch ? (
         <>
           {header(
@@ -416,8 +478,7 @@ const Island: React.FC = () => {
           )}
           <div className="i-body tight center">
             <span className={`i-active mode-${view.mode}`}>{activeLabel}</span>
-            {answeringChip}
-            {contextChip}
+            {chips}
           </div>
         </>
       ) : (
@@ -429,12 +490,7 @@ const Island: React.FC = () => {
             <span className="i-timer">{fmtTime(elapsed)}</span>
             {langChip(view.language)}
           </div>
-          {(contextChip || answeringChip) && (
-            <div className="i-body tight">
-              {answeringChip}
-              {contextChip}
-            </div>
-          )}
+          {hasChips && <div className="i-body tight">{chips}</div>}
         </>
       );
       break;
@@ -479,13 +535,13 @@ const Island: React.FC = () => {
       expanded = true;
       tone = "tone-ask";
       const close = (
-        <button
+        <IslandButton
           className="i-icon-btn"
           aria-label={t("island.close")}
           onClick={() => commands.islandClose(id)}
         >
           <X size={13} />
-        </button>
+        </IslandButton>
       );
       content = (
         <>
@@ -510,7 +566,7 @@ const Island: React.FC = () => {
             {view.options.length > 0 && (
               <div className="i-options">
                 {view.options.map((o, i) => (
-                  <button
+                  <IslandButton
                     key={o}
                     className="i-option"
                     style={{ animationDelay: `${60 + i * 45}ms` }}
@@ -518,7 +574,7 @@ const Island: React.FC = () => {
                     onClick={act(() => commands.islandAnswer(id, o))}
                   >
                     {o}
-                  </button>
+                  </IslandButton>
                 ))}
               </div>
             )}
@@ -530,13 +586,13 @@ const Island: React.FC = () => {
                     })
                   : t("island.ask.voiceHintNoKey")}
               </span>
-              <button
+              <IslandButton
                 className="i-btn ghost"
                 disabled={busy}
                 onClick={act(() => commands.islandAnswer(id, null))}
               >
                 {t("island.ask.skip")}
-              </button>
+              </IslandButton>
             </div>
           </div>
         </>
@@ -569,7 +625,7 @@ const Island: React.FC = () => {
       const buttons = (
         <div className="i-actions">
           {view.chips.map((chip) => (
-            <button
+            <IslandButton
               key={chip}
               className="i-btn chip"
               disabled={busy}
@@ -579,11 +635,11 @@ const Island: React.FC = () => {
                 <RotateCw size={11} />
               )}
               {t(`island.redo.${chip}`)}
-            </button>
+            </IslandButton>
           ))}
           <span className="i-spacer" />
           {view.pasted && !view.sent && (
-            <button
+            <IslandButton
               className="i-btn ghost"
               aria-label={t("island.done.undo")}
               title={t("island.done.undo")}
@@ -591,9 +647,9 @@ const Island: React.FC = () => {
             >
               <CornerUpLeft size={12} />
               <kbd>{t("island.done.undoKey")}</kbd>
-            </button>
+            </IslandButton>
           )}
-          <button
+          <IslandButton
             className="i-btn ghost"
             onClick={act(async () => {
               const r = await commands.islandCopy(id);
@@ -602,7 +658,7 @@ const Island: React.FC = () => {
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
             {copied ? t("island.done.copied") : t("island.done.copy")}
-          </button>
+          </IslandButton>
         </div>
       );
       const rating = view.rateable && (
@@ -611,7 +667,7 @@ const Island: React.FC = () => {
             <span className="i-rate-thanks">{t("island.done.thanks")}</span>
           ) : (
             <>
-              <button
+              <IslandButton
                 className="i-icon-btn"
                 aria-label={t("island.done.good")}
                 title={t("island.done.good")}
@@ -621,8 +677,8 @@ const Island: React.FC = () => {
                 }}
               >
                 <ThumbsUp size={12} />
-              </button>
-              <button
+              </IslandButton>
+              <IslandButton
                 className="i-icon-btn"
                 aria-label={t("island.done.bad")}
                 title={t("island.done.bad")}
@@ -632,7 +688,7 @@ const Island: React.FC = () => {
                 }}
               >
                 <ThumbsDown size={12} />
-              </button>
+              </IslandButton>
             </>
           )}
         </span>
@@ -713,22 +769,22 @@ const Island: React.FC = () => {
             <div className="i-actions">
               <span className="i-spacer" />
               {!view.good && (
-                <button
+                <IslandButton
                   className="i-btn ghost"
                   onClick={() => commands.islandDismiss(id)}
                 >
                   {t("island.verdict.dismiss")}
-                </button>
+                </IslandButton>
               )}
               {view.has_fix && (
-                <button
+                <IslandButton
                   className="i-btn primary"
                   disabled={busy}
                   onClick={act(() => commands.islandSendFix(id))}
                 >
                   <Wand2 size={12} />
                   {t("island.verdict.sendFix")}
-                </button>
+                </IslandButton>
               )}
             </div>
           </div>
@@ -747,14 +803,14 @@ const Island: React.FC = () => {
           <TriangleAlert size={13} />
         </span>
       );
-      const close = retry && (
-        <button
+      const close = (retry || FIXABLE.includes(view.error)) && (
+        <IslandButton
           className="i-icon-btn"
           aria-label={t("island.close")}
           onClick={() => commands.islandDismiss(id)}
         >
           <X size={13} />
-        </button>
+        </IslandButton>
       );
       content = (
         <>
@@ -794,34 +850,47 @@ const Island: React.FC = () => {
               <div className="i-actions">
                 <span className="i-hint">{t("island.retry.safe")}</span>
                 {retry.can_paste_raw && (
-                  <button
+                  <IslandButton
                     className="i-btn ghost"
                     disabled={busy}
                     onClick={act(() => commands.islandPasteRaw(id))}
                   >
                     {t("island.retry.pasteRaw")}
-                  </button>
+                  </IslandButton>
                 )}
-                <button
+                <IslandButton
                   className="i-btn primary"
                   disabled={busy}
                   onClick={act(() => commands.islandRetry(id))}
                 >
                   <RotateCw size={12} />
                   {t("island.retry.now")}
-                </button>
+                </IslandButton>
+              </div>
+            )}
+            {FIXABLE.includes(view.error) && (
+              <div className="i-actions">
+                <span className="i-spacer" />
+                <IslandButton
+                  className="i-btn primary"
+                  disabled={busy}
+                  onClick={act(() => commands.islandFix(id))}
+                >
+                  {t(`island.fix.${view.error}`)}
+                  <ArrowUpRight size={12} />
+                </IslandButton>
               </div>
             )}
             {signIn && (
               <div className="i-actions">
                 <span className="i-spacer" />
-                <button
+                <IslandButton
                   className="i-btn primary"
                   onClick={() => commands.islandOpenApp(id)}
                 >
                   {t("island.openApp")}
                   <ArrowUpRight size={12} />
-                </button>
+                </IslandButton>
               </div>
             )}
           </div>

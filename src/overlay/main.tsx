@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { listen } from "@tauri-apps/api/event";
 import Island from "./Island";
+import { refuseFocus, swallowKeys } from "./noFocus";
 import {
   applyTheme,
   getStoredTheme,
@@ -22,6 +23,10 @@ listen<Theme>("theme-changed", (event) => applyTheme(event.payload));
 if (import.meta.env.PROD) {
   window.addEventListener("contextmenu", (e) => e.preventDefault());
 }
+
+// It never takes the keyboard: no key may press an island button.
+swallowKeys(window);
+refuseFocus(document);
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

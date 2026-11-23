@@ -454,6 +454,26 @@ pub fn island_open_app(app: AppHandle, id: u64) {
     crate::show_main_window_public(&app);
 }
 
+/// The fix button on an island error: opens the System Settings pane that
+/// solves it.
+#[tauri::command]
+#[specta::specta]
+pub async fn island_fix(app: AppHandle, id: u64) -> Result<(), String> {
+    let (current, view) = island::current();
+    let island::IslandView::Error { error, .. } = view else {
+        return Ok(());
+    };
+    if current != id {
+        return Ok(());
+    }
+    island::dismiss(&app, id);
+    match error {
+        island::IslandError::FnConflict => crate::fn_key::open_keyboard_settings(),
+        island::IslandError::PermissionsReset => crate::permissions::fix_accessibility(app).await,
+        _ => Ok(()),
+    }
+}
+
 /// The island's current view, for an island webview that (re)loads.
 #[tauri::command]
 #[specta::specta]
@@ -508,6 +528,8 @@ pub enum PrivacyPane {
     Microphone,
     Accessibility,
     ScreenRecording,
+    /// Input Monitoring, for the Fn key.
+    InputMonitoring,
 }
 
 pub fn privacy_url(pane: PrivacyPane) -> &'static str {
@@ -520,6 +542,9 @@ pub fn privacy_url(pane: PrivacyPane) -> &'static str {
         }
         PrivacyPane::ScreenRecording => {
             "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"
+        }
+        PrivacyPane::InputMonitoring => {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
         }
     }
 }

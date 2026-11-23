@@ -1,5 +1,6 @@
 import React, { useRef } from "react";
 import { useTranslation } from "react-i18next";
+import { X } from "lucide-react";
 import { formatKeyCombination } from "../../lib/utils/keyboard";
 import { ResetButton } from "../ui/ResetButton";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -13,6 +14,8 @@ interface ShortcutInputProps {
   grouped?: boolean;
   shortcutId: string;
   disabled?: boolean;
+  /** Offer to turn the shortcut off (an empty binding). */
+  clearable?: boolean;
 }
 
 /**
@@ -24,9 +27,11 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
   grouped = false,
   shortcutId,
   disabled = false,
+  clearable = false,
 }) => {
   const { t } = useTranslation();
-  const { getSetting, resetBinding, isUpdating, isLoading } = useSettings();
+  const { getSetting, resetBinding, updateBinding, isUpdating, isLoading } =
+    useSettings();
   const osType = useOsType();
   const { capturing, partial, start, cancel } = useShortcutCapture(
     shortcutId,
@@ -117,11 +122,37 @@ export const ShortcutInput: React.FC<ShortcutInputProps> = ({
           </div>
         ) : (
           <div
-            className="px-2 py-1 text-sm font-semibold bg-wash border border-line-strong hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary"
+            className={`px-2 py-1 text-sm bg-wash border border-line-strong hover:bg-logo-primary/10 rounded-md cursor-pointer hover:border-logo-primary ${
+              binding.current_binding
+                ? "font-semibold"
+                : "font-medium text-ink-3"
+            }`}
             onClick={start}
           >
-            {formatKeyCombination(binding.current_binding, osType)}
+            {binding.current_binding
+              ? formatKeyCombination(binding.current_binding, osType)
+              : t("settings.general.shortcut.notSet")}
           </div>
+        )}
+        {clearable && binding.current_binding && !capturing && (
+          <button
+            type="button"
+            className="p-1 rounded-md text-ink-3 hover:text-ink-2 hover:bg-wash cursor-pointer"
+            aria-label={t("settings.general.shortcut.clear", {
+              setting: translatedName,
+            })}
+            title={t("settings.general.shortcut.clear", {
+              setting: translatedName,
+            })}
+            disabled={isUpdating(`binding_${shortcutId}`)}
+            onClick={() =>
+              void updateBinding(shortcutId, "").catch((e) =>
+                console.error("Failed to clear binding:", e),
+              )
+            }
+          >
+            <X size={14} />
+          </button>
         )}
         <ResetButton
           ariaLabel={t("common.resetSetting", { setting: translatedName })}

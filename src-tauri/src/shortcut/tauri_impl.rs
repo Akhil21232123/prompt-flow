@@ -73,8 +73,19 @@ pub fn validate_shortcut(raw: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to parse shortcut '{}': {}", raw, e))
 }
 
-/// Register a shortcut using Tauri's global-shortcut plugin
+/// Register a shortcut using Tauri's global-shortcut plugin. An unset
+/// binding registers nothing.
 pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    if !super::status::is_set(&binding) {
+        super::status::clear(&binding.id);
+        return Ok(());
+    }
+    let result = register_set_shortcut(app, &binding);
+    super::status::note(&binding, &result);
+    result
+}
+
+fn register_set_shortcut(app: &AppHandle, binding: &ShortcutBinding) -> Result<(), String> {
     // Validate for Tauri requirements
     if let Err(e) = validate_shortcut(&binding.current_binding) {
         warn!(
@@ -141,6 +152,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
 
 /// Unregister a shortcut from Tauri's global-shortcut plugin
 pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    super::status::clear(&binding.id);
+    if !super::status::is_set(&binding) {
+        return Ok(());
+    }
     let shortcut = match binding.current_binding.parse::<Shortcut>() {
         Ok(s) => s,
         Err(e) => {

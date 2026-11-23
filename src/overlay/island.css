@@ -237,7 +237,8 @@ body {
   background: var(--i-fill);
 }
 .i-glyph.mode-dictate,
-.i-glyph.mode-command {
+.i-glyph.mode-command,
+.i-glyph.mode-smart {
   background: var(--pf-gradient);
 }
 .i-glyph.mode-engineer,
@@ -636,4 +637,10 @@ body {
 .i-wave.mode-engineer i,
 .i-wave.mode-this i {
   background: linear-gradient(var(--pf-blue), #8fb4ff);
+}
+
+/* The island never shows focus: it never takes it (see noFocus.ts). */
+.island button:focus,
+.island button:focus-visible {
+  outline: none;
 }
