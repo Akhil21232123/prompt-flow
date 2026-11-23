@@ -107,3 +107,14 @@ describe("no point is written twice", () => {
     expect(p.requirements.length).toBe(2);
   });
 });
+
+describe("'my project' brings in only on-topic project memories", () => {
+  test("the stack yes, an unrelated project no", () => {
+    expect(
+      relevantMemories(
+        [STACK, TELUGU],
+        "write a readme for my backend project please",
+      ),
+    ).toEqual([STACK]);
+  });
+});

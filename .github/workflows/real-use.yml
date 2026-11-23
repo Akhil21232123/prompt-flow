@@ -1,0 +1,20 @@
+name: real-use replay
+# Replays real beta dictations that once went wrong (scripts/real_use_eval.py)
+# through the deployed backend as a throwaway user. Manual; about 2 minutes.
+on:
+  workflow_dispatch:
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Replay
+        env:
+          PF_URL: https://${{ env.REF }}.supabase.co
+          PF_ANON: ${{ vars.PF_ANON || 'sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss' }}
+          PF_SERVICE: ${{ secrets.PF_SERVICE }}
+        run: python3 scripts/real_use_eval.py

@@ -172,8 +172,14 @@ export function relevantMemories(
     if (aboutMe && m.kind !== "preference") return true;
     if (short) return false;
     const words = [...new Set(contentWords(m.content))];
-    if (words.filter((w) => said.has(w)).length >= 2) return true;
-    return ownProject && (m.kind === "project" || m.kind === undefined);
+    const shared = words.filter((w) => said.has(w)).length;
+    if (shared >= 2) return true;
+    // "my backend": their projects that overlap, and the stack they build on.
+    return (
+      ownProject &&
+      (m.kind === "project" || m.kind === undefined) &&
+      (shared >= 1 || STACK.test(m.content))
+    );
   });
 }
 
@@ -182,6 +188,10 @@ const PROJECT_NOUNS = new Set(
     " ",
   ),
 );
+
+/** Languages, frameworks and services: "the stack" a project memory names. */
+const STACK =
+  /\b(?:python|typescript|javascript|node|react|next\.?js|vue|svelte|swift|swiftui|kotlin|java|go|golang|rust|flutter|dart|django|flask|fastapi|rails|ruby|php|laravel|supabase|firebase|postgres(?:ql)?|mysql|mongodb|redis|aws|gcp|azure|vercel|tauri|electron|docker|kubernetes)\b/i;
 
 const ABOUT_ME =
   /\b(?:bio|about me|myself|introduce me|my (?:resume|cv|profile|intro|background|linkedin)|cover letter|for me)\b/;
