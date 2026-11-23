@@ -239,7 +239,7 @@ def v2_checks(token, check):
         answer = (asked.get("options") or ["Python"])[0]
         r = dictate(token, None, "engineer", clarify_session=asked["clarify_session"], answer_text=answer)
         check("ask-back: answering by text writes the prompt", r["_status"] == 200 and bool(r.get("text")) and not r.get("needs_clarification"),
-              f"{r['_status']} {r.get('code')} {r.get('error')!r} {r['_ms']} ms, answer={answer!r}, label={r.get('label')!r}")
+              f"{r['_status']} {r.get('code')} {r.get('error')!r} {r['_ms']} ms, answer={answer!r}, label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''}")
         r = dictate(token, None, "engineer", clarify_session=asked["clarify_session"], answer_text=answer)
         check("ask-back: a question can only be answered once", r["_status"] == 400, f"{r['_status']} {r.get('error')}")
     skipped = None
@@ -254,18 +254,18 @@ def v2_checks(token, check):
     check("ask-back: a clear request is not questioned", r["_status"] == 200 and not r.get("needs_clarification") and bool(r.get("text")),
           f"question={r.get('question')!r}")
     r = dictate(token, speak(VAGUE[0]), "engineer", app=CLAUDE, ask_back=False)
-    check("ask-back: ask_back=false never asks", r["_status"] == 200 and not r.get("needs_clarification"), f"{r['_status']} {r.get('code')} {r.get('error')!r} label={r.get('label')!r} q={r.get('question')!r}")
+    check("ask-back: ask_back=false never asks", r["_status"] == 200 and not r.get("needs_clarification"), f"{r['_status']} {r.get('code')} {r.get('error')!r} label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''} q={r.get('question')!r}")
 
     # AI-specific prompts: XML for Claude, Markdown for ChatGPT.
     ramble = speak(RAMBLE)
     r = dictate(token, ramble, "engineer", app=CLAUDE, ask_back=False)
     t = r.get("text", "")
     check("target: Claude gets XML-tagged sections", r.get("target") == "claude" and r.get("label") == "Prompt · for Claude" and t.lstrip().startswith("<task>") and all(x in t for x in ("<context>", "<requirements>", "<output_format>")),
-          f"label={r.get('label')!r} :: {t[:120]!r}")
+          f"label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''} :: {t[:120]!r}")
     r = dictate(token, ramble, "engineer", app=CHATGPT, ask_back=False)
     t = r.get("text", "")
     check("target: ChatGPT gets Markdown, not XML", r.get("target") == "chatgpt" and "### Task" in t and re.search(r"<[a-z_]+>", t) is None,
-          f"label={r.get('label')!r} :: {t[:120]!r}")
+          f"label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''} :: {t[:120]!r}")
 
     # Indian languages: speech in Hindi / Telugu becomes an English prompt.
     for name, locale, preferred, sentence, code in [("Hindi", "hi_IN", "Lekha", HINDI, "hi"), ("Telugu", "te_IN", None, TELUGU, "te")]:
@@ -313,7 +313,7 @@ def v2_checks(token, check):
     # Autopilot: a good answer and a missed one.
     r = call("POST", "/functions/v1/check", token, body={
         "intent": "Write a haiku about the monsoon in Mumbai",
-        "answer": "Dark clouds cross the bay\nrain drums on tin roofs all night\nthe sea breathes again", "app": {"name": "Claude"}})
+        "answer": "Mumbai skies go dark\nrain drums on tin roofs all night\nthe sea breathes again", "app": {"name": "Claude"}})
     check("check: a good answer is good", r["_status"] == 200 and r.get("verdict") == "good", json.dumps({k: r.get(k) for k in ("verdict", "issues")}))
     r = call("POST", "/functions/v1/check", token, body={
         "intent": "Write a Python function that reverses a string. Don't use slicing.",
@@ -368,7 +368,7 @@ def main():
         r = dictate(token, ramble, "engineer", app=CHATGPT)
         t = r.get("text", "")
         check("prompt engineer: structured prompt", r["_status"] == 200 and words(t) > words(RAMBLE) * 0.8 and re.search(r"python", t, re.I) is not None,
-              f"{r['_ms']} ms, {words(t)} words, label={r.get('label')!r}")
+              f"{r['_ms']} ms, {words(t)} words, label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''}")
         check("prompt engineer: keeps 'top five'/'5'", re.search(r"\b(5|five)\b", t, re.I) is not None, t[:160].replace("\n", " ") + "…")
         invented = [n for n in re.findall(r"\b\d+(?:\.\d+)?%?", t) if n.rstrip("%") not in {"5", "3", "1", "2"}]
         check("prompt engineer: no invented numbers", not invented, f"numbers={invented}")
