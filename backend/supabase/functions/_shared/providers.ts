@@ -67,6 +67,8 @@ export function anthropic(env: Env, fetchImpl: Fetch = fetch): Complete {
 /** Groq's free text models, used until a Claude key is added. */
 export const GROQ_FAST_MODEL = "openai/gpt-oss-120b";
 export const GROQ_SMART_MODEL = "openai/gpt-oss-120b";
+/** Tried in order when the main model is rate limited (separate quotas). */
+export const GROQ_BUSY_FALLBACKS = ["openai/gpt-oss-20b", "qwen/qwen3.8-27b"];
 
 /** OpenAI-compatible chat on Groq. */
 export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
@@ -86,7 +88,9 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
           temperature: 0.2,
           ...(model.startsWith("openai/gpt-oss")
             ? { reasoning_effort: "low" }
-            : {}),
+            : model.startsWith("qwen/")
+              ? { reasoning_format: "hidden" }
+              : {}),
           messages: [
             { role: "system", content: system },
             { role: "user", content: user },
@@ -94,22 +98,37 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
         }),
         signal: AbortSignal.timeout(45_000),
       });
-    let res = await call(opts.model ?? GROQ_FAST_MODEL);
-    // Busy (rate limited or overloaded): wait briefly once and retry.
+    const first = opts.model ?? GROQ_FAST_MODEL;
+    let res = await call(first);
+    // Groq retires models often; fall back to one that's always served.
+    if (res.status === 404 && first !== GROQ_SMART_MODEL) {
+      await res.body?.cancel();
+      res = await call(GROQ_SMART_MODEL);
+    }
+    // Busy (rate limited or overloaded). Each Groq model has its own limits,
+    // so try the sibling models first, then wait briefly and retry the first.
     if (res.status === 429 || res.status === 503) {
       const wait = Number(res.headers.get("retry-after"));
       await res.body?.cancel();
-      await new Promise((r) =>
-        setTimeout(
-          r,
-          Number.isFinite(wait) && wait > 0 ? Math.min(wait, 4) * 1000 : 1500,
-        ),
-      );
-      res = await call(opts.model ?? GROQ_FAST_MODEL);
+      for (const m of GROQ_BUSY_FALLBACKS.filter((m) => m !== first)) {
+        res = await call(m);
+        if (
+          res.ok ||
+          (res.status !== 429 && res.status !== 503 && res.status !== 404)
+        )
+          break;
+        await res.body?.cancel();
+      }
+      if (!res.ok) {
+        await new Promise((r) =>
+          setTimeout(
+            r,
+            Number.isFinite(wait) && wait > 0 ? Math.min(wait, 4) * 1000 : 1500,
+          ),
+        );
+        res = await call(first);
+      }
     }
-    // Groq retires models often; fall back to one that's always served.
-    if (res.status === 404 && opts.model && opts.model !== GROQ_SMART_MODEL)
-      res = await call(GROQ_SMART_MODEL);
     if (!res.ok)
       throw new ProviderError(
         `Groq returned ${res.status}: ${await readError(res)}`,
@@ -118,9 +137,10 @@ export function groqChat(env: Env, fetchImpl: Fetch = fetch): Complete {
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string } }>;
     };
-    const text = data.choices?.[0]?.message?.content ?? "";
-    if (!text.trim())
-      throw new ProviderError("Groq returned an empty reply", 502);
+    const text = (data.choices?.[0]?.message?.content ?? "")
+      .replace(/<think>[\s\S]*?<\/think>/g, "")
+      .trim();
+    if (!text) throw new ProviderError("Groq returned an empty reply", 502);
     return text;
   };
 }

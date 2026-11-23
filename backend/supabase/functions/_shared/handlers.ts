@@ -371,6 +371,9 @@ function finished(
     ...(result.target ? { target: result.target } : {}),
     guarded: result.guarded ?? [],
     memory_used: result.memory_used ?? [],
+    ...(result.fallback_reason
+      ? { fallback_reason: result.fallback_reason }
+      : {}),
     ...(language ? { language } : {}),
     timing,
   };

@@ -254,7 +254,7 @@ async function engineer(
     dictionary: user.dictionary,
     context,
   });
-  const smart = { model: deps.models.smart, maxTokens: 4096 };
+  const smart = { model: deps.models.smart, maxTokens: 2000 };
   let calls = 0;
 
   // The draft, as JSON parts; one stricter retry if it isn't valid JSON.
@@ -326,7 +326,9 @@ async function engineer(
     guarded = problems;
     calls++;
     if (parts) {
-      const fixed = parseReview(await review(problems)).parts;
+      const fixed = await review(problems)
+        .then((r) => parseReview(r).parts)
+        .catch(() => undefined);
       const text = fixed ? render(fixed) : undefined;
       if (text && findInventions(trusted, text).length === 0) {
         prompt = text;
@@ -405,7 +407,7 @@ async function command(
         user_,
         {
           model: deps.models.fast,
-          maxTokens: 4096,
+          maxTokens: 2000,
         },
       ),
     );
@@ -444,7 +446,9 @@ export async function rewrite(
   if (mode === "engineer") {
     try {
       return withMemory(await engineer(req, user, category, deps), req);
-    } catch {
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      console.error("prompt engineer fell back:", reason);
       const safe = await polish(
         {
           ...req,
@@ -455,7 +459,14 @@ export async function rewrite(
         category,
         deps,
       );
-      return withMemory({ ...safe, label: KEPT_WORDS_ERROR_LABEL }, req);
+      return withMemory(
+        {
+          ...safe,
+          label: KEPT_WORDS_ERROR_LABEL,
+          fallback_reason: reason.slice(0, 200),
+        },
+        req,
+      );
     }
   }
   // Plain dictation is only cleaned up; memory is never added to it.

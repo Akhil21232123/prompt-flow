@@ -197,6 +197,8 @@ export interface RewriteResult {
   memory_used?: Array<{ id: string; content: string }>;
   /** Model calls made. */
   calls: number;
+  /** Why Prompt Engineer fell back to the user's words (short, for support). */
+  fallback_reason?: string;
 }
 
 /** One system+user completion against a chat model. */
