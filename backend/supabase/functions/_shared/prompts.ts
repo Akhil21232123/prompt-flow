@@ -376,7 +376,7 @@ export function stripThink(text: string): string {
   return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, "");
 }
 
-export function extractTag(text: string, tag: string): string | undefined {
+function extractTag(text: string, tag: string): string | undefined {
   const open = `<${tag}>`;
   const start = text.lastIndexOf(open);
   if (start < 0) return undefined;
@@ -401,46 +401,6 @@ export function parsePrompt(reply: string): string | undefined {
     return undefined;
   const bare = stripFences(r);
   return bare || undefined;
-}
-
-export function parseScore(reply: string): number | undefined {
-  const raw = extractTag(stripThink(reply), "score");
-  const m = raw?.match(/^\d+/);
-  if (!m) return undefined;
-  return Math.min(10, Math.max(1, Number(m[0])));
-}
-
-export function parseIssues(reply: string): string[] {
-  const body = extractTag(stripThink(reply), "issues");
-  if (!body) return [];
-  return body
-    .split("\n")
-    .map((l) =>
-      l
-        .trim()
-        .replace(/^[-*•]\s*/, "")
-        .trim(),
-    )
-    .filter((l) => l && l.toLowerCase() !== "none");
-}
-
-export function parseTarget(reply: string): PromptTarget | undefined {
-  const raw = extractTag(stripThink(reply), "target")
-    ?.toLowerCase()
-    .replace(/[\s-]+/g, "_");
-  const map: Record<string, PromptTarget> = {
-    coding_agent: "coding_agent",
-    coding: "coding_agent",
-    chat_assistant: "chat_assistant",
-    chat: "chat_assistant",
-    research: "research",
-    writing: "writing",
-    image_generation: "image_generation",
-    image: "image_generation",
-    data_analysis: "data_analysis",
-    data: "data_analysis",
-  };
-  return raw ? map[raw] : undefined;
 }
 
 /** Strip wrappers models put around a pasted reply (quotes, think blocks). */
