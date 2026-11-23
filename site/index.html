@@ -1,149 +1,594 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PromptFlow — speak, and every AI gets your best prompt</title>
-<meta name="description" content="PromptFlow turns what you say into clean writing anywhere on your Mac, and into expert prompts for ChatGPT, Claude, Gemini and Cursor.">
-<style>
-  :root {
-    --ink: #0B0B12; --surface: #15151F; --surface-hi: #1E1E2B; --line: #26263a;
-    --text: #F4F4FA; --muted: #9A9AB0; --violet: #8B7CFF; --pink: #FF6FB5; --blue: #4F8BFF;
-    --grad: linear-gradient(135deg, var(--violet), var(--pink));
-  }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; background: var(--ink); color: var(--text); font: 17px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  a { color: inherit; }
-  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 24px; }
-  nav { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
-  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; text-decoration: none; }
-  .orb { width: 30px; height: 30px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; box-shadow: 0 0 24px #8b7cff66; }
-  .bars { display: flex; gap: 2px; align-items: center; }
-  .bars i { display: block; width: 3px; border-radius: 2px; background: #fff; }
-  .hero { text-align: center; padding: 72px 0 40px; }
-  .island { margin: 0 auto 40px; width: min(440px, 100%); height: 46px; border-radius: 0 0 24px 24px; background: #000; display: flex; align-items: center; gap: 12px; padding: 0 18px; box-shadow: 0 18px 50px #000a, 0 0 0 1px #ffffff10; animation: grow 3.6s ease-in-out infinite; }
-  .island .wave { display: flex; gap: 3px; align-items: center; height: 20px; }
-  .island .wave i { width: 3px; border-radius: 2px; background: var(--grad); animation: wave 1s ease-in-out infinite; }
-  .island span { font-size: 13px; color: #cfcfe0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .chip { font-size: 11px; padding: 3px 9px; border-radius: 99px; background: #ffffff14; color: #d9d9ea; margin-left: auto; }
-  @keyframes wave { 0%,100% { height: 5px } 50% { height: 20px } }
-  @keyframes grow { 0%,100% { width: min(440px, 100%) } 50% { width: min(520px, 100%) } }
-  h1 { font-size: clamp(38px, 6vw, 66px); line-height: 1.05; letter-spacing: -0.03em; margin: 0 0 20px; }
-  h1 em { font-style: normal; background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
-  .lede { color: var(--muted); font-size: 20px; max-width: 640px; margin: 0 auto 34px; }
-  .cta { display: inline-flex; align-items: center; gap: 10px; padding: 16px 28px; border-radius: 16px; background: var(--grad); color: #fff; font-weight: 650; text-decoration: none; box-shadow: 0 10px 40px #ff6fb540; transition: transform .2s ease, box-shadow .2s ease; }
-  .cta:hover { transform: translateY(-2px); box-shadow: 0 16px 50px #ff6fb560; }
-  .small { color: var(--muted); font-size: 14px; margin-top: 14px; }
-  section { padding: 56px 0; }
-  h2 { font-size: 32px; letter-spacing: -0.02em; margin: 0 0 10px; }
-  .sub { color: var(--muted); margin: 0 0 28px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
-  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 22px; }
-  .card h3 { margin: 0 0 6px; font-size: 18px; }
-  .card p { margin: 0; color: var(--muted); font-size: 15px; }
-  .tag { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 99px; background: var(--surface-hi); color: #d6d6e8; margin-bottom: 10px; }
-  kbd { font: 600 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--surface-hi); border: 1px solid var(--line); border-bottom-width: 2px; padding: 2px 7px; border-radius: 7px; color: #fff; }
-  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-  .said, .got { border-radius: 20px; padding: 22px; font-size: 15px; }
-  .said { background: var(--surface); border: 1px solid var(--line); color: var(--muted); font-style: italic; }
-  .got { background: linear-gradient(var(--surface), var(--surface)) padding-box, var(--grad) border-box; border: 1px solid transparent; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.55; }
-  ol.steps { counter-reset: s; list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
-  ol.steps li { counter-increment: s; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px 16px 62px; position: relative; }
-  ol.steps li::before { content: counter(s); position: absolute; left: 18px; top: 14px; width: 30px; height: 30px; border-radius: 50%; background: var(--grad); display: grid; place-items: center; font-weight: 700; font-size: 14px; }
-  ol.steps b { color: #fff; }
-  details { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; margin-bottom: 10px; }
-  summary { cursor: pointer; font-weight: 600; }
-  details p { color: var(--muted); margin: 10px 0 0; }
-  footer { color: var(--muted); font-size: 14px; padding: 40px 0 60px; text-align: center; }
-  @media (max-width: 720px) { .compare { grid-template-columns: 1fr; } .hero { padding-top: 40px; } }
-  @media (prefers-reduced-motion: reduce) { .island, .island .wave i { animation: none; } }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <nav>
-    <a class="logo" href="#"><span class="orb"><span class="bars"><i style="height:6px"></i><i style="height:11px"></i><i style="height:15px"></i><i style="height:11px"></i><i style="height:6px"></i></span></span>PromptFlow</a>
-    <a href="#install" style="color:var(--muted);text-decoration:none;font-size:15px">Install guide</a>
-  </nav>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>PromptFlow — speak, and every AI gets your best prompt</title>
+    <meta
+      name="description"
+      content="PromptFlow turns what you say into clean writing anywhere on your Mac, and into expert prompts for ChatGPT, Claude, Gemini and Cursor."
+    />
+    <style>
+      :root {
+        --ink: #0b0b12;
+        --surface: #15151f;
+        --surface-hi: #1e1e2b;
+        --line: #26263a;
+        --text: #f4f4fa;
+        --muted: #9a9ab0;
+        --violet: #8b7cff;
+        --pink: #ff6fb5;
+        --blue: #4f8bff;
+        --grad: linear-gradient(135deg, var(--violet), var(--pink));
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html {
+        scroll-behavior: smooth;
+      }
+      body {
+        margin: 0;
+        background: var(--ink);
+        color: var(--text);
+        font:
+          17px/1.6 -apple-system,
+          BlinkMacSystemFont,
+          "SF Pro Text",
+          Inter,
+          system-ui,
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a {
+        color: inherit;
+      }
+      .wrap {
+        max-width: 1040px;
+        margin: 0 auto;
+        padding: 0 24px;
+      }
+      nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 22px 0;
+      }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-weight: 700;
+        font-size: 19px;
+        text-decoration: none;
+      }
+      .orb {
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--grad);
+        display: grid;
+        place-items: center;
+        box-shadow: 0 0 24px #8b7cff66;
+      }
+      .bars {
+        display: flex;
+        gap: 2px;
+        align-items: center;
+      }
+      .bars i {
+        display: block;
+        width: 3px;
+        border-radius: 2px;
+        background: #fff;
+      }
+      .hero {
+        text-align: center;
+        padding: 72px 0 40px;
+      }
+      .island {
+        margin: 0 auto 40px;
+        width: min(440px, 100%);
+        height: 46px;
+        border-radius: 0 0 24px 24px;
+        background: #000;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 18px;
+        box-shadow:
+          0 18px 50px #000a,
+          0 0 0 1px #ffffff10;
+        animation: grow 3.6s ease-in-out infinite;
+      }
+      .island .wave {
+        display: flex;
+        gap: 3px;
+        align-items: center;
+        height: 20px;
+      }
+      .island .wave i {
+        width: 3px;
+        border-radius: 2px;
+        background: var(--grad);
+        animation: wave 1s ease-in-out infinite;
+      }
+      .island span {
+        font-size: 13px;
+        color: #cfcfe0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .chip {
+        font-size: 11px;
+        padding: 3px 9px;
+        border-radius: 99px;
+        background: #ffffff14;
+        color: #d9d9ea;
+        margin-left: auto;
+      }
+      @keyframes wave {
+        0%,
+        100% {
+          height: 5px;
+        }
+        50% {
+          height: 20px;
+        }
+      }
+      @keyframes grow {
+        0%,
+        100% {
+          width: min(440px, 100%);
+        }
+        50% {
+          width: min(520px, 100%);
+        }
+      }
+      h1 {
+        font-size: clamp(38px, 6vw, 66px);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+        margin: 0 0 20px;
+      }
+      h1 em {
+        font-style: normal;
+        background: var(--grad);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .lede {
+        color: var(--muted);
+        font-size: 20px;
+        max-width: 640px;
+        margin: 0 auto 34px;
+      }
+      .cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        padding: 16px 28px;
+        border-radius: 16px;
+        background: var(--grad);
+        color: #fff;
+        font-weight: 650;
+        text-decoration: none;
+        box-shadow: 0 10px 40px #ff6fb540;
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+      }
+      .cta:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 16px 50px #ff6fb560;
+      }
+      .small {
+        color: var(--muted);
+        font-size: 14px;
+        margin-top: 14px;
+      }
+      section {
+        padding: 56px 0;
+      }
+      h2 {
+        font-size: 32px;
+        letter-spacing: -0.02em;
+        margin: 0 0 10px;
+      }
+      .sub {
+        color: var(--muted);
+        margin: 0 0 28px;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        padding: 22px;
+      }
+      .card h3 {
+        margin: 0 0 6px;
+        font-size: 18px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 10px;
+        border-radius: 99px;
+        background: var(--surface-hi);
+        color: #d6d6e8;
+        margin-bottom: 10px;
+      }
+      kbd {
+        font:
+          600 13px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        background: var(--surface-hi);
+        border: 1px solid var(--line);
+        border-bottom-width: 2px;
+        padding: 2px 7px;
+        border-radius: 7px;
+        color: #fff;
+      }
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+      }
+      .said,
+      .got {
+        border-radius: 20px;
+        padding: 22px;
+        font-size: 15px;
+      }
+      .said {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        color: var(--muted);
+        font-style: italic;
+      }
+      .got {
+        background:
+          linear-gradient(var(--surface), var(--surface)) padding-box,
+          var(--grad) border-box;
+        border: 1px solid transparent;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      ol.steps {
+        counter-reset: s;
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        display: grid;
+        gap: 12px;
+      }
+      ol.steps li {
+        counter-increment: s;
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px 16px 62px;
+        position: relative;
+      }
+      ol.steps li::before {
+        content: counter(s);
+        position: absolute;
+        left: 18px;
+        top: 14px;
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: var(--grad);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      ol.steps b {
+        color: #fff;
+      }
+      details {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 16px 18px;
+        margin-bottom: 10px;
+      }
+      summary {
+        cursor: pointer;
+        font-weight: 600;
+      }
+      details p {
+        color: var(--muted);
+        margin: 10px 0 0;
+      }
+      footer {
+        color: var(--muted);
+        font-size: 14px;
+        padding: 40px 0 60px;
+        text-align: center;
+      }
+      @media (max-width: 720px) {
+        .compare {
+          grid-template-columns: 1fr;
+        }
+        .hero {
+          padding-top: 40px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .island,
+        .island .wave i {
+          animation: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <nav>
+        <a class="logo" href="#"
+          ><span class="orb"
+            ><span class="bars"
+              ><i style="height: 6px"></i><i style="height: 11px"></i
+              ><i style="height: 15px"></i><i style="height: 11px"></i
+              ><i style="height: 6px"></i></span></span
+          >PromptFlow</a
+        >
+        <a
+          href="#install"
+          style="color: var(--muted); text-decoration: none; font-size: 15px"
+          >Install guide</a
+        >
+      </nav>
 
-  <header class="hero">
-    <div class="island" aria-hidden="true">
-      <div class="wave"><i style="animation-delay:0s"></i><i style="animation-delay:.12s"></i><i style="animation-delay:.24s"></i><i style="animation-delay:.36s"></i><i style="animation-delay:.48s"></i></div>
-      <span>Writing your prompt for Claude…</span>
-      <span class="chip">Prompt</span>
+      <header class="hero">
+        <div class="island" aria-hidden="true">
+          <div class="wave">
+            <i style="animation-delay: 0s"></i
+            ><i style="animation-delay: 0.12s"></i
+            ><i style="animation-delay: 0.24s"></i
+            ><i style="animation-delay: 0.36s"></i
+            ><i style="animation-delay: 0.48s"></i>
+          </div>
+          <span>Writing your prompt for Claude…</span>
+          <span class="chip">Prompt</span>
+        </div>
+        <h1>Speak once.<br /><em>Every AI gets your best prompt.</em></h1>
+        <p class="lede">
+          PromptFlow turns what you say into clean writing in any app on your
+          Mac, and into expert prompts for ChatGPT, Claude, Gemini and Cursor.
+          It knows your context, asks when something's missing, and checks the
+          AI's answer.
+        </p>
+        <a
+          class="cta"
+          id="download"
+          href="https://github.com/Akhil21232123/prompt-flow/releases/download/mac-latest/PromptFlow.dmg"
+          >Download for Mac (free beta)</a
+        >
+        <p class="small">
+          Apple silicon Macs (M1 or newer). Read the 2-minute
+          <a href="#install">install guide</a> first.
+        </p>
+      </header>
+
+      <section>
+        <h2>What you say vs. what the AI gets</h2>
+        <p class="sub">
+          Hold <kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>P</kbd> in ChatGPT or Claude
+          and just talk.
+        </p>
+        <div class="compare">
+          <div class="said">
+            "um so I need a python script that reads our sales csv and finds the
+            top five products by revenue and makes a chart, oh and skip rows
+            where price is missing"
+          </div>
+          <div class="got">
+            &lt;task&gt;Write a Python script that analyses a sales
+            CSV.&lt;/task&gt; &lt;requirements&gt; - Read the CSV of sales
+            records - Skip rows where price is missing - Compute revenue per
+            product; find the top 5 - Plot the top 5 as a bar chart
+            &lt;/requirements&gt; &lt;output&gt;One runnable script with brief
+            comments.&lt;/output&gt;
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Built to beat plain dictation</h2>
+        <p class="sub">
+          Everything Wispr-style dictation does, plus a layer between you and
+          every AI.
+        </p>
+        <div class="grid">
+          <div class="card">
+            <span class="tag">Dynamic Island</span>
+            <h3>Lives in your notch</h3>
+            <p>
+              A live pill at the top of the screen shows what it heard, what
+              it's writing, and what it remembered.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Prompt Engineer</span>
+            <h3>Written for the AI you're in</h3>
+            <p>
+              Claude, ChatGPT, Gemini, Perplexity, Cursor and image tools each
+              get a prompt in the format they work best with.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Ask-back</span>
+            <h3>Asks before guessing</h3>
+            <p>
+              If something important is missing ("Python or JavaScript?"), one
+              tap answers it and the prompt is complete.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Memory you own</span>
+            <h3>Every AI knows you</h3>
+            <p>
+              Your projects, tone and preferences travel into ChatGPT, Claude
+              and Gemini. See, edit or delete anything.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">"This"</span>
+            <h3>Talk about what's on screen</h3>
+            <p>
+              Say "explain this error" and the selected text or the window's
+              text comes with your prompt.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Autopilot</span>
+            <h3>Checks the AI's answer</h3>
+            <p>
+              Missed half your request? PromptFlow spots it and writes the
+              follow-up for you.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Styles</span>
+            <h3>Clean, formal or punchy</h3>
+            <p>
+              Dictate emails and messages in the style you pick: Clean, Formal,
+              Short &amp; punchy, Casual, Bullets or your own.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Indian languages</span>
+            <h3>Think in your language</h3>
+            <p>
+              Speak Hindi, Telugu, Tamil and more and get an English prompt, or
+              keep your language for messages.
+            </p>
+          </div>
+          <div class="card">
+            <span class="tag">Honest by design</span>
+            <h3>Never invents facts</h3>
+            <p>
+              A built-in check blocks any number, link or name you didn't say
+              from sneaking into your text.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Shortcuts</h2>
+        <div class="grid">
+          <div class="card">
+            <h3><kbd>⌥</kbd> <kbd>Space</kbd></h3>
+            <p>Dictate in your chosen style, in any app.</p>
+          </div>
+          <div class="card">
+            <h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>P</kbd></h3>
+            <p>Prompt Engineer: say it messy, get an expert prompt.</p>
+          </div>
+          <div class="card">
+            <h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>E</kbd></h3>
+            <p>Select text, then say how to change it.</p>
+          </div>
+          <div class="card">
+            <h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>T</kbd> and <kbd>C</kbd></h3>
+            <p>"This" with screen context, and Check the AI's answer.</p>
+          </div>
+        </div>
+      </section>
+
+      <section id="install">
+        <h2>Install in 2 minutes</h2>
+        <p class="sub">
+          The beta isn't signed by Apple yet, so macOS asks you to confirm once.
+        </p>
+        <ol class="steps">
+          <li>
+            <b>Download</b> PromptFlow.dmg with the button above and open it.
+          </li>
+          <li>
+            <b>Drag PromptFlow into Applications</b>, then open it from
+            Applications.
+          </li>
+          <li>
+            macOS says it can't verify the app. Click <b>Done</b>, then go to
+            <b>System Settings → Privacy &amp; Security</b>, scroll down and
+            click <b>Open Anyway</b>. Confirm with your password.
+          </li>
+          <li>
+            <b>Sign in</b> with your email. Enter the 6-digit code from the
+            email, or click its link.
+          </li>
+          <li>
+            Allow <b>Microphone</b> and <b>Accessibility</b> when asked.
+            Accessibility is what lets PromptFlow paste into other apps and hear
+            your shortcuts.
+          </li>
+          <li>
+            Open any app, press <kbd>⌥</kbd> <kbd>Space</kbd>, talk, and press
+            it again. Watch the island at the top of the screen.
+          </li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>Questions</h2>
+        <details>
+          <summary>Is it free?</summary>
+          <p>Yes, during the beta, with a fair-use limit per person per day.</p>
+        </details>
+        <details>
+          <summary>Where does my voice go?</summary>
+          <p>
+            Audio goes to our server to be transcribed and rewritten, then is
+            discarded. Your history and memory are tied to your account and you
+            can delete them, or your whole account, from Settings. Private mode
+            keeps everything on your Mac.
+          </p>
+        </details>
+        <details>
+          <summary>Why does macOS warn me when opening it?</summary>
+          <p>
+            Apps from outside the App Store need a paid Apple signature to skip
+            that step. We'll add it soon; until then, "Open Anyway" is the safe
+            one-time way through.
+          </p>
+        </details>
+        <details>
+          <summary>An update asked for permissions again</summary>
+          <p>
+            Beta builds have a new signature each time, so macOS can forget
+            Microphone and Accessibility. Re-allow them in System Settings →
+            Privacy &amp; Security; PromptFlow shows you where.
+          </p>
+        </details>
+        <details>
+          <summary>iPhone and Android?</summary>
+          <p>Both are built and coming next. Mac comes first.</p>
+        </details>
+      </section>
+
+      <footer>PromptFlow beta · Made in India</footer>
     </div>
-    <h1>Speak once.<br><em>Every AI gets your best prompt.</em></h1>
-    <p class="lede">PromptFlow turns what you say into clean writing in any app on your Mac, and into expert prompts for ChatGPT, Claude, Gemini and Cursor. It knows your context, asks when something's missing, and checks the AI's answer.</p>
-    <a class="cta" id="download" href="https://github.com/Akhil21232123/prompt-flow/releases/download/mac-latest/PromptFlow.dmg">Download for Mac (free beta)</a>
-    <p class="small">Apple silicon Macs (M1 or newer). Read the 2-minute <a href="#install">install guide</a> first.</p>
-  </header>
-
-  <section>
-    <h2>What you say vs. what the AI gets</h2>
-    <p class="sub">Hold <kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>P</kbd> in ChatGPT or Claude and just talk.</p>
-    <div class="compare">
-      <div class="said">"um so I need a python script that reads our sales csv and finds the top five products by revenue and makes a chart, oh and skip rows where price is missing"</div>
-      <div class="got">&lt;task&gt;Write a Python script that analyses a sales CSV.&lt;/task&gt;
-&lt;requirements&gt;
-- Read the CSV of sales records
-- Skip rows where price is missing
-- Compute revenue per product; find the top 5
-- Plot the top 5 as a bar chart
-&lt;/requirements&gt;
-&lt;output&gt;One runnable script with brief comments.&lt;/output&gt;</div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Built to beat plain dictation</h2>
-    <p class="sub">Everything Wispr-style dictation does, plus a layer between you and every AI.</p>
-    <div class="grid">
-      <div class="card"><span class="tag">Dynamic Island</span><h3>Lives in your notch</h3><p>A live pill at the top of the screen shows what it heard, what it's writing, and what it remembered.</p></div>
-      <div class="card"><span class="tag">Prompt Engineer</span><h3>Written for the AI you're in</h3><p>Claude, ChatGPT, Gemini, Perplexity, Cursor and image tools each get a prompt in the format they work best with.</p></div>
-      <div class="card"><span class="tag">Ask-back</span><h3>Asks before guessing</h3><p>If something important is missing ("Python or JavaScript?"), one tap answers it and the prompt is complete.</p></div>
-      <div class="card"><span class="tag">Memory you own</span><h3>Every AI knows you</h3><p>Your projects, tone and preferences travel into ChatGPT, Claude and Gemini. See, edit or delete anything.</p></div>
-      <div class="card"><span class="tag">"This"</span><h3>Talk about what's on screen</h3><p>Say "explain this error" and the selected text or the window's text comes with your prompt.</p></div>
-      <div class="card"><span class="tag">Autopilot</span><h3>Checks the AI's answer</h3><p>Missed half your request? PromptFlow spots it and writes the follow-up for you.</p></div>
-      <div class="card"><span class="tag">Styles</span><h3>Clean, formal or punchy</h3><p>Dictate emails and messages in the style you pick: Clean, Formal, Short &amp; punchy, Casual, Bullets or your own.</p></div>
-      <div class="card"><span class="tag">Indian languages</span><h3>Think in your language</h3><p>Speak Hindi, Telugu, Tamil and more and get an English prompt, or keep your language for messages.</p></div>
-      <div class="card"><span class="tag">Honest by design</span><h3>Never invents facts</h3><p>A built-in check blocks any number, link or name you didn't say from sneaking into your text.</p></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Shortcuts</h2>
-    <div class="grid">
-      <div class="card"><h3><kbd>⌥</kbd> <kbd>Space</kbd></h3><p>Dictate in your chosen style, in any app.</p></div>
-      <div class="card"><h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>P</kbd></h3><p>Prompt Engineer: say it messy, get an expert prompt.</p></div>
-      <div class="card"><h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>E</kbd></h3><p>Select text, then say how to change it.</p></div>
-      <div class="card"><h3><kbd>Ctrl</kbd> <kbd>⌥</kbd> <kbd>T</kbd> and <kbd>C</kbd></h3><p>"This" with screen context, and Check the AI's answer.</p></div>
-    </div>
-  </section>
-
-  <section id="install">
-    <h2>Install in 2 minutes</h2>
-    <p class="sub">The beta isn't signed by Apple yet, so macOS asks you to confirm once.</p>
-    <ol class="steps">
-      <li><b>Download</b> PromptFlow.dmg with the button above and open it.</li>
-      <li><b>Drag PromptFlow into Applications</b>, then open it from Applications.</li>
-      <li>macOS says it can't verify the app. Click <b>Done</b>, then go to <b>System Settings → Privacy &amp; Security</b>, scroll down and click <b>Open Anyway</b>. Confirm with your password.</li>
-      <li><b>Sign in</b> with your email. Enter the 6-digit code from the email, or click its link.</li>
-      <li>Allow <b>Microphone</b> and <b>Accessibility</b> when asked. Accessibility is what lets PromptFlow paste into other apps and hear your shortcuts.</li>
-      <li>Open any app, press <kbd>⌥</kbd> <kbd>Space</kbd>, talk, and press it again. Watch the island at the top of the screen.</li>
-    </ol>
-  </section>
-
-  <section>
-    <h2>Questions</h2>
-    <details><summary>Is it free?</summary><p>Yes, during the beta, with a fair-use limit per person per day.</p></details>
-    <details><summary>Where does my voice go?</summary><p>Audio goes to our server to be transcribed and rewritten, then is discarded. Your history and memory are tied to your account and you can delete them, or your whole account, from Settings. Private mode keeps everything on your Mac.</p></details>
-    <details><summary>Why does macOS warn me when opening it?</summary><p>Apps from outside the App Store need a paid Apple signature to skip that step. We'll add it soon; until then, "Open Anyway" is the safe one-time way through.</p></details>
-    <details><summary>An update asked for permissions again</summary><p>Beta builds have a new signature each time, so macOS can forget Microphone and Accessibility. Re-allow them in System Settings → Privacy &amp; Security; PromptFlow shows you where.</p></details>
-    <details><summary>iPhone and Android?</summary><p>Both are built and coming next. Mac comes first.</p></details>
-  </section>
-
-  <footer>PromptFlow beta · Made in India</footer>
-</div>
-</body>
+  </body>
 </html>

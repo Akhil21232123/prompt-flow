@@ -228,3 +228,12 @@ grant execute on function public.merge_settings(jsonb) to authenticated;
 
 -- Let the API see the new tables and functions right away.
 notify pgrst, 'reload schema';
+
+-- New projects don't grant API roles on new tables automatically; the
+-- service role (health checks, admin jobs) needs them explicitly.
+grant all on public.memories, public.clarifications, public.usage_daily,
+  public.user_settings, public.dictionary_words, public.snippets, public.dictations
+  to service_role;
+grant execute on function public.consume_usage(integer, integer), public.merge_settings(jsonb)
+  to service_role;
+notify pgrst, 'reload schema';
