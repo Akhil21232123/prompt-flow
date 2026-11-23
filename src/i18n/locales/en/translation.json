@@ -11,7 +11,7 @@
     "language": "Language",
     "autoLanguage": "Auto",
     "otherLanguages": "Other Languages",
-    "writeStyle": "Write Style",
+    "writeStyle": "Writing Style",
     "styleSmart": "Smart (fits the app)",
     "styleClean": "Clean",
     "styleFormal": "Formal",
@@ -1294,7 +1294,7 @@
     "subtitle": "How PromptFlow writes your words. Hold Fn and it writes for the app; ⌘Space keeps just your words.",
     "style": {
       "title": "Writing style",
-      "description": "Used by Write. It only cleans up your words: it never turns them into a prompt.",
+      "description": "How your words are written: by Fn outside AI apps, and by ⌘Space. Smart matches the app for Fn and keeps ⌘Space clean. A style never turns your words into a prompt.",
       "customLabel": "Your style",
       "customPlaceholder": "e.g. Friendly but brief, British spelling, no emoji",
       "options": {
@@ -1861,9 +1861,10 @@
     "youSaid": "You said",
     "pasteAgain": "Paste again",
     "mode": {
-      "dictate": "Write",
+      "dictate": "Words",
       "engineer": "Prompt",
-      "command": "Edit"
+      "command": "Edit",
+      "auto": "Smart"
     },
     "notSent": "Not sent",
     "notSentBody": "A {{seconds}} s recording that couldn't reach PromptFlow. Nothing is lost.",

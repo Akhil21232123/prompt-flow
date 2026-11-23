@@ -149,6 +149,14 @@ impl Gesture {
         }
     }
 
+    /// A double tap that can't record (macOS uses 🌐): ignore it until Fn
+    /// comes up, so the next tap doesn't count as "finish".
+    pub fn block_hands_free(&mut self) {
+        if matches!(self.state, State::HandsFree { .. }) {
+            self.state = State::Chord;
+        }
+    }
+
     pub fn on_fn_up(&mut self, now: Instant) -> Option<Action> {
         let state = std::mem::replace(&mut self.state, State::Idle);
         match state {
@@ -574,14 +582,7 @@ mod platform {
             }
             Action::Start => send(&app, true, ShortcutActivation::PushToTalk),
             Action::Stop => send(&app, false, ShortcutActivation::PushToTalk),
-            Action::StartHandsFree => {
-                // The first tap's check ran a moment ago.
-                if CONFLICT.load(Ordering::Relaxed) == 2 {
-                    show_conflict(&app, crate::island::IslandError::FnConflict);
-                    return;
-                }
-                send(&app, true, ShortcutActivation::Toggle)
-            }
+            Action::StartHandsFree => send(&app, true, ShortcutActivation::Toggle),
             Action::StopHandsFree => send(&app, true, ShortcutActivation::Toggle),
             Action::Cancel => {
                 let _ = app.run_on_main_thread({
@@ -655,7 +656,20 @@ mod platform {
                     // (Control+Fn+arrow) is a shortcut.
                     if fn_down && !was_down && enabled() && flags & OTHER_MODIFIERS == 0 {
                         let recording = recording();
-                        step(|g| g.on_fn_down(now, recording));
+                        step(|g| {
+                            let action = g.on_fn_down(now, recording);
+                            // The first tap's check ran a moment ago.
+                            if action == Some(Action::StartHandsFree)
+                                && CONFLICT.load(Ordering::Relaxed) == 2
+                            {
+                                g.block_hands_free();
+                                if let Some(app) = APP.get() {
+                                    show_conflict(app, crate::island::IslandError::FnConflict);
+                                }
+                                return None;
+                            }
+                            action
+                        });
                     } else if !fn_down && was_down {
                         step(|g| g.on_fn_up(now));
                     }
@@ -850,6 +864,26 @@ mod tests {
         g.on_blocked(gen);
         assert_eq!(g.on_timer(gen), None);
         assert_eq!(g.on_fn_up(ms(t, 900)), None);
+    }
+
+    #[test]
+    fn a_blocked_double_tap_never_records() {
+        let t = Instant::now();
+        let mut g = Gesture::default();
+        g.on_fn_down(t, false);
+        g.on_fn_up(ms(t, 90));
+        assert_eq!(
+            g.on_fn_down(ms(t, 250), false),
+            Some(Action::StartHandsFree)
+        );
+        g.block_hands_free();
+        assert!(!g.hands_free());
+        assert_eq!(g.on_fn_up(ms(t, 330)), None);
+        // The next press is a fresh one, not "finish".
+        assert!(matches!(
+            g.on_fn_down(ms(t, 900), false),
+            Some(Action::ScheduleStart { .. })
+        ));
     }
 
     #[test]

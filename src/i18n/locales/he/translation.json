@@ -11,7 +11,7 @@
     "language": "שפה",
     "autoLanguage": "אוטומטי",
     "otherLanguages": "שפות אחרות",
-    "writeStyle": "Write Style",
+    "writeStyle": "Writing Style",
     "styleSmart": "Smart (fits the app)",
     "styleClean": "Clean",
     "styleFormal": "Formal",
@@ -1861,9 +1861,10 @@
     "youSaid": "You said",
     "pasteAgain": "Paste again",
     "mode": {
-      "dictate": "Write",
+      "dictate": "Words",
       "engineer": "Prompt",
-      "command": "Edit"
+      "command": "Edit",
+      "auto": "Smart"
     },
     "notSent": "Not sent",
     "notSentBody": "A {{seconds}} s recording that couldn't reach PromptFlow. Nothing is lost.",

@@ -472,6 +472,7 @@ export const PostProcessingSettings: React.FC = () => {
           shortcutId="transcribe_with_post_process"
           descriptionMode="tooltip"
           grouped={true}
+          clearable
         />
       </SettingsGroup>
 
