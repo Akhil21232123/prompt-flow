@@ -280,45 +280,41 @@ export function playbookFor(t: AiTarget): PromptTarget | undefined {
   }
 }
 
-const XML_SECTIONS =
-  "Open with the task in plain sentences. Put supporting material in descriptive XML tags such as <context>, <requirements>, <constraints>, <output_format> and <success_criteria>, using only the sections this request needs.";
-const MARKDOWN_SECTIONS =
-  "Open with the task in one or two plain sentences. Then use short Markdown sections with ### headings and bullets, such as Context, Requirements, Output format and Done when, using only the sections this request needs.";
-
 const ASPECT_WORDS =
   /\b(landscape|portrait|square|wide|widescreen|vertical|horizontal|tall|panoramic|banner|thumbnail|wallpaper)\b/i;
 
-/** How to write the prompt for this AI; replaces the generic format rule. */
-export function formatFor(t: AiTarget): string {
+const IMAGE_PROSE =
+  "Put the whole prompt in prose as one dense visual description, with no preamble: subject first, then setting, style or medium, lighting, colour palette, composition and camera angle, and mood. Put any text that must appear in the image in quotes.";
+
+/**
+ * What the prompt's content should look like for this AI. Layout is the
+ * server's job (see structured.ts); this only steers what goes in the fields.
+ */
+export function contentFor(t: AiTarget | undefined): string {
+  if (!t) return "";
   switch (t.id) {
     case "claude":
-      return `This prompt is for Claude. ${XML_SECTIONS} Claude follows instructions precisely, so state exactly what is wanted, and say why where it helps.`;
+      return "This prompt is for Claude, which follows instructions precisely: state exactly what is wanted, and say why where it helps.";
     case "perplexity":
-      return "This prompt is for Perplexity, an answer engine that searches the web. Write one focused, search-style question first: the exact thing to find out. Then add at most a few short plain lines on scope (time range, region, domain) and the kind of sources wanted, and ask for the most recent information available, with dates and cited sources. No headings, no XML, no role-play.";
-    case "claude_code":
-      return `This prompt is for Claude Code, a coding agent in the terminal. ${XML_SECTIONS} Cover the goal, the context (files, functions, commands and errors mentioned), constraints, and acceptance criteria the agent can check before it finishes.`;
-    case "cursor":
-    case "windsurf":
-    case "vscode":
-    case "codex":
-    case "gemini_cli":
-      return `This prompt is for ${t.name}'s coding agent. Use short Markdown sections with ### headings: Goal, Context (the files, functions, stack and errors mentioned), Constraints, and Acceptance criteria the agent can check before it finishes. Use only the sections the request needs; a small fix can be a few lines.`;
+      return "This prompt is for Perplexity, an answer engine that searches the web. Make task one focused, search-style question: the exact thing to find out. Use requirements for scope (time range, region, domain), the kind of sources wanted, and asking for the most recent information with dates and cited sources. Keep them few and short.";
     case "midjourney":
-      return 'This prompt is for Midjourney. Write one dense visual description, with no headings, markup or preamble: subject first, then setting, style or medium, lighting, colour palette, composition and camera angle, and mood, as descriptive comma-separated phrases. Only when the speaker gave a shape or ratio, end with an aspect ratio flag (landscape or wide → --ar 16:9, portrait or vertical → --ar 9:16, square → --ar 1:1, or the ratio they said). Add "--no" followed by things they said to leave out. Add no other flags.';
+      return `This prompt is for Midjourney. ${IMAGE_PROSE} Use descriptive comma-separated phrases. Only when the speaker gave a shape or ratio, end with an aspect ratio flag (landscape or wide → --ar 16:9, portrait or vertical → --ar 9:16, square → --ar 1:1, or the ratio they said). Add "--no" followed by things they said to leave out. Add no other flags.`;
     case "ideogram":
-      return "This prompt is for Ideogram. Write one dense visual description in plain sentences, with no headings or markup: subject, setting, style or medium, lighting, colour palette, composition and mood. Put any words that must appear in the image in double quotes and say where they go; Ideogram renders text well.";
+      return `This prompt is for Ideogram. ${IMAGE_PROSE} Say where any quoted words go; Ideogram renders text well.`;
     case "suno":
-      return "This prompt is for Suno, a music generator. First line: a compact style description as comma-separated tags (genre and sub-genre, mood, tempo feel, instrumentation, vocal type). Then, only if the speaker gave lyrics or a theme for them, lay out the song with [Verse], [Chorus] and [Bridge] tags, using their words. No BPM, key or durations unless the speaker said them.";
+      return "This prompt is for Suno, a music generator. In prose, first a compact style description as comma-separated tags (genre and sub-genre, mood, tempo feel, instrumentation, vocal type); then, only if the speaker gave lyrics or a theme for them, the song laid out with [Verse], [Chorus] and [Bridge] tags, using their words. No BPM, key or durations unless the speaker said them.";
   }
   switch (t.family) {
-    case "image":
-      return `This prompt is for ${t.name}, an image generator. Write one dense visual description in plain prose, with no headings, markup or preamble: subject first, then setting, style or medium, lighting, colour palette, composition and camera angle, and mood. Put any text that must appear in the image in quotes. Mention the shape (landscape, portrait, square) only if the speaker gave one.`;
+    case "coding":
+      return `This prompt is for ${t.name}'s coding agent. task is the goal; context holds the files, functions, stack and errors mentioned; requirements are the constraints; acceptance_criteria are checks the agent can make before it finishes. A small fix needs only a few short items.`;
     case "app_builder":
-      return `This prompt is for ${t.name}, an AI app builder. Open with what the app or page is and who it is for. Then use short Markdown sections with ### headings: Pages and components, Key interactions, Data, Look and feel, and Done when, using only the sections the request needs.`;
+      return `This prompt is for ${t.name}, an AI app builder. task says what the app or page is and who it is for; requirements cover pages, components, key interactions, data and look and feel; acceptance_criteria say when it's done.`;
+    case "image":
+      return `This prompt is for ${t.name}, an image generator. ${IMAGE_PROSE} Mention the shape (landscape, portrait, square) only if the speaker gave one.`;
     case "music":
-      return `This prompt is for ${t.name}, a music generator. Describe the genre, mood, instrumentation, vocals and song structure in a few compact lines.`;
+      return `This prompt is for ${t.name}, a music generator. In prose, describe the genre, mood, instrumentation, vocals and song structure in a few compact lines.`;
     default:
-      return `This prompt is for ${t.name}. ${MARKDOWN_SECTIONS}`;
+      return `This prompt is for ${t.name}.`;
   }
 }
 

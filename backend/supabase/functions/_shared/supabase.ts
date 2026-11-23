@@ -59,6 +59,10 @@ export interface Db {
   takeClarification(id: string): Promise<ClarificationRow | undefined>;
   /** Deletes the auth user; every row of theirs goes with it (cascade). */
   deleteAccount(): Promise<void>;
+  /** created_at of this user's feedback in the last hour (oldest first). */
+  recentFeedback(): Promise<string[]>;
+  /** Stores a 👍/👎; false when it couldn't be stored. */
+  saveFeedback(row: Record<string, unknown>): Promise<boolean>;
 }
 
 const UUID_RE =
@@ -351,6 +355,29 @@ export function database(
         options: Array.isArray(row.options) ? row.options : [],
         meta: row.meta && typeof row.meta === "object" ? row.meta : {},
       };
+    },
+    async recentFeedback() {
+      const since = new Date(Date.now() - 3_600_000).toISOString();
+      const res = await soft(
+        "feedback read",
+        `feedback?select=created_at&created_at=gt.${since}&order=created_at.asc&limit=100`,
+        { method: "GET" },
+      );
+      if (!res) return [];
+      const rows = (await res.json().catch(() => [])) as Array<{
+        created_at?: string;
+      }>;
+      return Array.isArray(rows)
+        ? rows.map((r) => r.created_at ?? "").filter(Boolean)
+        : [];
+    },
+    async saveFeedback(row) {
+      const res = await soft("feedback save", "feedback", {
+        method: "POST",
+        headers: { prefer: "return=minimal" },
+        body: JSON.stringify({ user_id: session.userId, ...row }),
+      });
+      return res !== undefined;
     },
     async deleteAccount() {
       const admin = adminHeaders(env);

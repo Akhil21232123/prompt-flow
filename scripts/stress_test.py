@@ -260,11 +260,11 @@ def v2_checks(token, check):
     ramble = speak(RAMBLE)
     r = dictate(token, ramble, "engineer", app=CLAUDE, ask_back=False)
     t = r.get("text", "")
-    check("target: Claude gets XML-tagged sections", r.get("target") == "claude" and r.get("label") == "Prompt · for Claude" and re.search(r"<[a-z_]+>", t) is not None,
+    check("target: Claude gets XML-tagged sections", r.get("target") == "claude" and r.get("label") == "Prompt · for Claude" and t.lstrip().startswith("<task>") and all(x in t for x in ("<context>", "<requirements>", "<output_format>")),
           f"label={r.get('label')!r} :: {t[:120]!r}")
     r = dictate(token, ramble, "engineer", app=CHATGPT, ask_back=False)
     t = r.get("text", "")
-    check("target: ChatGPT gets Markdown, not XML", r.get("target") == "chatgpt" and re.search(r"^#{1,4} |\*\*", t, re.M) is not None and re.search(r"<[a-z_]+>", t) is None,
+    check("target: ChatGPT gets Markdown, not XML", r.get("target") == "chatgpt" and "### Task" in t and re.search(r"<[a-z_]+>", t) is None,
           f"label={r.get('label')!r} :: {t[:120]!r}")
 
     # Indian languages: speech in Hindi / Telugu becomes an English prompt.

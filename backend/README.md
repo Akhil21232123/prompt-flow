@@ -10,6 +10,7 @@ four edge functions the iPhone, Android and Mac apps call.
 | `POST /rewrite`        | The same rewrite step for text you already have                                                                                                                                                  |
 | `POST /check`          | Autopilot: checks an AI's answer against what you asked and writes a follow-up when it missed something                                                                                          |
 | `POST /learn`          | Takes your edit of a result and adds any corrected names or terms to your dictionary                                                                                                             |
+| `POST /feedback`       | A 👍/👎 (and optional note) on a result; capped at 30 an hour per user                                                                                                                           |
 | `GET /usage`           | Today's request count and the daily limit                                                                                                                                                        |
 | `POST /delete_account` | Deletes the account and every row that belongs to it                                                                                                                                             |
 | `GET /health`          | Shows which providers and v2 features are set up (and whether the v2 migration has run). It never shows the keys                                                                                 |
@@ -32,6 +33,11 @@ smart one handles Prompt Engineer and `/check`.
   `memory_enabled` setting is false.
 - **Ask-back** (`public.clarifications`): a vague Prompt Engineer request
   (6+ words) may get one question, answerable for 10 minutes and only once.
+- **Prompt layout is the server's job**: Prompt Engineer's model returns the
+  prompt's parts as JSON (task, context, requirements, output format,
+  acceptance criteria, examples, or one `prose` description for image and
+  music prompts) and `_shared/structured.ts` lays them out per AI, so the
+  format never depends on the model following instructions.
 - **AI-specific prompts**: `_shared/targets.ts` spots Claude, ChatGPT,
   Gemini, Perplexity, Copilot, DeepSeek, Grok, Cursor, Windsurf, VS Code,
   Claude Code, Codex, v0, Lovable, Bolt, Midjourney, DALL·E, Ideogram,
@@ -45,6 +51,21 @@ smart one handles Prompt Engineer and `/check`.
 - **Emails**: `supabase/templates/` has the branded magic-link and signup
   emails, each showing the link and the 6-digit code. Paste them into
   Authentication → Emails once custom SMTP is set up.
+
+## Beta monitoring
+
+`20261123120000_v2_1.sql` adds the `feedback` table and two views only the
+service role can read (open them in the SQL editor):
+
+- `beta_stats_daily`: per UTC day, active users, dictations by mode, how
+  often Prompt Engineer fell back to the user's words, average and p90
+  latency, and 👍/👎 counts.
+- `beta_feedback_recent`: the latest 200 feedback rows with what was said,
+  what was pasted and the label.
+
+`scripts/quality_eval.py` (the manual "quality eval" workflow) runs about 25
+realistic requests against every kind of AI, prints every prompt in full and
+checks layout, facts, fallbacks and latency.
 
 If the v2 migration hasn't been run yet, these features switch themselves
 off (no memory, no questions, no limits) instead of failing requests.

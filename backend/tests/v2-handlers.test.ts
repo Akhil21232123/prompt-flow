@@ -17,6 +17,8 @@ import { DEFAULT_SETTINGS } from "../supabase/functions/_shared/types.ts";
 import {
   type Call,
   dictateRequest,
+  draft,
+  review,
   fakeCtx,
   fakeDb,
   jsonRequest,
@@ -47,10 +49,11 @@ describe("dictate: finished response", () => {
       transcript: "write a readme for my backend project please",
       sttLanguage: "english",
       replies: {
-        architect:
-          "<prompt>Write a README for my backend, which uses Supabase.</prompt>",
-        critic:
-          "<score>10</score><prompt>Write a README for my backend, which uses Supabase.</prompt>",
+        architect: draft("Write a README for my backend, which uses Supabase."),
+        critic: review(
+          10,
+          "Write a README for my backend, which uses Supabase.",
+        ),
       },
     });
     const res = await handleDictate(
@@ -61,7 +64,9 @@ describe("dictate: finished response", () => {
     expect(res.status).toBe(200);
     expect(body).toMatchObject({
       raw: "write a readme for my backend project please",
-      text: "Write a README for my backend, which uses Supabase.",
+      text: expect.stringContaining(
+        "<task>\nWrite a README for my backend, which uses Supabase.\n</task>",
+      ),
       mode: "engineer",
       category: "ai_chat",
       label: "Prompt · for Claude",
@@ -87,13 +92,67 @@ describe("dictate: finished response", () => {
     expect(db.usageCalls).toEqual([{ perMinute: 20, perDay: 300 }]);
   });
 
-  test("ChatGPT gets Markdown headings, Claude gets XML", async () => {
-    for (const [app, expected] of [
-      [CHATGPT, "### headings"],
-      [CLAUDE, "XML tags"],
-    ] as const) {
-      const { ctx, calls } = fakeCtx({
+  test("the server lays the same parts out per AI", async () => {
+    const parts = {
+      context: "I run Postgres for a SaaS app.",
+      requirements: ["1. Cover token buckets", "- Mention pg_cron"],
+      output_format: "A short explanation with one example.",
+    };
+    const apps: Array<[Record<string, string>, (t: string) => void]> = [
+      [
+        CLAUDE,
+        (t) =>
+          expect(t).toBe(
+            "<task>\nExplain how rate limits work in Postgres.\n</task>\n<context>\nI run Postgres for a SaaS app.\n</context>\n<requirements>\n- Cover token buckets\n- Mention pg_cron\n</requirements>\n<output_format>\nA short explanation with one example.\n</output_format>",
+          ),
+      ],
+      [
+        CHATGPT,
+        (t) =>
+          expect(t).toBe(
+            "### Task\nExplain how rate limits work in Postgres.\n\n### Context\nI run Postgres for a SaaS app.\n\n### Requirements\n- Cover token buckets\n- Mention pg_cron\n\n### Output format\nA short explanation with one example.",
+          ),
+      ],
+      [
+        {
+          name: "Web App",
+          bundle_id:
+            "com.apple.Safari.WebApp.1F2E3D4C-0000-4000-8000-000000000001",
+          title: "Gemini",
+        },
+        (t) => expect(t.startsWith("### Task\n")).toBe(true),
+      ],
+      [
+        { name: "Perplexity", bundle_id: "ai.perplexity.mac" },
+        (t) =>
+          expect(t).toBe(
+            "Explain how rate limits work in Postgres.\n\nInclude:\n- Cover token buckets\n- Mention pg_cron\n- A short explanation with one example.",
+          ),
+      ],
+      [
+        { name: "Cursor", bundle_id: "com.todesktop.230313mzl4w4u92" },
+        (t) => {
+          expect(t).toContain(
+            "### Goal\nExplain how rate limits work in Postgres.",
+          );
+          expect(t).toContain("### Constraints\n- Cover token buckets");
+          expect(t).toContain(
+            "### Acceptance criteria\n- A short explanation with one example.",
+          );
+        },
+      ],
+    ];
+    for (const [app, check] of apps) {
+      const { ctx } = fakeCtx({
         transcript: "explain how rate limits work in postgres",
+        replies: {
+          architect: draft("Explain how rate limits work in Postgres.", parts),
+          critic: review(
+            10,
+            "Explain how rate limits work in Postgres.",
+            parts,
+          ),
+        },
       });
       const body = await (
         await handleDictate(
@@ -101,10 +160,7 @@ describe("dictate: finished response", () => {
           ctx,
         )
       ).json();
-      expect(body.label).toBe(`Prompt · for ${app.name}`);
-      expect(calls.find((c) => c.kind === "architect")!.system).toContain(
-        expected,
-      );
+      check(body.text);
     }
   });
 
@@ -164,10 +220,8 @@ describe("dictate: languages", () => {
       transcript: "मेरे लिए पांच उत्पादों की सूची बनाने वाली स्क्रिप्ट लिखो",
       sttLanguage: "hindi",
       replies: {
-        architect:
-          "<prompt>Write a script that lists my top 5 products.</prompt>",
-        critic:
-          "<score>10</score><prompt>Write a script that lists my top 5 products.</prompt>",
+        architect: draft("Write a script that lists my top 5 products."),
+        critic: review(10, "Write a script that lists my top 5 products."),
       },
     });
     const body = await (
@@ -182,7 +236,7 @@ describe("dictate: languages", () => {
       )
     ).json();
     expect(body.language).toBe("hi");
-    expect(body.text).toBe("Write a script that lists my top 5 products.");
+    expect(body.text).toContain("Write a script that lists my top 5 products.");
     expect(body.guarded).toEqual([]);
     const sys = calls.find((c) => c.kind === "architect")!.system;
     expect(sys).toContain("write the finished prompt in English");
@@ -268,10 +322,8 @@ describe("dictate: ask-back", () => {
       transcript: VAGUE,
       replies: {
         ask: ASK,
-        architect:
-          "<prompt>Write a Python script that renames all my files.</prompt>",
-        critic:
-          "<score>10</score><prompt>Write a Python script that renames all my files.</prompt>",
+        architect: draft("Write a Python script that renames all my files."),
+        critic: review(10, "Write a Python script that renames all my files."),
       },
     });
     const first = await (
@@ -292,7 +344,9 @@ describe("dictate: ask-back", () => {
     expect(res.status).toBe(200);
     expect(body).toMatchObject({
       raw: VAGUE,
-      text: "Write a Python script that renames all my files.",
+      text: expect.stringContaining(
+        "<task>\nWrite a Python script that renames all my files.\n</task>",
+      ),
       mode: "engineer",
       target: "claude",
       label: "Prompt · for Claude",
@@ -333,7 +387,7 @@ describe("dictate: ask-back", () => {
         ctx,
       )
     ).json();
-    expect(body.text).toBe("Write the script.");
+    expect(body.text).toContain("Write the script.");
     expect(architectInputs(calls)[0]).not.toContain("<clarification>");
   });
 
@@ -352,7 +406,7 @@ describe("dictate: ask-back", () => {
         ctx,
       )
     ).json();
-    expect(body.text).toBe("Write the script.");
+    expect(body.text).toContain("Write the script.");
     expect(architectInputs(calls).at(-1)).toContain(
       "The user answered: bash please",
     );
@@ -418,7 +472,7 @@ describe("dictate: ask-back", () => {
           await handleDictate(dictateRequest({ mode: "engineer" }), broken.ctx)
         ).json()
       ).text,
-    ).toBe("Write the script.");
+    ).toContain("Write the script.");
     const noTable = fakeCtx({
       db: fakeDb({ noClarifications: true }),
       transcript: VAGUE,
@@ -430,7 +484,7 @@ describe("dictate: ask-back", () => {
           await handleDictate(dictateRequest({ mode: "engineer" }), noTable.ctx)
         ).json()
       ).text,
-    ).toBe("Write the script.");
+    ).toContain("Write the script.");
   });
 
   test("audio is required unless answering", async () => {
@@ -457,8 +511,11 @@ describe("dictate: this, memory learning, limits", () => {
     const { ctx, calls } = fakeCtx({
       transcript: "explain this error and how to fix it",
       replies: {
-        architect: `<prompt>Explain this error: "${screen}" and how to fix it.</prompt>`,
-        critic: `<score>10</score><prompt>Explain this error: "${screen}" and how to fix it.</prompt>`,
+        architect: draft("Explain the error below and how to fix it."),
+        critic: review(
+          10,
+          "Explain the error below and how to fix it. It mentions port 5432.",
+        ),
       },
     });
     const body = await (
@@ -573,8 +630,8 @@ describe("rewrite", () => {
   test("returns response 1 with memory, screen and target", async () => {
     const { ctx, calls, settle, db } = fakeCtx({
       replies: {
-        architect: "<prompt>Summarise this for me.</prompt>",
-        critic: "<score>10</score><prompt>Summarise this for me.</prompt>",
+        architect: draft("Summarise this for me."),
+        critic: review(10, "Summarise this for me."),
       },
     });
     const body = await (
@@ -590,7 +647,7 @@ describe("rewrite", () => {
     ).json();
     expect(body).toMatchObject({
       raw: "summarise this for me in plain words",
-      text: "Summarise this for me.",
+      text: expect.stringContaining("### Task\nSummarise this for me."),
       target: "gemini",
       label: "Prompt · for Gemini",
       memory_used: [],
@@ -937,8 +994,8 @@ describe("pipeline v2", () => {
 
   test("a number from memory is not an invention", async () => {
     const replies = [
-      "<prompt>Plan my 3 product launches.</prompt>",
-      "<score>10</score><prompt>Plan my 3 product launches.</prompt>",
+      draft("Plan my 3 product launches."),
+      review(10, "Plan my 3 product launches."),
     ];
     const out = await rewrite(
       {
@@ -955,7 +1012,7 @@ describe("pipeline v2", () => {
       },
     );
     expect(out.guarded).toBeUndefined();
-    expect(out.text).toBe("Plan my 3 product launches.");
+    expect(out.text).toContain("Plan my 3 product launches.");
     expect(out.memory_used).toEqual([
       { id: "m1", content: "Has 3 product launches planned for 2027" },
     ]);
@@ -964,9 +1021,13 @@ describe("pipeline v2", () => {
   test("Midjourney: --ar 16:9 passes when a shape was said, is blocked otherwise", async () => {
     const run = (text: string) => {
       const replies = [
-        "<prompt>Jaipur at dusk, warm light --ar 16:9</prompt>",
-        "<score>10</score><prompt>Jaipur at dusk, warm light --ar 16:9</prompt>",
-        "<score>10</score><prompt>Jaipur at dusk, warm light</prompt>",
+        draft(
+          "",
+          { prose: "Jaipur at dusk, warm light --ar 16:9" },
+          "image_generation",
+        ),
+        review(10, "", { prose: "Jaipur at dusk, warm light --ar 16:9" }),
+        review(10, "", { prose: "Jaipur at dusk, warm light" }),
       ];
       return rewrite(
         {

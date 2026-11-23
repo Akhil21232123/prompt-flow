@@ -359,9 +359,53 @@ export function spokenNumbers(rawText: string): Set<string> {
   return out;
 }
 
-/** List markers ("1.", "2)") at line starts are formatting, not facts. */
-function stripListMarkers(text: string): string {
-  return text.replace(/^(\s*)\d+[.)](?=\s)/gm, "$1");
+const small = (n: string) => Number(n) >= 1 && Number(n) <= 10;
+
+// Words that make a small number a label for a part of the answer, not a fact.
+const STRUCTURE_WORDS =
+  "step|steps|section|sections|part|parts|phase|phases|stage|stages|option|options|item|items|point|points|question|questions|task|tasks|example|examples|tip|tips|rule|rules|idea|ideas|approach|approaches|bullet|bullets|paragraph|paragraphs|heading|headings|draft|drafts|version|variant|variants|alternative|alternatives|reason|reasons|priority|scenario|scenarios|method|methods|solution|solutions|takeaway|takeaways";
+
+/**
+ * Small numbers (1–10) used to enumerate or structure the output are
+ * formatting, not facts: list markers anywhere on a line ("1.", "2)", "(3)",
+ * "#4", "**5.**", "[6]"), headings ("### 1. Overview") and labels such as
+ * "Step 1" or "Section 6". Larger numbers always count.
+ */
+export function stripEnumerators(text: string): string {
+  let out = text
+    // "1." / "2)" at a line start, after a heading mark or bullet
+    .replace(
+      /^(\s*(?:#{1,6}\s*|[-*•]\s+)?)\(?(\d{1,2})[.):](?=\s|\*|$)/gm,
+      (m, pre, n) => (small(n) ? pre : m),
+    )
+    // "(1)", "[2]", "#3", "**4.**", "**5**"
+    .replace(
+      /\((\d{1,2})\)|\[(\d{1,2})\]|(?<![\w&])#(\d{1,2})\b|\*\*(\d{1,2})[.)]?\*\*/g,
+      (m, a, b, c, d) => (small(a ?? b ?? c ?? d) ? " " : m),
+    )
+    // "Step 1", "Section 6", "option 2:"
+    .replace(
+      new RegExp(`\\b(${STRUCTURE_WORDS})\\s+(\\d{1,2})\\b`, "gi"),
+      (m, word, n) => (small(n) ? word : m),
+    )
+    // "Step one" is already words; also "1st", "2nd" as ordinals of parts
+    .replace(/\b(\d{1,2})(?:st|nd|rd|th)\b/gi, (m, n) => (small(n) ? " " : m));
+  // Mid-line markers ("two sections: 1. Brief answer 2. Detail"): after a
+  // colon, semicolon or bracket, before emphasis, or as a run starting at 1.
+  const midline = /(^|[\s:;(])(\d{1,2})[.)](?=\s)/g;
+  const values = new Set<number>();
+  for (const m of out.matchAll(midline)) values.add(Number(m[2]));
+  const run = values.has(1) && values.has(2);
+  out = out.replace(midline, (m, pre, n, offset: number, whole: string) => {
+    if (!small(n)) return m;
+    const before = whole.slice(0, offset + pre.length).trimEnd();
+    if (run || /[:;(]$/.test(before)) return pre;
+    return m;
+  });
+  out = out.replace(/(\d{1,2})[.)](?=\s*[*_`])/g, (m, n) =>
+    small(n) ? " " : m,
+  );
+  return out;
 }
 
 export interface Facts {
@@ -379,7 +423,7 @@ const FILE_RE =
   /\b[\w-]+\.(?:ts|tsx|js|jsx|py|rs|go|java|kt|swift|rb|php|css|html|json|yaml|yml|toml|md|sql|sh|c|cpp|h)\b/gi;
 
 export function extractFacts(text: string): Facts {
-  const body = stripListMarkers(text);
+  const body = stripEnumerators(text);
   const emails = [...body.matchAll(EMAIL_RE)].map((m) => m[0].toLowerCase());
   const urls = [...body.matchAll(URL_RE)].map((m) =>
     m[0].replace(/[.,;:!?]+$/, "").toLowerCase(),

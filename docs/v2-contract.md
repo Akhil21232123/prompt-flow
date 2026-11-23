@@ -71,6 +71,7 @@ Responses (HTTP 200):
 ```jsonc
 // 1. Finished text: paste it.
 {
+  "id": "uuid",                             // the stored history row, for /feedback; absent when history is off
   "raw": "what you said",
   "text": "what to paste",
   "mode": "engineer",
@@ -102,6 +103,13 @@ true, only when the request is missing something that would clearly change the
 answer (language, audience, format, scope), at most one question per request,
 and never for requests under 6 words. Answering (by tapping an option, by
 voice, or by skipping) returns response 1.
+
+Labels are short and plain, for the Mac island: "Prompt · for Claude",
+"Prompt" (no known AI), "Cleaned up · formal", "Style · Formal", and "Kept
+your words: couldn't verify a detail" / "Kept your words: couldn't write the
+prompt" when Prompt Engineer fell back to the speaker's own words. Plain
+`dictate` mode never turns into a prompt unless the user switched on
+`engineer.auto_in_ai_apps` (default false).
 
 Errors: HTTP 4xx/5xx with `{"error": "message for the user", "code": "auth" | "bad_request" | "provider" | "rate_limited" | "quota"}`.
 `rate_limited` and `quota` include `"retry_after_sec"`.
@@ -164,6 +172,25 @@ memory are allowed in prompts. `memory_used` lists what was used.
 
 - `GET /functions/v1/usage` → `{ "today": 37, "daily_limit": 300, "plan": "beta" }`
 - `POST /functions/v1/delete_account` → deletes the user and all their rows.
+
+## POST /functions/v1/feedback
+
+A 👍/👎 on a result. Not counted in the limits; at most 30 per user per hour
+(`rate_limited` with `retry_after_sec` past that).
+
+```jsonc
+// request
+{
+  "dictation_id": "uuid",          // optional: the `id` from response 1
+  "rating": "up" | "down",
+  "note": "…",                     // optional, ≤ 1000 chars (longer is cut)
+  "app": { "name": "Claude" },     // optional (or just a name string)
+  "mode": "engineer",              // optional
+  "label": "Prompt · for Claude"   // optional
+}
+// response
+{ "ok": true }
+```
 
 ## Limits (beta)
 

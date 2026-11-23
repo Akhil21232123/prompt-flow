@@ -6,6 +6,12 @@ import { describeApp, supportsFileTags } from "./categories.ts";
 import { languageName } from "./languages.ts";
 import { memoryBlock } from "./memory.ts";
 import * as T from "./prompt_texts.ts";
+import {
+  layoutNote,
+  PROMPT_JSON_SPEC,
+  REVIEW_JSON_SPEC,
+  withJsonReply,
+} from "./structured.ts";
 import { MUSIC_PLAYBOOK } from "./targets.ts";
 import type {
   AppCategory,
@@ -15,7 +21,6 @@ import type {
   ScreenContext,
   EngineerSettings,
   MissingInfoPolicy,
-  PromptFormat,
   PromptTarget,
   StylePreset,
   WritingStyle,
@@ -147,14 +152,6 @@ const MISSING_INFO: Record<MissingInfoPolicy, string> = {
     "where something important was not said, tell the AI to ask the user specific clarifying questions before starting. Do not fill gaps yourself.",
 };
 
-const FORMAT_TEXT: Record<Exclude<PromptFormat, "auto">, string> = {
-  xml: "Open with the task in plain sentences. Put supporting material in descriptive XML tags such as <context>, <requirements>, <constraints>, <output_format> and <success_criteria>, using only the sections this request needs. For image_generation, ignore this and write plain prose.",
-  markdown:
-    "Open with the task in plain sentences. Then use short Markdown sections (bold labels or ### headings, with bullets) such as Context, Requirements, Output and Done when, using only the sections this request needs. For image_generation, ignore this and write plain prose.",
-  plain:
-    "Plain prose paragraphs and simple numbered lists; no Markdown or XML.",
-};
-
 const CATEGORY_LABEL: Record<AppCategory, string> = {
   email: "email app",
   work_chat: "work chat",
@@ -171,28 +168,6 @@ const CATEGORY_LABEL: Record<AppCategory, string> = {
 const NO_NEW_NUMBERS =
   "\nNever add numbers, percentages, targets, deadlines, lengths or quantities the speaker did not say. If the task needs one, tell the AI to choose or ask.\n";
 
-export function resolveFormat(
-  setting: PromptFormat,
-  app: AppContext | undefined,
-  category: AppCategory,
-): Exclude<PromptFormat, "auto"> {
-  if (setting !== "auto") return setting;
-  const hay =
-    `${app?.name ?? ""} ${app?.bundle_id ?? ""} ${app?.title ?? ""}`.toLowerCase();
-  if (
-    hay.includes("claude") ||
-    hay.includes("anthropic") ||
-    category === "code" ||
-    category === "terminal"
-  ) {
-    return "xml";
-  }
-  return "markdown";
-}
-
-/** How the engineered prompt is laid out: a generic format or one AI's own. */
-export type FormatChoice = Exclude<PromptFormat, "auto"> | { text: string };
-
 export interface EngineerExtras {
   /** Set when the prompt must be English although the speaker used another language. */
   translateFrom?: string;
@@ -203,16 +178,15 @@ const TRUSTED_NOTE =
 
 function fill(
   template: string,
+  spec: string,
   s: EngineerSettings,
-  format: FormatChoice,
+  guidance: string,
   snippets: boolean,
   extras: EngineerExtras,
 ): string {
-  const formatText =
-    typeof format === "string" ? FORMAT_TEXT[format] : format.text;
-  let out = template
+  let out = withJsonReply(template, spec)
     .replace("{missing_info}", MISSING_INFO[s.missing_info])
-    .replace("{format}", formatText)
+    .replace("{format}", layoutNote(guidance))
     .replace(
       "{snippets}",
       (snippets ? T.SNIPPET_RULE : "") + NO_NEW_NUMBERS + TRUSTED_NOTE,
@@ -223,22 +197,33 @@ function fill(
   return out;
 }
 
+/**
+ * The desktop's architect prompt, asking for the prompt's parts as JSON;
+ * `guidance` is what the target AI needs in them (targets.contentFor).
+ */
 export function architectSystem(
   s: EngineerSettings,
-  format: FormatChoice,
+  guidance: string,
   snippets: boolean,
   extras: EngineerExtras = {},
 ) {
-  return fill(T.ARCHITECT_SYSTEM, s, format, snippets, extras);
+  return fill(
+    T.ARCHITECT_SYSTEM,
+    PROMPT_JSON_SPEC,
+    s,
+    guidance,
+    snippets,
+    extras,
+  );
 }
 
 export function criticSystem(
   s: EngineerSettings,
-  format: FormatChoice,
+  guidance: string,
   snippets: boolean,
   extras: EngineerExtras = {},
 ) {
-  return fill(T.CRITIC_SYSTEM, s, format, snippets, extras);
+  return fill(T.CRITIC_SYSTEM, REVIEW_JSON_SPEC, s, guidance, snippets, extras);
 }
 
 export const MAX_SCREEN_CHARS = 8000;
@@ -264,7 +249,7 @@ export function contextBlocks(args: {
         ? "the text they selected"
         : "the text on their screen";
     out.push(
-      `<this>\nWhen the user says "this", "it" or "here", they mean ${where}, below. The AI can't see their screen, so put this text (or the part the request is about) into the prompt in a clearly marked block.\n<screen_text>\n${screen.slice(0, MAX_SCREEN_CHARS)}\n</screen_text>\n</this>`,
+      `<this>\nWhen the user says "this", "it" or "here", they mean ${where}, below. The server attaches this text to the prompt, so don't copy it into the fields; refer to it as "the text below".\n<screen_text>\n${screen.slice(0, MAX_SCREEN_CHARS)}\n</screen_text>\n</this>`,
     );
   }
   const c = args.clarification;
@@ -391,7 +376,7 @@ export function stripThink(text: string): string {
   return text.replace(/<think>[\s\S]*?(<\/think>|$)/g, "");
 }
 
-export function extractTag(text: string, tag: string): string | undefined {
+function extractTag(text: string, tag: string): string | undefined {
   const open = `<${tag}>`;
   const start = text.lastIndexOf(open);
   if (start < 0) return undefined;
@@ -416,46 +401,6 @@ export function parsePrompt(reply: string): string | undefined {
     return undefined;
   const bare = stripFences(r);
   return bare || undefined;
-}
-
-export function parseScore(reply: string): number | undefined {
-  const raw = extractTag(stripThink(reply), "score");
-  const m = raw?.match(/^\d+/);
-  if (!m) return undefined;
-  return Math.min(10, Math.max(1, Number(m[0])));
-}
-
-export function parseIssues(reply: string): string[] {
-  const body = extractTag(stripThink(reply), "issues");
-  if (!body) return [];
-  return body
-    .split("\n")
-    .map((l) =>
-      l
-        .trim()
-        .replace(/^[-*•]\s*/, "")
-        .trim(),
-    )
-    .filter((l) => l && l.toLowerCase() !== "none");
-}
-
-export function parseTarget(reply: string): PromptTarget | undefined {
-  const raw = extractTag(stripThink(reply), "target")
-    ?.toLowerCase()
-    .replace(/[\s-]+/g, "_");
-  const map: Record<string, PromptTarget> = {
-    coding_agent: "coding_agent",
-    coding: "coding_agent",
-    chat_assistant: "chat_assistant",
-    chat: "chat_assistant",
-    research: "research",
-    writing: "writing",
-    image_generation: "image_generation",
-    image: "image_generation",
-    data_analysis: "data_analysis",
-    data: "data_analysis",
-  };
-  return raw ? map[raw] : undefined;
 }
 
 /** Strip wrappers models put around a pasted reply (quotes, think blocks). */
