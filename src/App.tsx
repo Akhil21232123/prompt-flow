@@ -134,8 +134,14 @@ function App() {
     const unlisten = listen("check-for-updates", () =>
       setCurrentSection("about"),
     );
+    // The menu bar's "Report a problem" opens Help.
+    const unlistenSection = listen<string>("open-section", (e) => {
+      if (e.payload in SECTIONS_CONFIG)
+        setCurrentSection(e.payload as SidebarSection);
+    });
     return () => {
       unlisten.then((u) => u());
+      unlistenSection.then((u) => u());
     };
   }, []);
 

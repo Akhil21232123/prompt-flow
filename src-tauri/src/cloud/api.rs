@@ -342,6 +342,105 @@ pub async fn check(
 }
 
 // ---------------------------------------------------------------------------
+// History (`public.dictations`, own rows)
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Type)]
+pub struct CloudDictation {
+    pub id: String,
+    pub created_at: String,
+    pub mode: String,
+    pub app_name: Option<String>,
+    pub raw_text: String,
+    pub final_text: String,
+    pub label: Option<String>,
+    pub device: Option<String>,
+}
+
+fn dictation_from(v: &Value) -> Option<CloudDictation> {
+    let text = |k: &str| v.get(k).and_then(Value::as_str).map(str::to_string);
+    Some(CloudDictation {
+        id: v.get("id").map(|id| match id {
+            Value::String(s) => s.clone(),
+            other => other.to_string(),
+        })?,
+        created_at: text("created_at").unwrap_or_default(),
+        mode: text("mode").unwrap_or_else(|| "dictate".into()),
+        app_name: v
+            .get("app")
+            .and_then(|a| a.get("name"))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .filter(|n| !n.trim().is_empty()),
+        raw_text: text("raw_text").unwrap_or_default(),
+        // What the user kept if they edited it, else what PromptFlow wrote.
+        final_text: text("edited_text")
+            .filter(|t| !t.trim().is_empty())
+            .or_else(|| text("final_text"))
+            .unwrap_or_default(),
+        label: text("label"),
+        device: text("device"),
+    })
+}
+
+/// The PostgREST query for a page of history, optionally searching both
+/// texts. Characters that would break PostgREST's filter syntax are dropped.
+pub fn history_path(limit: u32, offset: u32, query: &str) -> String {
+    let mut path = format!(
+        "/rest/v1/dictations?select=id,created_at,mode,app,raw_text,final_text,edited_text,label,device&order=created_at.desc&limit={}&offset={}",
+        limit.clamp(1, 200),
+        offset
+    );
+    let q: String = query
+        .chars()
+        .filter(|c| !matches!(c, ',' | '(' | ')' | '*' | '"' | '\\'))
+        .collect();
+    let q = q.trim();
+    if !q.is_empty() {
+        // Spaces as %20: '+' isn't a space to every server.
+        let pattern = urlencode(&format!("*{q}*")).replace('+', "%20");
+        path.push_str(&format!(
+            "&or=(raw_text.ilike.{pattern},final_text.ilike.{pattern})"
+        ));
+    }
+    path
+}
+
+pub async fn history(
+    app: &AppHandle,
+    limit: u32,
+    offset: u32,
+    query: &str,
+) -> Result<Vec<CloudDictation>, ApiError> {
+    let path = history_path(limit, offset, query);
+    let v = authed_json(app, || request(Method::GET, &path)).await?;
+    Ok(v.as_array()
+        .map(|rows| rows.iter().filter_map(dictation_from).collect())
+        .unwrap_or_default())
+}
+
+// ---------------------------------------------------------------------------
+// Feedback
+// ---------------------------------------------------------------------------
+
+/// `POST /functions/v1/feedback`. A backend without it (404) counts as
+/// sent: feedback must never get in the user's way.
+pub async fn feedback(app: &AppHandle, body: Value) -> Result<(), ApiError> {
+    match authed(app, || {
+        request(Method::POST, "/functions/v1/feedback").json(&body)
+    })
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(e) if e.status == 404 => {
+            log::info!("Feedback isn't available on this server yet");
+            Ok(())
+        }
+        Err(e) => Err(e),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Memory
 // ---------------------------------------------------------------------------
 
@@ -551,6 +650,29 @@ mod tests {
         let m = memories_from(rows);
         assert_eq!(m.len(), 1);
         assert!(m[0].pinned);
+    }
+
+    #[test]
+    fn history_rows_and_search() {
+        let row = serde_json::json!({
+            "id": "d1", "created_at": "2026-11-23T10:00:00Z", "mode": "engineer",
+            "app": {"name": "Claude"}, "raw_text": "make it", "final_text": "<task>x</task>",
+            "edited_text": null, "label": "Prompt · for Claude", "device": "mac"
+        });
+        let d = dictation_from(&row).unwrap();
+        assert_eq!(d.app_name.as_deref(), Some("Claude"));
+        assert_eq!(d.final_text, "<task>x</task>");
+        let edited =
+            serde_json::json!({"id": 7, "raw_text": "a", "final_text": "b", "edited_text": "c"});
+        let d = dictation_from(&edited).unwrap();
+        assert_eq!((d.id.as_str(), d.final_text.as_str()), ("7", "c"));
+
+        let p = history_path(50, 100, "  py(thon),* ");
+        assert!(p.contains("limit=50&offset=100"));
+        assert!(p.contains("raw_text.ilike.*python*"));
+        assert!(history_path(5, 0, "two words").contains("*two%20words*"));
+        assert!(!history_path(500, 0, "").contains("or=("));
+        assert!(history_path(500, 0, "").contains("limit=200"));
     }
 
     #[test]

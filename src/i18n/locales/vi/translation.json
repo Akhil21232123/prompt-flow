@@ -10,7 +10,19 @@
     "secureInputWarning": "⚠ Phím tắt bị Secure Input chặn",
     "language": "Ngôn ngữ",
     "autoLanguage": "Tự động",
-    "otherLanguages": "Ngôn ngữ khác"
+    "otherLanguages": "Ngôn ngữ khác",
+    "writeStyle": "Write Style",
+    "styleSmart": "Smart (fits the app)",
+    "styleClean": "Clean",
+    "styleFormal": "Formal",
+    "styleShort": "Short & punchy",
+    "styleCasual": "Casual",
+    "styleBullets": "Bullet points",
+    "styleCustom": "Custom",
+    "spokenLanguage": "I Speak",
+    "privateMode": "Private Mode",
+    "pause": "Pause PromptFlow",
+    "reportProblem": "Report a Problem…"
   },
   "sidebar": {
     "general": "Chung",
@@ -30,7 +42,8 @@
     "sound": "Microphone & sound",
     "private": "Private mode",
     "signedIn": "Signed in",
-    "signedOut": "Not signed in"
+    "signedOut": "Not signed in",
+    "help": "Help"
   },
   "onboarding": {
     "customModelDescription": "Không được hỗ trợ chính thức",
@@ -1548,7 +1561,11 @@
       "undo": "Undo",
       "undoKey": "⌘Z",
       "copy": "Copy",
-      "copied": "Copied"
+      "copied": "Copied",
+      "good": "Good result",
+      "bad": "Bad result",
+      "thanks": "Thanks",
+      "onClipboard": "On your clipboard"
     },
     "verdict": {
       "good": "The answer looks right",
@@ -1610,6 +1627,10 @@
       "ask_expired": {
         "title": "That question expired",
         "body": "Say your request again."
+      },
+      "paused": {
+        "title": "PromptFlow is paused",
+        "body": "Resume it from the menu bar."
       }
     },
     "active": {
@@ -1619,6 +1640,21 @@
       "promptFor": "Prompt for {{app}}",
       "this": "Prompt about this",
       "thisFor": "Prompt about this for {{app}}"
+    },
+    "redo": {
+      "as_prompt": "As prompt",
+      "as_written": "As written",
+      "formal": "Formal",
+      "shorter": "Shorter"
+    },
+    "retry": {
+      "title": "Couldn't reach PromptFlow",
+      "safe": "Your recording is safe.",
+      "inSeconds": "Trying again in {{seconds}} s…",
+      "trying": "Trying again…",
+      "gaveUp": "Still can't get through. Try again when you're back online.",
+      "now": "Retry",
+      "pasteRaw": "Paste raw text"
     }
   },
   "onboardingPf": {
@@ -1703,7 +1739,11 @@
     "checking": "Checking…",
     "versionBuild": "v{{version}} (build {{build}})",
     "versionOnly": "v{{version}}",
-    "builtOnHandy": "Built on Handy, the open-source dictation app"
+    "builtOnHandy": "Built on Handy, the open-source dictation app",
+    "availableBuild": "Build {{build}} is available",
+    "thisBuild": "You have build {{build}}.",
+    "install": "Update",
+    "opened": "PromptFlow.dmg is open: drag PromptFlow onto Applications and choose Replace, then open PromptFlow again."
   },
   "fnKey": {
     "title": "Hold 🌐 (Fn) to talk",
@@ -1716,6 +1756,33 @@
       "show_emoji": "macOS opens the emoji picker when you press 🌐.",
       "start_dictation": "macOS starts its own dictation when you press 🌐.",
       "unknown": "macOS may do something else when you press 🌐."
+    }
+  },
+  "cloudHistory": {
+    "title": "History",
+    "subtitle": "Everything you've dictated, on every device.",
+    "search": "Search what you said or what was written",
+    "empty": "Nothing here yet",
+    "noMatch": "Nothing matches that search",
+    "signInFirst": "Sign in to see your history.",
+    "more": "Show more",
+    "youSaid": "You said",
+    "pasteAgain": "Paste again",
+    "mode": {
+      "dictate": "Write",
+      "engineer": "Prompt",
+      "command": "Edit"
+    }
+  },
+  "help": {
+    "title": "Help",
+    "report": {
+      "title": "Report a problem",
+      "placeholder": "What happened? What did you expect?",
+      "includeLast": "Include my last result",
+      "send": "Send",
+      "thanks": "Thanks. The PromptFlow team will look at it.",
+      "signIn": "Sign in to send a report."
     }
   }
 }

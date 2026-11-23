@@ -372,6 +372,11 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "quit" => {
                 app.exit(0);
             }
+            "report_problem" => {
+                show_main_window(app);
+                let _ = app.emit("open-section", "about");
+            }
+            id if tray::handle_quick_switch(app, id) => {}
             id if id.starts_with("model_select:") => {
                 let model_id = id.strip_prefix("model_select:").unwrap().to_string();
                 let current_model = settings::get_settings(app).selected_model;
@@ -597,11 +602,19 @@ fn specta_builder() -> Builder<tauri::Wry> {
             cloud::commands::island_copy,
             cloud::commands::island_send_fix,
             cloud::commands::island_card_size,
+            cloud::commands::island_redo,
+            cloud::commands::island_retry,
+            cloud::commands::island_paste_raw,
+            cloud::commands::island_rate,
+            cloud::commands::report_problem,
             cloud::commands::island_open_app,
             cloud::commands::island_current,
             cloud::commands::autopilot_check_now,
             cloud::commands::autopilot_check_text,
             cloud::commands::check_mac_update,
+            cloud::commands::install_mac_update,
+            cloud::commands::cloud_history,
+            cloud::commands::paste_again,
             cloud::commands::open_privacy_settings,
             cloud::commands::screen_recording_allowed,
             cloud::commands::request_screen_recording,
@@ -619,6 +632,7 @@ fn specta_builder() -> Builder<tauri::Wry> {
             cloud::session::AccountChanged,
             island::IslandEvent,
             island::IslandHover,
+            cloud::update::UpdateProgress,
         ])
 }
 

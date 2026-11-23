@@ -198,6 +198,8 @@ pub struct MemoryChip {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Finished {
+    /// The stored dictation's id, for feedback.
+    pub id: Option<String>,
     pub raw: String,
     pub text: String,
     pub mode: String,
@@ -290,6 +292,7 @@ pub fn parse_response(v: &Value) -> Result<DictateOutcome, ApiError> {
         })
         .unwrap_or_default();
     Ok(DictateOutcome::Done(Finished {
+        id: s(v, "id").or_else(|| s(v, "dictation_id")),
         raw: v
             .get("raw")
             .and_then(Value::as_str)
@@ -326,6 +329,28 @@ pub fn encode_wav(samples: &[f32]) -> Vec<u8> {
         out.extend_from_slice(&v.to_le_bytes());
     }
     out
+}
+
+/// `POST /functions/v1/rewrite`: the same text again, another way (the
+/// island's redo chips). Takes the same fields as `/dictate`'s meta.
+pub async fn rewrite(
+    app: &AppHandle,
+    meta: &DictateMeta,
+    text: &str,
+) -> Result<DictateOutcome, ApiError> {
+    let body = rewrite_body(meta, text);
+    let v = api::authed_json(app, || api::post("/functions/v1/rewrite").json(&body)).await?;
+    parse_response(&v)
+}
+
+pub fn rewrite_body(meta: &DictateMeta, text: &str) -> Value {
+    let mut body = serde_json::to_value(meta).unwrap_or_else(|_| serde_json::json!({}));
+    if let Some(o) = body.as_object_mut() {
+        o.insert("text".into(), Value::String(text.to_string()));
+        o.remove("duration_sec");
+        o.insert("ask_back".into(), Value::Bool(false));
+    }
+    body
 }
 
 /// Sends one request. `wav` is `None` only when answering an ask-back by
@@ -506,6 +531,32 @@ mod tests {
                 assert_eq!(f.memory_used.len(), 1);
                 assert_eq!(f.language.as_deref(), Some("te"));
             }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rewrite_sends_the_text_and_never_asks_back() {
+        let meta = build_meta(
+            CloudMode::Engineer,
+            &flow(),
+            MetaInput {
+                duration_sec: Some(3.0),
+                ..Default::default()
+            },
+            None,
+        );
+        let body = rewrite_body(&meta, "say it again");
+        assert_eq!(body["text"], "say it again");
+        assert_eq!(body["mode"], "engineer");
+        assert_eq!(body["ask_back"], false);
+        assert!(body.get("duration_sec").is_none());
+    }
+
+    #[test]
+    fn finished_results_carry_their_id() {
+        match parse_response(&json!({"id": "d1", "text": "hi", "raw": "hi"})).unwrap() {
+            DictateOutcome::Done(f) => assert_eq!(f.id.as_deref(), Some("d1")),
             other => panic!("unexpected {other:?}"),
         }
     }

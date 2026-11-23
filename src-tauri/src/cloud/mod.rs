@@ -24,6 +24,19 @@ pub mod session;
 pub mod update;
 
 use crate::settings::AppSettings;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+static PAUSED: AtomicBool = AtomicBool::new(false);
+
+/// "Pause PromptFlow" from the menu bar: shortcuts and Fn do nothing until
+/// resumed (or the app restarts).
+pub fn is_paused() -> bool {
+    PAUSED.load(Ordering::Relaxed)
+}
+
+pub fn set_paused(paused: bool) {
+    PAUSED.store(paused, Ordering::Relaxed);
+}
 
 /// The PromptFlow backend.
 pub const BASE_URL: &str = "https://fhslwvrspzdcvokajvno.supabase.co";

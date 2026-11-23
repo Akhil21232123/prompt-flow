@@ -10,12 +10,14 @@
 //! quick tap or a chord never flashes the island. The tap needs
 //! Accessibility; until that's granted it retries quietly.
 
+// The gesture logic only runs on macOS (and in tests elsewhere).
+#![cfg_attr(not(target_os = "macos"), allow(dead_code))]
+
 use serde::{Deserialize, Serialize};
 use specta::Type;
 use std::time::{Duration, Instant};
 
 /// A press this long becomes a recording; shorter is a tap.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub const START_DELAY: Duration = Duration::from_millis(160);
 /// The second press of a double tap must come this soon after the first.
 pub const DOUBLE_TAP: Duration = Duration::from_millis(420);
@@ -27,7 +29,6 @@ pub enum FnMode {
 }
 
 impl FnMode {
-    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
     pub fn binding(self) -> &'static str {
         match self {
             FnMode::Write => "transcribe",
@@ -369,7 +370,7 @@ mod platform {
             }
             return event;
         }
-        if event.is_null() || !enabled() {
+        if event.is_null() || !enabled() || crate::cloud::is_paused() {
             return event;
         }
         let now = Instant::now();
