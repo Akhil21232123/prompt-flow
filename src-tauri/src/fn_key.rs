@@ -370,7 +370,7 @@ mod platform {
             }
             return event;
         }
-        if event.is_null() || !enabled() || crate::cloud::is_paused() {
+        if event.is_null() || crate::cloud::is_paused() {
             return event;
         }
         let now = Instant::now();
@@ -381,7 +381,9 @@ mod platform {
                 if keycode == KEYCODE_FN {
                     let fn_down = flags & FLAG_FN != 0;
                     let was_down = FN_DOWN.swap(fn_down, Ordering::Relaxed);
-                    if fn_down && !was_down {
+                    // The setting is read only here, on Fn itself, never on
+                    // ordinary typing.
+                    if fn_down && !was_down && enabled() {
                         with_gesture(|g| g.on_fn_down(now, flags & FLAG_CONTROL != 0))
                     } else if !fn_down && was_down {
                         with_gesture(|g| g.on_fn_up(now))
