@@ -1057,6 +1057,33 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: default_command_shortcut.to_string(),
         },
     );
+    #[cfg(target_os = "macos")]
+    let (default_this_shortcut, default_autopilot_shortcut) = ("ctrl+option+t", "ctrl+option+c");
+    #[cfg(not(target_os = "macos"))]
+    let (default_this_shortcut, default_autopilot_shortcut) = ("ctrl+alt+t", "ctrl+alt+c");
+    bindings.insert(
+        "this".to_string(),
+        ShortcutBinding {
+            id: "this".to_string(),
+            name: "This".to_string(),
+            description:
+                "Writes a prompt about what's on screen: the selection, or the window's text."
+                    .to_string(),
+            default_binding: default_this_shortcut.to_string(),
+            current_binding: default_this_shortcut.to_string(),
+        },
+    );
+    bindings.insert(
+        "autopilot".to_string(),
+        ShortcutBinding {
+            id: "autopilot".to_string(),
+            name: "Check the answer".to_string(),
+            description: "Checks the AI's answer against what you asked, and offers a fix."
+                .to_string(),
+            default_binding: default_autopilot_shortcut.to_string(),
+            current_binding: default_autopilot_shortcut.to_string(),
+        },
+    );
     bindings.insert(
         "cancel".to_string(),
         ShortcutBinding {

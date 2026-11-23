@@ -51,7 +51,7 @@ pub struct TranscriptionCompleteEvent {
     pub wait_seconds: f64,
 }
 
-fn emit_transcription_complete(
+pub(crate) fn emit_transcription_complete(
     app: &AppHandle,
     outcome: TranscriptionOutcome,
     sample_count: usize,
@@ -589,9 +589,26 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+        let start_settings = get_settings(app);
+        // Signed-in users dictate through the PromptFlow cloud; Private mode
+        // keeps everything on this Mac.
+        let cloud = crate::cloud::cloud_mode(&start_settings);
+        if cloud && !crate::cloud::session::is_signed_in() {
+            debug!("Not recording: signed out of PromptFlow");
+            crate::cloud::pipeline::show_error(app, crate::island::IslandError::SignIn);
+            return;
+        }
+        crate::island::set_session(
+            crate::cloud::pipeline::island_mode(self.mode),
+            if cloud {
+                &start_settings.flow.spoken_language
+            } else {
+                &start_settings.selected_language
+            },
+        );
         // Note the app the user is dictating into while it is still in front.
         crate::flow::app_context::begin_capture();
-        let cloud_stt = crate::flow::cloud_stt::is_active(&get_settings(app));
+        let cloud_stt = cloud || crate::flow::cloud_stt::is_active(&start_settings);
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -600,8 +617,9 @@ impl ShortcutAction for TranscribeAction {
         // Load ASR model and VAD model in parallel
         let kickoff_started = Instant::now();
         // An empty selection has nothing to load; the check below says so.
-        let selected_model = get_settings(app).selected_model;
-        let load_started = !selected_model.is_empty() && tm.initiate_model_load(true);
+        let selected_model = start_settings.selected_model.clone();
+        // The cloud transcribes; loading Whisper would only cost memory.
+        let load_started = !cloud && !selected_model.is_empty() && tm.initiate_model_load(true);
         let rm_clone = Arc::clone(&rm);
         std::thread::spawn(move || {
             if let Err(e) = rm_clone.preload_vad() {
@@ -677,10 +695,16 @@ impl ShortcutAction for TranscribeAction {
         // doesn't stream (or whose capability is not known yet) gets the compact
         // pill instead of an oversized transparent live window.
         let overlay_started = Instant::now();
-        match settings.overlay_style {
-            OverlayStyle::Live if model_supports_streaming => utils::show_streaming_overlay(app),
-            OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
-            OverlayStyle::None => {} // show_overlay_state no-ops on None anyway
+        if cloud {
+            crate::cloud::pipeline::on_recording_start(app, self.mode);
+        } else {
+            match settings.overlay_style {
+                OverlayStyle::Live if model_supports_streaming => {
+                    utils::show_streaming_overlay(app)
+                }
+                OverlayStyle::Live | OverlayStyle::Minimal => show_recording_overlay(app),
+                OverlayStyle::None => {} // the island checks the setting itself
+            }
         }
         // Everything above runs before capture can begin, so each span here is
         // added keypress->capture latency.
@@ -814,6 +838,7 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
         let mode = self.mode;
+        let cloud = crate::cloud::cloud_mode(&get_settings(app));
         let post_process = {
             let s = get_settings(app);
             self.post_process
@@ -866,6 +891,36 @@ impl ShortcutAction for TranscribeAction {
                     // and block the next start_stream.
                     tm.cancel_stream();
                     finish_without_text(&ah, input_silent, 0, stop_time);
+                } else if cloud {
+                    tm.cancel_stream();
+                    if input_silent {
+                        // A muted microphone: say so instead of sending silence.
+                        let _ = crate::cloud::context::take_captured();
+                        finish_without_text(&ah, true, samples.len(), stop_time);
+                        return;
+                    }
+                    let copied_selection = match selection_task {
+                        Some(task) => task.await.ok().flatten(),
+                        None => None,
+                    };
+                    let app_context =
+                        tokio::time::timeout(Duration::from_millis(1500), app_context_task)
+                            .await
+                            .ok()
+                            .and_then(|joined| joined.ok())
+                            .flatten();
+                    crate::cloud::pipeline::run_recording(
+                        &ah,
+                        crate::cloud::pipeline::Recording {
+                            mode,
+                            samples,
+                            app_context,
+                            copied_selection,
+                            stop_time,
+                        },
+                        || rm.was_cancelled_since(cancel_generation),
+                    )
+                    .await;
                 } else {
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
@@ -1202,6 +1257,20 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+// Autopilot: checks the AI's answer on screen against the last prompt.
+struct AutopilotAction;
+
+impl ShortcutAction for AutopilotAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::cloud::pipeline::autopilot(&app).await;
+        });
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -1268,6 +1337,17 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
             post_process: true,
             mode: FlowMode::Command,
         }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "this".to_string(),
+        Arc::new(TranscribeAction {
+            post_process: true,
+            mode: FlowMode::This,
+        }) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "autopilot".to_string(),
+        Arc::new(AutopilotAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

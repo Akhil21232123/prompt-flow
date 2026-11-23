@@ -1074,6 +1074,199 @@ async dismissNotice(source: NoticeSource, code: NoticeCode) : Promise<void> {
  */
 async dismissOverlayNotice() : Promise<void> {
     await TAURI_INVOKE("dismiss_overlay_notice");
+},
+async authStatus() : Promise<AccountStatus> {
+    return await TAURI_INVOKE("auth_status");
+},
+async authSendCode(email: string) : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("auth_send_code", { email }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async authVerifyCode(email: string, code: string) : Promise<Result<AccountStatus, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("auth_verify_code", { email, code }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async authSignOut() : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("auth_sign_out") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async accountUsage() : Promise<Result<Usage, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("account_usage") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async accountDelete() : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("account_delete") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async memoriesList() : Promise<Result<Memory[], ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("memories_list") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async memoryAdd(content: string, kind: string) : Promise<Result<Memory, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("memory_add", { content, kind }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async memoryUpdate(id: string, content: string | null, kind: string | null, pinned: boolean | null) : Promise<Result<Memory, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("memory_update", { id, content, kind, pinned }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async memoryDelete(id: string) : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("memory_delete", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async cloudSettingsSync() : Promise<Result<null, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("cloud_settings_sync") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A tapped option, or `None` for "Skip".
+ */
+async islandAnswer(id: number, answer: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_answer", { id, answer }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async islandClose(id: number) : Promise<void> {
+    await TAURI_INVOKE("island_close", { id });
+},
+async islandDismiss(id: number) : Promise<void> {
+    await TAURI_INVOKE("island_dismiss", { id });
+},
+async islandUndo(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_undo", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async islandCopy(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_copy", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async islandSendFix(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("island_send_fix", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * The card's drawn size, so hovering it can keep it open.
+ */
+async islandCardSize(id: number, width: number, height: number) : Promise<void> {
+    await TAURI_INVOKE("island_card_size", { id, width, height });
+},
+/**
+ * Opens the settings window (e.g. from "Sign in to start").
+ */
+async islandOpenApp(id: number) : Promise<void> {
+    await TAURI_INVOKE("island_open_app", { id });
+},
+/**
+ * The island's current view, for an island webview that (re)loads.
+ */
+async islandCurrent() : Promise<IslandEvent> {
+    return await TAURI_INVOKE("island_current");
+},
+/**
+ * Autopilot from the settings window's "try it" button.
+ */
+async autopilotCheckNow() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("autopilot_check_now") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * A check of `answer` against `intent`, for the guide's live demo.
+ */
+async autopilotCheckText(intent: string, answer: string) : Promise<Result<CheckResult, ApiError>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("autopilot_check_text", { intent, answer }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async checkMacUpdate() : Promise<Result<UpdateInfo, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("check_mac_update") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens the System Settings pane where the user allows `pane`.
+ */
+async openPrivacySettings(pane: PrivacyPane) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_privacy_settings", { pane }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async screenRecordingAllowed() : Promise<boolean> {
+    return await TAURI_INVOKE("screen_recording_allowed");
+},
+/**
+ * Shows macOS's Screen Recording prompt the first time; afterwards macOS
+ * only allows it in System Settings, so that pane opens too.
+ */
+async requestScreenRecording() : Promise<boolean> {
+    return await TAURI_INVOKE("request_screen_recording");
 }
 }
 
@@ -1081,7 +1274,10 @@ async dismissOverlayNotice() : Promise<void> {
 
 
 export const events = __makeEvents__<{
+accountChanged: AccountChanged,
 historyUpdatePayload: HistoryUpdatePayload,
+islandEvent: IslandEvent,
+islandHover: IslandHover,
 noticesChanged: NoticesChanged,
 recordingStateEvent: RecordingStateEvent,
 streamPhaseEvent: StreamPhaseEvent,
@@ -1089,7 +1285,10 @@ streamTextEvent: StreamTextEvent,
 transcriptionCompleteEvent: TranscriptionCompleteEvent,
 transcriptionJob: TranscriptionJob
 }>({
+accountChanged: "account-changed",
 historyUpdatePayload: "history-update-payload",
+islandEvent: "island-event",
+islandHover: "island-hover",
 noticesChanged: "notices-changed",
 recordingStateEvent: "recording-state-event",
 streamPhaseEvent: "stream-phase-event",
@@ -1104,6 +1303,44 @@ transcriptionJob: "transcription-job"
 
 /** user-defined types **/
 
+/**
+ * Sent whenever the user signs in or out (including from a link, or when
+ * the server ends the session).
+ */
+export type AccountChanged = { status: AccountStatus; 
+/**
+ * Set when a sign-in link failed, with the server's explanation.
+ */
+link_error: string | null }
+/**
+ * What the settings window may know about the account.
+ */
+export type AccountStatus = { signed_in: boolean; email: string | null }
+export type ApiError = { code: ErrorCode; 
+/**
+ * The server's message for the user, or a short client-side one.
+ */
+message: string; status: number; retry_after_sec: number | null }
+/**
+ * The kind of app the user is typing into, detected from the frontmost app.
+ */
+export type AppCategory = "email" | "work_chat" | "personal_chat" | 
+/**
+ * Code editors and IDEs (Cursor, VS Code, Xcode...).
+ */
+"code" | "terminal" | 
+/**
+ * Chat assistants (Claude, ChatGPT, Perplexity, Gemini...).
+ */
+"ai_chat" | "docs" | "other"
+/**
+ * User override for how a specific app is categorised.
+ */
+export type AppCategoryOverride = { 
+/**
+ * Bundle id (e.g. `com.tinyspeck.slackmacgap`) or app name.
+ */
+app: string; category: AppCategory }
 /**
  * The container-level `serde(default)` (backed by the `Default` impl below)
  * guarantees every field — including ones added in the future — falls back to
@@ -1199,32 +1436,6 @@ overlay_style?: OverlayStyle;
  * Command Mode, cloud transcription).
  */
 flow?: FlowSettings }
-export type AppCategory = "email" | "work_chat" | "personal_chat" | "code" | "terminal" | "ai_chat" | "docs" | "other"
-export type AppCategoryOverride = { app: string; category: AppCategory }
-export type CategoryStyles = { email?: WritingStyle; work_chat?: WritingStyle; personal_chat?: WritingStyle; docs?: WritingStyle; other?: WritingStyle }
-export type CloudSttProvider = "groq" | "openai"
-export type CloudSttSettings = { enabled?: boolean; provider?: CloudSttProvider; model?: string; fallback_to_local?: boolean }
-export type EngineerQuality = "fast" | "balanced" | "max"
-export type FlowSettings = { smart_polish?: boolean; polish_main_shortcut?: boolean; app_aware?: boolean; styles?: CategoryStyles; developer_mode?: boolean; snippets?: Snippet[]; app_overrides?: AppCategoryOverride[]; prompt_engineer?: PromptEngineerSettings; cloud_stt?: CloudSttSettings; local_ai_defaults_applied?: boolean; 
-/**
- * None: tone follows the app (Smart polish). Some: always this style.
- */
-style_preset?: StylePreset | null; 
-/**
- * The instruction behind StylePreset::Custom.
- */
-custom_style?: string }
-export type MissingInfoPolicy = "state_assumptions" | "ask_first"
-export type PromptEngineerSettings = { quality?: EngineerQuality; target?: PromptTarget; missing_info?: MissingInfoPolicy; format?: PromptFormat; min_score?: number; max_rounds?: number; provider_id?: string | null; model?: string | null; auto_in_ai_apps?: boolean; auto_min_words?: number; custom_instructions?: string }
-export type PromptFormat = "auto" | "xml" | "markdown" | "plain"
-export type PromptTarget = "auto" | "coding_agent" | "chat_assistant" | "research" | "writing" | "image_generation" | "data_analysis"
-export type Snippet = { id: string; trigger: string; expansion: string }
-/**
- * A style the main dictation shortcut writes in, chosen on purpose. Unlike
- * the per-app tone, it never auto-converts the dictation into a prompt.
- */
-export type StylePreset = "clean" | "formal" | "short" | "casual" | "bullets" | "custom"
-export type WritingStyle = "formal" | "casual" | "very_casual"
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
 export type AutoUnavailableReason = 
@@ -1242,6 +1453,12 @@ export type AutoUnavailableReason =
 { kind: "no_match" }
 export type AvailableAccelerators = { transcribe: string[]; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type CategoryStyles = { email?: WritingStyle; work_chat?: WritingStyle; personal_chat?: WritingStyle; docs?: WritingStyle; other?: WritingStyle }
+export type CheckResult = { 
+/**
+ * The answer did what was asked.
+ */
+good: boolean; issues: string[]; follow_up: string | null }
 /**
  * Script applied to Mandarin and Cantonese output. Traditional carries its region
  * (Taiwan vs Hong Kong forms, e.g. 裡/裏) rather than guessing it.
@@ -1260,7 +1477,117 @@ export type ChineseScript =
  */
 "traditional_hk"
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
+export type CloudSttProvider = 
+/**
+ * Groq's OpenAI-compatible Whisper endpoint. Uses the Groq API key from
+ * the post-processing providers.
+ */
+"groq" | 
+/**
+ * OpenAI's transcription endpoint. Uses the OpenAI API key.
+ */
+"openai"
+export type CloudSttSettings = { enabled?: boolean; provider?: CloudSttProvider; 
+/**
+ * Empty uses the provider default (`whisper-large-v3-turbo` on Groq,
+ * `gpt-4o-mini-transcribe` on OpenAI).
+ */
+model?: string; 
+/**
+ * Use the local model when the cloud request fails.
+ */
+fallback_to_local?: boolean }
 export type CustomSounds = { start: boolean; stop: boolean }
+/**
+ * How hard Prompt Engineer works on a prompt.
+ */
+export type EngineerQuality = 
+/**
+ * One rewrite call. Lowest latency.
+ */
+"fast" | 
+/**
+ * Rewrite, then one independent critique-and-revise pass.
+ */
+"balanced" | 
+/**
+ * Rewrite, then critique-and-revise until the critic scores it at
+ * `min_score` or `max_rounds` is reached.
+ */
+"max"
+/**
+ * What went wrong, as the island and the settings window show it. The
+ * backend's `code` values plus the client's own.
+ */
+export type ErrorCode = 
+/**
+ * Not signed in, or the session ended.
+ */
+"auth" | "bad_request" | 
+/**
+ * The AI or transcription provider failed.
+ */
+"provider" | "rate_limited" | "quota" | 
+/**
+ * The server couldn't be reached.
+ */
+"network" | 
+/**
+ * Anything else the server got wrong.
+ */
+"server"
+export type FlowSettings = { 
+/**
+ * Use PromptFlow's context-aware cleanup prompt (styles, backtracking,
+ * lists, developer formatting) instead of the selected static prompt.
+ */
+smart_polish?: boolean; 
+/**
+ * Polish with the main dictation shortcut too (Wispr behaviour), when an
+ * AI provider is configured and post-processing is enabled.
+ */
+polish_main_shortcut?: boolean; 
+/**
+ * Adapt tone and formatting to the app in front.
+ */
+app_aware?: boolean; styles?: CategoryStyles; 
+/**
+ * camelCase/snake_case, file names and @-file tags in code editors.
+ */
+developer_mode?: boolean; snippets?: Snippet[]; app_overrides?: AppCategoryOverride[]; prompt_engineer?: PromptEngineerSettings; cloud_stt?: CloudSttSettings; 
+/**
+ * Set once the first-run switch to local Ollama has been considered.
+ */
+local_ai_defaults_applied?: boolean; 
+/**
+ * None: tone follows the app (Smart polish). Some: always this style.
+ */
+style_preset?: StylePreset | null; 
+/**
+ * The instruction behind StylePreset::Custom.
+ */
+custom_style?: string; 
+/**
+ * Run everything on this Mac (local Whisper and a local model) instead
+ * of the PromptFlow cloud. Off by default: signed-in users use the cloud.
+ */
+private_mode?: boolean; 
+/**
+ * The language the user speaks: a code from `SPOKEN_LANGUAGES`, or "auto".
+ */
+spoken_language?: string; 
+/**
+ * Prompts come out in English whatever language was spoken.
+ */
+prompts_in_english?: boolean; 
+/**
+ * A vague Prompt Engineer request may get one quick question first.
+ */
+ask_back?: boolean; 
+/**
+ * PromptFlow remembers durable facts and adds the relevant ones to prompts.
+ */
+memory_enabled?: boolean }
 export type GpuDeviceOption = { id: string; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean; 
 /**
@@ -1285,6 +1612,67 @@ export type ImplementationChangeResult = { success: boolean;
  * List of binding IDs that were reset to defaults due to incompatibility
  */
 reset_bindings: string[] }
+export type IslandContext = { chars: number; source: ScreenSource; app: string | null }
+/**
+ * What failed, in the island's words (the frontend has the text).
+ */
+export type IslandError = "sign_in" | "session_ended" | "nothing_heard" | "rate_limited" | "quota" | "network" | "server" | "provider" | "bad_request" | 
+/**
+ * Autopilot has no prompt to compare against.
+ */
+"nothing_to_check" | 
+/**
+ * Autopilot couldn't read an answer on screen.
+ */
+"no_answer_found" | "paste_failed" | 
+/**
+ * The question timed out on the server.
+ */
+"ask_expired"
+export type IslandEvent = { id: number; view: IslandView; geometry: IslandGeometry }
+/**
+ * Where the island sits, so the frontend can draw it into the notch.
+ */
+export type IslandGeometry = { 
+/**
+ * The screen has a camera housing the island merges with.
+ */
+notch: boolean; notch_width: number; 
+/**
+ * The notch's (and menu bar's) height; 0 without a notch.
+ */
+notch_height: number }
+/**
+ * Sent while a held view is up: whether the pointer is over the card.
+ */
+export type IslandHover = { id: number; hovered: boolean }
+export type IslandMode = "dictate" | 
+/**
+ * Prompt Engineer.
+ */
+"engineer" | "command" | 
+/**
+ * "This": a prompt about what's on screen.
+ */
+"this" | "autopilot"
+export type IslandStep = 
+/**
+ * Turning speech into text (and, in the cloud, everything after it).
+ */
+"transcribing" | 
+/**
+ * The AI is writing (cleanup, a prompt, an edit).
+ */
+"writing" | 
+/**
+ * Autopilot is reading the answer.
+ */
+"checking"
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; context: IslandContext | null } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null } | 
+/**
+ * A Handy notice from the on-device pipeline (Private mode).
+ */
+{ kind: "notice"; notice: Notice }
 export type KeyboardDiagnosticReport = { secure_input_enabled: boolean; culprit_pid: number | null; culprit_name: string | null; 
 /**
  * Counts only — key identity is deliberately never captured.
@@ -1360,6 +1748,23 @@ export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
  * A macOS privacy permission Handy asks for during onboarding.
  */
 export type MacPermission = "accessibility" | "microphone"
+export type Memory = { id: string; content: string; kind: string; source: string; pinned: boolean; created_at: string | null; updated_at: string | null; last_used_at: string | null }
+/**
+ * A memory the backend used, shown as a chip.
+ */
+export type MemoryChip = { id: string; content: string }
+/**
+ * What the engineered prompt should do about details the speaker left out.
+ */
+export type MissingInfoPolicy = 
+/**
+ * Tell the target AI to state reasonable assumptions and proceed.
+ */
+"state_assumptions" | 
+/**
+ * Tell the target AI to ask clarifying questions before starting.
+ */
+"ask_first"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 /**
@@ -1445,6 +1850,59 @@ export type PostProcessApiFormat =
  */
 "anthropic"
 export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_structured_output?: boolean; api_format?: PostProcessApiFormat }
+export type PrivacyPane = "microphone" | "accessibility" | "screen_recording"
+export type PromptEngineerSettings = { quality?: EngineerQuality; target?: PromptTarget; missing_info?: MissingInfoPolicy; format?: PromptFormat; 
+/**
+ * Critic score (1-10) at which Max mode stops revising.
+ */
+min_score?: number; 
+/**
+ * Upper bound on critique-and-revise rounds in Max mode.
+ */
+max_rounds?: number; 
+/**
+ * LLM provider for Prompt Engineer. `None` uses the post-processing provider.
+ */
+provider_id?: string | null; 
+/**
+ * Model for Prompt Engineer. `None` or empty uses that provider's model.
+ */
+model?: string | null; 
+/**
+ * When dictating with the normal shortcut into an AI chat, code editor or
+ * terminal, engineer the prompt automatically.
+ */
+auto_in_ai_apps?: boolean; 
+/**
+ * Dictations shorter than this many words are only cleaned up in auto
+ * mode, so "yes, go ahead" stays "Yes, go ahead."
+ */
+auto_min_words?: number; 
+/**
+ * Extra standing instructions added to every engineered prompt (e.g.
+ * "I use TypeScript and pnpm").
+ */
+custom_instructions?: string }
+/**
+ * Markup of the engineered prompt.
+ */
+export type PromptFormat = 
+/**
+ * XML-tagged sections for Claude apps and coding agents, Markdown elsewhere.
+ */
+"auto" | "xml" | "markdown" | 
+/**
+ * Plain paragraphs, no markup.
+ */
+"plain"
+/**
+ * What kind of AI the engineered prompt is for.
+ */
+export type PromptTarget = 
+/**
+ * Decide from the app in front and from what was said.
+ */
+"auto" | "coding_agent" | "chat_assistant" | "research" | "writing" | "image_generation" | "data_analysis"
 /**
  * Recording phase events for windows that follow along (onboarding's Try it).
  */
@@ -1472,6 +1930,10 @@ export type RecordingStateEvent = { phase: RecordingPhase }
  * A retired ONNX model found on disk.
  */
 export type RetiredModel = { id: string; name: string; size_mb: number; replacement_repo: string }
+/**
+ * Where "This" got the text from.
+ */
+export type ScreenSource = "selection" | "window" | "ocr"
 export type SecretMap = Partial<{ [key in string]: string }>
 export type SecureInputStatus = { 
 /**
@@ -1524,6 +1986,7 @@ export type ShortcutActivation =
  */
 "hold_or_toggle"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
+export type Snippet = { id: string; trigger: string; expansion: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
 /**
  * Phase of the streaming overlay card, emitted to drive its UI state.
@@ -1557,6 +2020,12 @@ export type StreamTextEvent = { committed: string; tentative: string }
  * Semantic kind of "working" phase, used to localize the spinner label.
  */
 export type StreamWorkKind = "transcribing" | "polishing"
+/**
+ * A voice shortcut: say the trigger, get the expansion (Wispr "Snippets").
+ * A style the main dictation shortcut writes in, chosen on purpose. Unlike
+ * the per-app tone, it never auto-converts the dictation into a prompt.
+ */
+export type StylePreset = "clean" | "formal" | "short" | "casual" | "bullets" | "custom"
 /**
  * UI appearance mode. `System` follows the OS `prefers-color-scheme`; `Light`
  * and `Dark` force one of the two palettes Handy already ships.
@@ -1605,8 +2074,31 @@ export type TranscriptionOutcome =
  */
 "failed"
 export type TypingTool = "auto" | "wtype" | "kwtype" | "dotool" | "ydotool" | "xdotool"
+export type UpdateInfo = { available: boolean; current_build: number; latest_build: number | null; 
+/**
+ * The .dmg to download (or the release page).
+ */
+download_url: string }
+export type Usage = { today: number; daily_limit: number; plan: string }
 export type VadBackend = "silero" | "earshot"
 export type WindowsMicrophonePermissionStatus = { supported: boolean; overall_access: PermissionAccess; device_access: PermissionAccess; app_access: PermissionAccess; desktop_app_access: PermissionAccess }
+/**
+ * How much a piece of dictated text gets formalised. Mirrors Wispr Flow's
+ * per-context "Styles".
+ */
+export type WritingStyle = 
+/**
+ * Full sentences, proper capitalisation and punctuation.
+ */
+"formal" | 
+/**
+ * Sentence case, normal punctuation, relaxed tone.
+ */
+"casual" | 
+/**
+ * Lowercase, minimal punctuation, like texting a friend.
+ */
+"very_casual"
 
 /** tauri-specta globals **/
 

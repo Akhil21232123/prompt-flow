@@ -1469,8 +1469,13 @@ pub fn change_flow_settings(
     flow: crate::flow::settings::FlowSettings,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
+    // The settings the phones share go to the server too.
+    let patch = crate::cloud::commands::synced_patch(&settings.flow, &flow);
     settings.flow = flow;
     settings::write_settings(&app, settings);
+    if let Some(patch) = patch {
+        crate::cloud::commands::push_settings(&app, patch);
+    }
     Ok(())
 }
 

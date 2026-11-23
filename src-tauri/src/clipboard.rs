@@ -943,6 +943,34 @@ pub fn copy_selection(app_handle: &AppHandle) -> Option<String> {
     copied.filter(|t| !t.trim().is_empty())
 }
 
+/// Puts `text` on the clipboard (the island's Copy, and a paste that failed).
+pub fn copy_text(app_handle: &AppHandle, text: &str) -> Result<(), String> {
+    write_text_to_clipboard(app_handle, text)
+}
+
+/// Sends Cmd+Z (Ctrl+Z elsewhere) to the focused app: the island's Undo.
+pub fn send_undo(app_handle: &AppHandle) -> Result<(), String> {
+    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    with_enigo(app_handle, input::send_undo)
+}
+
+/// [`paste`] that never presses Return afterwards, whatever auto-submit is
+/// set to: Autopilot's fix is the user's to send.
+pub fn paste_without_submit(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {
+    let _paste = PASTE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut settings = get_settings(&app_handle);
+    settings.auto_submit = false;
+    settings.reliable_paste = false;
+    let blocked =
+        sends_keys(settings.paste_method) && crate::utils::foreground_window_is_elevated();
+    paste_as_configured(text, app_handle, settings)?;
+    Ok(if blocked {
+        PasteOutcome::Blocked
+    } else {
+        PasteOutcome::Pasted
+    })
+}
+
 /// Pastes `text` into the focused app. Call from a worker thread, never the main
 /// thread: it sleeps between steps (input injection hops via `with_enigo`).
 pub fn paste(text: String, app_handle: AppHandle) -> Result<PasteOutcome, String> {

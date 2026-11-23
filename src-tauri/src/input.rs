@@ -227,6 +227,29 @@ pub fn send_copy(enigo: &mut Enigo) -> Result<(), String> {
     Ok(())
 }
 
+/// Sends Cmd+Z (macOS) or Ctrl+Z to undo the last paste.
+pub fn send_undo(enigo: &mut Enigo) -> Result<(), String> {
+    // kVK_ANSI_Z, position-based like copy.
+    #[cfg(target_os = "macos")]
+    let (modifier_key, z_key) = (Key::Meta, Key::Other(6));
+    #[cfg(target_os = "windows")]
+    let (modifier_key, z_key) = (Key::Control, Key::Other(0x5A)); // VK_Z
+    #[cfg(target_os = "linux")]
+    let (modifier_key, z_key) = (Key::Control, Key::Unicode('z'));
+
+    enigo
+        .key(modifier_key, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    enigo
+        .key(z_key, enigo::Direction::Click)
+        .map_err(|e| format!("Failed to click Z key: {}", e))?;
+    std::thread::sleep(std::time::Duration::from_millis(40));
+    enigo
+        .key(modifier_key, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    Ok(())
+}
+
 /// Sends a Ctrl+Shift+V paste command.
 /// This is commonly used in terminal applications on Linux to paste without formatting.
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
