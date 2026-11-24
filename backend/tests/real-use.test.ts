@@ -1,7 +1,11 @@
 // Cases taken from real beta dictations that went wrong.
 import { describe, expect, test } from "bun:test";
 import { parseCheck } from "../supabase/functions/_shared/check.ts";
-import { autoMode } from "../supabase/functions/_shared/handlers.ts";
+import {
+  autoMode,
+  handleDictate,
+} from "../supabase/functions/_shared/handlers.ts";
+import { dictateRequest, draft, fakeCtx, fakeDb, review } from "./fakes.ts";
 import { relevantMemories } from "../supabase/functions/_shared/memory.ts";
 import {
   dedupeParts,
@@ -186,5 +190,53 @@ describe("Autopilot doesn't count syllables", () => {
         '{"verdict":"missed","issues":["Written in JavaScript, not Python"]}',
       ).verdict,
     ).toBe("missed");
+  });
+});
+
+describe("Fn through /dictate decides on what was heard", () => {
+  const claude = {
+    name: "Claude",
+    bundle_id: "com.anthropic.claudefordesktop",
+  };
+  test("a spoken request in Claude becomes a prompt, not cleaned-up text", async () => {
+    const { ctx } = fakeCtx({
+      db: fakeDb(),
+      transcript:
+        "research what would make people switch from Wispr Flow and scan GitHub for repositories we could add",
+      replies: {
+        architect: draft("Research why people would switch from Wispr Flow."),
+        critic: review(10, "Research why people would switch from Wispr Flow."),
+      },
+    });
+    const res = await handleDictate(
+      dictateRequest({ mode: "auto", app: claude }),
+      ctx,
+    );
+    const body = await res.json();
+    expect(body.mode).toBe("engineer");
+  });
+  test("a few words in Claude are typed as said", async () => {
+    const { ctx } = fakeCtx({ db: fakeDb(), transcript: "so I'm prompting" });
+    const body = await (
+      await handleDictate(dictateRequest({ mode: "auto", app: claude }), ctx)
+    ).json();
+    expect(body.mode).toBe("dictate");
+  });
+  test("mail stays a message", async () => {
+    const { ctx } = fakeCtx({
+      db: fakeDb(),
+      transcript:
+        "thanks for your reply but I am not interested in buying it right now",
+    });
+    const body = await (
+      await handleDictate(
+        dictateRequest({
+          mode: "auto",
+          app: { name: "Mail", bundle_id: "com.apple.mail" },
+        }),
+        ctx,
+      )
+    ).json();
+    expect(body.mode).toBe("dictate");
   });
 });

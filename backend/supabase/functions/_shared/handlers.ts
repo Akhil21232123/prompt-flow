@@ -515,8 +515,16 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
       language = heard.language;
     }
 
+    // Fn ("auto") is decided on what was said, which is only known now: at
+    // parse time the transcript is empty, which always looked like "a few
+    // words" and so never made a prompt.
+    const mode =
+      meta.mode === "auto"
+        ? autoMode(base.app, base.selection, transcript)
+        : base.mode;
     const request: RewriteRequest = {
       ...base,
+      mode,
       text: transcript,
       language,
       clarification: pending
@@ -530,7 +538,7 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     let result: RewriteResult;
     const canAsk =
       !pending &&
-      base.mode === "engineer" &&
+      mode === "engineer" &&
       meta.ask_back !== false &&
       user.settings.ask_back &&
       mayAsk(transcript);
