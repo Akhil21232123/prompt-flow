@@ -239,9 +239,18 @@ export function speechToText(env: Env, fetchImpl: Fetch = fetch): Transcribe {
           segments?: Array<{ no_speech_prob?: number; avg_logprob?: number }>;
         };
         const language = languageCode(data.language);
+        const logprobs = (data.segments ?? [])
+          .map((x) => x.avg_logprob)
+          .filter((x): x is number => typeof x === "number");
         return {
           text: (data.text ?? "").trim(),
           provider: name,
+          ...(logprobs.length
+            ? {
+                confidence:
+                  logprobs.reduce((a, b) => a + b, 0) / logprobs.length,
+              }
+            : {}),
           ...(isSilent(data.segments) ? { silent: true } : {}),
           ...(language ? { language } : {}),
         };

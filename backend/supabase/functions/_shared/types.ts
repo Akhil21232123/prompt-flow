@@ -219,4 +219,6 @@ export type Transcribe = (
   silent?: boolean;
   /** Language code the model heard, when it says. */
   language?: string;
+  /** Mean log-probability of the decoded segments: higher is surer. */
+  confidence?: number;
 }>;

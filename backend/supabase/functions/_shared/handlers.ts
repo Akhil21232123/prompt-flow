@@ -313,6 +313,37 @@ interface Heard {
   language?: string;
   ms: number;
   dropped?: "silence" | "hallucination";
+  confidence?: number;
+  /** Which recording won when the app sent a noise-filtered copy too. */
+  from?: "raw" | "clean";
+}
+
+/**
+ * In heavy noise the Mac sends the recording twice: as heard and after its
+ * noise filter. Filtering helps with background voices but hurts with steady
+ * hiss, so both are transcribed and the one Whisper is surer of is kept.
+ */
+async function hearBest(
+  ctx: Ctx,
+  raw: Blob,
+  clean: Blob | undefined,
+  opts: { language?: string; vocabulary?: string; durationSec?: number },
+): Promise<Heard> {
+  if (!clean) return hear(ctx, raw, opts);
+  const [a, b] = await Promise.all([
+    hear(ctx, raw, opts),
+    hear(ctx, clean, opts).catch(() => undefined),
+  ]);
+  return { ...pickHeard(a, b), ms: Math.max(a.ms, b?.ms ?? 0) };
+}
+
+/** The raw result unless the filtered one heard speech with more confidence. */
+export function pickHeard(raw: Heard, clean: Heard | undefined): Heard {
+  if (!clean || clean.dropped) return { ...raw, from: "raw" };
+  if (raw.dropped) return { ...clean, from: "clean" };
+  const better =
+    (clean.confidence ?? -Infinity) > (raw.confidence ?? -Infinity) + 0.05;
+  return better ? { ...clean, from: "clean" } : { ...raw, from: "raw" };
 }
 
 async function hear(
@@ -337,6 +368,7 @@ async function hear(
   return {
     text,
     provider: stt.provider,
+    confidence: stt.confidence,
     ms,
     dropped,
     language:
@@ -394,7 +426,7 @@ function finished(
   raw: string,
   result: RewriteResult,
   language: string | undefined,
-  timing: Record<string, number>,
+  timing: Record<string, number | string>,
   id?: string,
 ) {
   return {
@@ -423,6 +455,12 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     });
     const field = form.get("audio");
     const audio = field instanceof Blob && field.size > 0 ? field : undefined;
+    const cleanField = form.get("audio_clean");
+    const audioClean =
+      cleanField instanceof Blob && cleanField.size > 0
+        ? cleanField
+        : undefined;
+    if (audioClean) await checkAudio(audioClean, undefined);
     let meta = parseMeta(form.get("meta"));
     const started = Date.now();
 
@@ -478,6 +516,7 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     let language: string | undefined;
     let sttMs = 0;
     let sttProvider: string | undefined;
+    let heardFrom: Heard["from"];
     let answer: string | undefined;
 
     if (pending) {
@@ -496,13 +535,14 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
         if (!heard.dropped) answer = heard.text;
       }
     } else {
-      const heard = await hear(ctx, audio!, {
+      const heard = await hearBest(ctx, audio!, audioClean, {
         language: whisperLanguage,
         vocabulary,
         durationSec,
       });
       sttMs = heard.ms;
       sttProvider = heard.provider;
+      heardFrom = heard.from;
       if (heard.dropped) {
         return json({
           dropped: true,
@@ -624,7 +664,11 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
         transcript,
         result,
         language,
-        { stt_ms: sttMs, total_ms: totalMs },
+        {
+          stt_ms: sttMs,
+          total_ms: totalMs,
+          ...(heardFrom && audioClean ? { heard_from: heardFrom } : {}),
+        },
         id,
       ),
     );

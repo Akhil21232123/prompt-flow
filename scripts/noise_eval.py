@@ -21,7 +21,10 @@ import wave
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from stress_test import TMP, call, dictate, test_user  # noqa: E402
+import json  # noqa: E402
+import uuid  # noqa: E402
+
+from stress_test import TMP, call, dictate, duration, test_user  # noqa: E402
 
 SR = 48000
 SENTENCES = [
@@ -139,6 +142,22 @@ def transcribe(token, path16):
     return (r.get("raw") or "") if r.get("_status") == 200 else f"<error {r.get('_status')} {r.get('error', '')}>"
 
 
+def transcribe_both(token, raw16, clean16):
+    """One request with both recordings; the server keeps the surer one."""
+    boundary = "PF" + uuid.uuid4().hex
+    meta = {"mode": "dictate", "device": "noise-eval", "language": "en", "duration_sec": duration(raw16)}
+    body = f"--{boundary}\r\nContent-Disposition: form-data; name=\"meta\"\r\nContent-Type: application/json\r\n\r\n{json.dumps(meta)}\r\n".encode()
+    for name, path in (("audio", raw16), ("audio_clean", clean16)):
+        with open(path, "rb") as f:
+            data = f.read()
+        body += f"--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{name}.wav\"\r\nContent-Type: audio/wav\r\n\r\n".encode() + data + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    r = call("POST", "/functions/v1/dictate", token, raw=body, content_type=f"multipart/form-data; boundary={boundary}")
+    if r.get("_status") != 200:
+        return f"<error {r.get('_status')} {r.get('error', '')}>", "?"
+    return r.get("raw") or "", (r.get("timing") or {}).get("heard_from", "?")
+
+
 def main():
     rng = np.random.default_rng(7)
     speech = [say(s, "Samantha", os.path.join(TMP, f"s{i}.wav")) for i, s in enumerate(SENTENCES)]
@@ -149,10 +168,11 @@ def main():
         for i, s in enumerate(speech):
             p = os.path.join(TMP, f"clean{i}.wav")
             write(p, np.concatenate([np.zeros(SR // 2), s, np.zeros(SR // 2)]))
-            raw = transcribe(token, to16k(p))
-            dn = transcribe(token, to16k(denoise(p)))
-            rows.append(("clean", 99, wer(SENTENCES[i], raw), wer(SENTENCES[i], dn)))
-            print(f"clean #{i}: raw={raw!r}\n          dn ={dn!r}")
+            r16, d16 = to16k(p), to16k(denoise(p))
+            raw, dn = transcribe(token, r16), transcribe(token, d16)
+            both, picked = transcribe_both(token, r16, d16)
+            rows.append(("clean", 99, wer(SENTENCES[i], raw), wer(SENTENCES[i], dn), wer(SENTENCES[i], both)))
+            print(f"clean #{i}: raw={raw!r}\n          dn ={dn!r}\n          picked {picked}")
         for kind in ["pink", "traffic", "cafe"]:
             for snr in SNRS:
                 for i, s in enumerate(speech):
@@ -160,21 +180,23 @@ def main():
                     noise = pink(n, rng) if kind == "pink" else traffic(n, rng) if kind == "traffic" else babble(n, voices)
                     p = os.path.join(TMP, f"{kind}{snr}_{i}.wav")
                     write(p, mix(s, noise, snr))
-                    raw = transcribe(token, to16k(p))
-                    dn = transcribe(token, to16k(denoise(p)))
-                    rows.append((kind, snr, wer(SENTENCES[i], raw), wer(SENTENCES[i], dn)))
-                    print(f"{kind} {snr:>2} dB #{i}: raw={raw!r}\n               dn ={dn!r}")
+                    r16, d16 = to16k(p), to16k(denoise(p))
+                    raw, dn = transcribe(token, r16), transcribe(token, d16)
+                    both, picked = transcribe_both(token, r16, d16)
+                    rows.append((kind, snr, wer(SENTENCES[i], raw), wer(SENTENCES[i], dn), wer(SENTENCES[i], both)))
+                    print(f"{kind} {snr:>2} dB #{i}: raw={raw!r}\n               dn ={dn!r}\n               picked {picked}: {both!r}")
     finally:
         call("POST", "/functions/v1/delete_account", token, body={})
 
-    lines = ["\n## Noise filter vs Whisper (word error rate, lower is better)", "", "| noise | SNR dB | raw | denoised | better |", "|---|---|---|---|---|"]
+    lines = ["\n## Noise filter vs Whisper (word error rate, lower is better)", "", "| noise | SNR dB | raw | denoised | both, server picks |", "|---|---|---|---|---|"]
     for kind in ["clean", "pink", "traffic", "cafe"]:
         for snr in ([99] if kind == "clean" else SNRS):
             sel = [r for r in rows if r[0] == kind and r[1] == snr]
             a = np.mean([r[2] for r in sel])
             b = np.mean([r[3] for r in sel])
+            c = np.mean([r[4] for r in sel])
             label = "quiet" if snr == 99 else str(snr)
-            lines.append(f"| {kind} | {label} | {a:.0%} | {b:.0%} | {'denoised' if b < a - 0.01 else 'raw' if a < b - 0.01 else 'same'} |")
+            lines.append(f"| {kind} | {label} | {a:.0%} | {b:.0%} | {c:.0%} |")
     report = "\n".join(lines)
     print(report)
     if os.environ.get("GITHUB_STEP_SUMMARY"):

@@ -1,6 +1,7 @@
 // From the 24 Nov dictation: misheard names and requirements nobody said.
 import { describe, expect, test } from "bun:test";
 import { spokenNumbers } from "../supabase/functions/_shared/fidelity.ts";
+import { pickHeard } from "../supabase/functions/_shared/handlers.ts";
 import {
   fixKnownNames,
   namesOnScreen,
@@ -94,5 +95,24 @@ describe("requirements must come from what was said", () => {
     expect(dropInventedCounts("Keep it under 200 words", new Set())).toBe(
       "Keep it under words",
     );
+  });
+});
+
+describe("in heavy noise the surer of two recordings wins", () => {
+  const h = (confidence: number, dropped?: "silence") => ({
+    text: `t${confidence}`,
+    ms: 1,
+    confidence,
+    ...(dropped ? { dropped } : {}),
+  });
+  test("the filtered copy wins only when clearly surer", () => {
+    expect(pickHeard(h(-0.6), h(-0.3)).from).toBe("clean");
+    expect(pickHeard(h(-0.3), h(-0.6)).from).toBe("raw");
+    expect(pickHeard(h(-0.3), h(-0.28)).from).toBe("raw");
+  });
+  test("a copy that heard nothing never wins", () => {
+    expect(pickHeard(h(-0.6), h(-0.1, "silence")).from).toBe("raw");
+    expect(pickHeard(h(-0.1, "silence"), h(-0.6)).from).toBe("clean");
+    expect(pickHeard(h(-0.4), undefined).from).toBe("raw");
   });
 });
