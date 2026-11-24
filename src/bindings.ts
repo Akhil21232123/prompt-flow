@@ -2048,7 +2048,7 @@ export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "
  */
 export type NoiseFilter = 
 /**
- * Only when the recording is noisy.
+ * Only when the recording is very noisy.
  */
 "auto" | "always" | "off"
 export type Notice = { code: NoticeCode; level: NoticeLevel; source: NoticeSource; 

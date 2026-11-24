@@ -1,42 +1,47 @@
-//! Cleaning a recording made somewhere noisy (traffic, a street, a café)
-//! before it is transcribed, and leaving a clean one exactly as it is.
+//! Cleaning a recording made somewhere very noisy (a busy café, traffic)
+//! before it is transcribed, and leaving everything else exactly as it is.
 //!
 //! 1. **Measure.** The noise floor is the energy of the quiet 20 ms frames
 //!    (the pre-roll before speech and the gaps between words), the speech
 //!    level that of the loudest. Their ratio is the SNR.
-//! 2. **Decide.** Auto filters only below [`AUTO_THRESHOLD_DB`]. Denoising
-//!    clean speech costs Whisper accuracy (RNNoise also softens quiet
-//!    consonants and breathy word ends), so a clean recording is never
-//!    touched.
+//! 2. **Decide** ([`plan`]). Auto treats only clips below
+//!    [`AUTO_THRESHOLD_DB`], and in the cloud it sends the raw recording
+//!    *and* the filtered one: the server transcribes both and keeps the
+//!    transcript Whisper is surer of. Always sends only the filtered one.
+//!    On this Mac (Private mode) there's no second decode to compare, so
+//!    only Always filters.
 //! 3. **Denoise** with RNNoise (`nnnoiseless`, a pure-Rust port, BSD-3) at
 //!    48 kHz: 16 kHz → 48 kHz → RNNoise in 480-sample frames → 16 kHz, with
-//!    the resampler the recorder already uses (rubato).
+//!    the resampler the recorder uses (rubato).
 //! 4. **Level** speech gently toward -20 dBFS RMS (never more than +18 dB,
-//!    never past -1 dBFS peak), so quiet speech over traffic isn't lost.
-//! 5. **Trim** what the voice detector hears no speech in at either end, so
-//!    Whisper doesn't invent words in a noise tail.
+//!    never past -1 dBFS peak), so quiet speech over the noise isn't lost;
+//!    never when the voice detector found no speech at all.
+//! 5. **Trim**, only when the recorder's own voice detector didn't run
+//!    (it already keeps 450 ms either side of speech): the raw audio is
+//!    scored and 450 ms kept before and after the speech.
 //!
-//! Why 15 dB: the synthetic tests below mix speech-like audio with pink
-//! noise and traffic rumble at 0, 5, 10 and 20 dB. The estimator reads
-//! them as about 2/6/10/20 dB (pink) and 4/6/11/20 dB (traffic), and a
-//! quiet room above 40 dB. So a 15 dB line sits midway between the 10 dB
-//! mixes (where Whisper starts dropping and inventing words in street
-//! noise) and the 20 dB ones (where it is already accurate and denoising
-//! could only cost soft consonants), with about 4 dB to spare either way.
+//! Why 8 dB: a live run through the real /dictate Whisper (scripts/
+//! noise_eval.py: speech mixed with noise, then RNNoise) measured word
+//! error rate raw → denoised as: quiet 0 → 0; traffic at 0/5/10/20 dB
+//! 0 → 0; café babble at 0 dB 67% → 52% and at 5 dB 5% → 2%; pink noise
+//! at 0 dB 11% → 26% (worse); anything at 10 dB or more unchanged. So
+//! filtering helps with background voices, can hurt with steady hiss, and
+//! does nothing from about 8 dB up: below 8 dB both go to the server and it
+//! keeps the better transcript.
 //!
 //! Cost: about 9 ms of CPU per second of audio in a release build (both
 //! resamples included), and about 330 KB of binary (RNNoise's weights and
 //! code).
 
 use rubato::audioadapter_buffers::direct::InterleavedSlice;
-use rubato::{Fft, FixedSync, Resampler};
+use rubato::{Fft, FixedSync, Indexing, Resampler};
 use serde::{Deserialize, Serialize};
 use specta::Type;
 
 use crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE;
 
-/// Auto filters a recording measured below this SNR.
-pub const AUTO_THRESHOLD_DB: f32 = 15.0;
+/// Auto treats a recording measured below this SNR (see the module docs).
+pub const AUTO_THRESHOLD_DB: f32 = 8.0;
 /// RNNoise's rate and frame.
 const DENOISE_RATE: usize = 48_000;
 const DENOISE_FRAME: usize = nnnoiseless::DenoiseState::FRAME_SIZE;
@@ -51,23 +56,39 @@ const TARGET_RMS_DBFS: f32 = -20.0;
 const MAX_GAIN_DB: f32 = 18.0;
 const PEAK_LIMIT: f32 = 0.891; // -1 dBFS
 /// Speech probability that counts as speech when trimming: the recorder's
-/// own Silero threshold, so trimming never cuts what recording kept as
-/// speech.
+/// own Silero threshold.
 const TRIM_SPEECH_PROB: f32 = 0.3;
-/// Kept around the speech when trimming, so first and last syllables
-/// stay whole.
-const TRIM_PAD_BEFORE_MS: usize = 200;
-const TRIM_PAD_AFTER_MS: usize = 300;
+/// Kept around the speech when trimming: the recorder's own pre-roll and
+/// hangover (`VAD_PREFILL_MS`, `VAD_OFFLINE_HANGOVER_MS`), so soft starts
+/// and a trailing "thanks" stay.
+const TRIM_PAD_BEFORE_MS: usize = crate::audio_toolkit::vad::VAD_PREFILL_MS as usize;
+const TRIM_PAD_AFTER_MS: usize = crate::audio_toolkit::vad::VAD_OFFLINE_HANGOVER_MS as usize;
+/// The loudest frames are speech peaks, louder than speech on average by
+/// about this much (measured on the synthetic speech in the tests).
+const PEAK_TO_MEAN_DB: f32 = 3.0;
 
 /// Settings → Sound → Noise filter.
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default, Type)]
 #[serde(rename_all = "snake_case")]
 pub enum NoiseFilter {
-    /// Only when the recording is noisy.
+    /// Only when the recording is very noisy.
     #[default]
     Auto,
     Always,
     Off,
+}
+
+/// What goes to the transcriber.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Plan {
+    /// The recording as it is.
+    #[default]
+    Raw,
+    /// The recording as it is, and the filtered one beside it (the cloud
+    /// keeps whichever transcript is surer).
+    Both,
+    /// Only the filtered recording.
+    Clean,
 }
 
 /// What was done to one recording.
@@ -75,21 +96,41 @@ pub enum NoiseFilter {
 pub struct CleanReport {
     /// The estimated speech-to-noise ratio, when there was enough audio.
     pub snr_db: Option<f32>,
-    /// It was denoised (and levelled and trimmed).
-    pub filtered: bool,
-    /// The level step's gain.
+    pub plan: Plan,
+    /// The level step's gain (0 when it was skipped).
     pub gain_db: f32,
-    /// Samples trimmed from the start and the end.
+    /// Samples trimmed from the start and the end of the filtered audio.
     pub trimmed: (usize, usize),
 }
 
-/// Whether to filter a recording with this estimate.
-pub fn should_filter(mode: NoiseFilter, snr_db: Option<f32>) -> bool {
+impl CleanReport {
+    /// A filtered recording was made.
+    pub fn filtered(&self) -> bool {
+        self.plan != Plan::Raw
+    }
+}
+
+/// A recording ready to send: `audio` (the `audio` field, or what the local
+/// model decodes) and, for [`Plan::Both`], the filtered one (`audio_clean`).
+#[derive(Debug, Clone, Default)]
+pub struct Prepared {
+    pub audio: Vec<f32>,
+    pub clean: Option<Vec<f32>>,
+    pub report: CleanReport,
+}
+
+/// What to send for a recording with this estimate. `on_device`: the local
+/// model, which can't compare two decodes, so Auto leaves it alone.
+pub fn plan(mode: NoiseFilter, snr_db: Option<f32>, on_device: bool) -> Plan {
     match mode {
-        NoiseFilter::Off => false,
-        NoiseFilter::Always => true,
+        NoiseFilter::Off => Plan::Raw,
+        NoiseFilter::Always => Plan::Clean,
+        NoiseFilter::Auto if on_device => Plan::Raw,
         // Unknown (a very short clip): leave it alone.
-        NoiseFilter::Auto => snr_db.is_some_and(|snr| snr < AUTO_THRESHOLD_DB),
+        NoiseFilter::Auto => match snr_db {
+            Some(snr) if snr < AUTO_THRESHOLD_DB => Plan::Both,
+            _ => Plan::Raw,
+        },
     }
 }
 
@@ -107,10 +148,6 @@ fn mean(values: &[f32]) -> f32 {
         values.iter().sum::<f32>() / values.len() as f32
     }
 }
-
-/// The loudest frames are speech peaks, louder than speech on average by
-/// about this much (measured on the synthetic speech in the tests).
-const PEAK_TO_MEAN_DB: f32 = 3.0;
 
 /// The speech-to-noise ratio in dB: the loudest fifth of 20 ms frames
 /// (speech, plus the noise under it) against the quiet ones between the
@@ -136,15 +173,44 @@ pub fn estimate_snr(samples: &[f32]) -> Option<f32> {
     Some((10.0 * (speech / noise).log10() - PEAK_TO_MEAN_DB).clamp(-20.0, 80.0))
 }
 
-fn resample(samples: &[f32], from: usize, to: usize) -> Vec<f32> {
+/// Resamples a whole clip, `from` → `to` Hz. The resampler's startup delay
+/// is dropped by hand (rubato 5.0's `process_all` splices it wrongly, and
+/// the recorder pins 5.0), and the result is exactly `ceil(len * to /
+/// from)` long.
+pub fn resample(samples: &[f32], from: usize, to: usize) -> Vec<f32> {
     if samples.is_empty() || from == to {
         return samples.to_vec();
     }
     let run = || -> Option<Vec<f32>> {
         let mut resampler = Fft::<f32>::new(from, to, 1024, 1, FixedSync::Input).ok()?;
-        let input = InterleavedSlice::new(samples, 1, samples.len()).ok()?;
-        let out = resampler.process_all(&input, samples.len(), None).ok()?;
-        Some(out.take_data())
+        let len = samples.len();
+        let expected = (resampler.resample_ratio() * len as f64).ceil() as usize;
+        let mut delay = resampler.output_delay();
+        let input = InterleavedSlice::new(samples, 1, len).ok()?;
+        let mut scratch = vec![0.0f32; resampler.output_frames_max()];
+        let mut out = Vec::with_capacity(expected + scratch.len());
+        let mut offset = 0;
+        // Past the end, silence pushes the held-back delay out.
+        let mut rounds_left = expected / resampler.output_frames_max().max(1) + len + 16;
+        while out.len() < expected {
+            rounds_left = rounds_left.checked_sub(1)?;
+            let next = resampler.input_frames_next();
+            let mut indexing = Indexing::new().input_offset(offset.min(len));
+            if len - offset.min(len) < next {
+                indexing.partial_len = Some(len - offset.min(len));
+            }
+            let scratch_len = scratch.len();
+            let mut buffer = InterleavedSlice::new_mut(&mut scratch[..], 1, scratch_len).ok()?;
+            let (taken, produced) = resampler
+                .process_into_buffer(&input, &mut buffer, Some(&indexing))
+                .ok()?;
+            offset += taken;
+            let dropped = delay.min(produced);
+            delay -= dropped;
+            out.extend_from_slice(&scratch[dropped..produced]);
+        }
+        out.truncate(expected);
+        Some(out)
     };
     run().unwrap_or_else(|| {
         log::warn!("Resampling {from} → {to} Hz failed; leaving the audio as it was");
@@ -207,61 +273,92 @@ pub fn level(samples: &mut [f32]) -> f32 {
     20.0 * gain.log10()
 }
 
-/// The part of a recording to keep: from a little before the first frame
-/// that sounds like speech to a little after the last one. `None` when no
-/// frame does (keep it all: the server decides what's silence).
-pub fn speech_bounds(
-    scores: &[f32],
-    frame_samples: usize,
-    len: usize,
-) -> Option<std::ops::Range<usize>> {
-    let first = scores.iter().position(|p| *p >= TRIM_SPEECH_PROB)?;
-    let last = scores.iter().rposition(|p| *p >= TRIM_SPEECH_PROB)?;
+/// What a voice detector made of a recording.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Speech {
+    /// Speech in this range (with the margins kept).
+    In(std::ops::Range<usize>),
+    /// No frame sounded like speech.
+    None,
+}
+
+/// From a little before the first frame that sounds like speech to a little
+/// after the last one.
+pub fn speech_bounds(scores: &[f32], frame_samples: usize, len: usize) -> Speech {
+    let (Some(first), Some(last)) = (
+        scores.iter().position(|p| *p >= TRIM_SPEECH_PROB),
+        scores.iter().rposition(|p| *p >= TRIM_SPEECH_PROB),
+    ) else {
+        return Speech::None;
+    };
     let per_ms = WHISPER_SAMPLE_RATE as usize / 1000;
     let start = (first * frame_samples).saturating_sub(TRIM_PAD_BEFORE_MS * per_ms);
     let end = ((last + 1) * frame_samples + TRIM_PAD_AFTER_MS * per_ms).min(len);
-    (start < end).then_some(start..end)
+    if start < end {
+        Speech::In(start..end)
+    } else {
+        Speech::None
+    }
 }
 
 /// Speech probabilities for whole frames of `samples` (the last one padded
-/// with silence), from a voice detector.
+/// with silence), from a voice detector, and the frame size.
 pub type Scorer<'a> = &'a mut dyn FnMut(&[f32]) -> Option<(Vec<f32>, usize)>;
 
-/// Cleans a 16 kHz recording if `mode` says to (see the module docs).
-/// `score` gives speech probabilities for trimming, when a detector is at
-/// hand.
-pub fn clean(
+/// Gets a recording ready for the transcriber (see the module docs).
+/// `score` is given only when the recorder's own voice detector didn't run:
+/// it trims the filtered audio, and says when there's no speech at all.
+pub fn prepare(
     samples: Vec<f32>,
     mode: NoiseFilter,
+    on_device: bool,
     score: Option<Scorer<'_>>,
-) -> (Vec<f32>, CleanReport) {
+) -> Prepared {
     let snr_db = estimate_snr(&samples);
     let mut report = CleanReport {
         snr_db,
+        plan: plan(mode, snr_db, on_device),
         ..Default::default()
     };
-    if !should_filter(mode, snr_db) {
-        return (samples, report);
+    if report.plan == Plan::Raw {
+        return Prepared {
+            audio: samples,
+            clean: None,
+            report,
+        };
     }
-    let mut out = denoise(&samples);
-    report.filtered = true;
-    report.gain_db = level(&mut out);
-    if let Some(score) = score {
-        if let Some((scores, frame)) = score(&out) {
-            if let Some(range) = speech_bounds(&scores, frame, out.len()) {
-                report.trimmed = (range.start, out.len() - range.end);
-                out = out[range].to_vec();
-            }
-        }
+    // Scored on the recording as it is: denoising can make speech sound
+    // less like speech to a detector.
+    let speech = score
+        .and_then(|score| score(&samples))
+        .map(|(scores, frame)| speech_bounds(&scores, frame, samples.len()));
+    let mut clean = denoise(&samples);
+    // Nothing but noise: don't turn it up for Whisper to imagine words in.
+    if speech != Some(Speech::None) {
+        report.gain_db = level(&mut clean);
     }
-    (out, report)
+    if let Some(Speech::In(range)) = speech {
+        report.trimmed = (range.start, clean.len() - range.end);
+        clean = clean[range].to_vec();
+    }
+    match report.plan {
+        Plan::Both => Prepared {
+            audio: samples,
+            clean: Some(clean),
+            report,
+        },
+        _ => Prepared {
+            audio: clean,
+            clean: None,
+            report,
+        },
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::time::Instant;
-
     const RATE: usize = 16_000;
 
     /// A tiny deterministic PRNG, so tests never depend on a crate or seed.
@@ -387,28 +484,51 @@ mod tests {
     }
 
     #[test]
-    fn auto_filters_below_the_line_only() {
+    fn auto_sends_both_only_below_eight_db() {
+        assert_eq!(AUTO_THRESHOLD_DB, 8.0);
         let clean = speech(4.0);
-        let noise = pink(clean.len(), 11);
-        for (snr, expect) in [(0.0, true), (5.0, true), (10.0, true), (20.0, false)] {
-            let (_, report) = clean_no_trim(mix(&clean, &noise, snr), NoiseFilter::Auto);
-            assert_eq!(report.filtered, expect, "{snr} dB");
+        for (name, noise) in [
+            ("pink", pink(clean.len(), 11)),
+            ("traffic", traffic(clean.len(), 5)),
+        ] {
+            for (snr, expect) in [(0.0, Plan::Both), (20.0, Plan::Raw)] {
+                let p = prepare(mix(&clean, &noise, snr), NoiseFilter::Auto, false, None);
+                assert_eq!(p.report.plan, expect, "{name} at {snr} dB");
+            }
         }
-        let (out, report) = clean_no_trim(clean.clone(), NoiseFilter::Auto);
-        assert!(!report.filtered);
-        assert_eq!(out, clean, "clean audio is left exactly as it was");
-        let (_, report) = clean_no_trim(clean.clone(), NoiseFilter::Always);
-        assert!(report.filtered);
-        let noisy = mix(&clean, &noise, 0.0);
-        let (out, report) = clean_no_trim(noisy.clone(), NoiseFilter::Off);
-        assert!(!report.filtered);
-        assert_eq!(out, noisy);
-        assert!(should_filter(NoiseFilter::Always, None));
-        assert!(!should_filter(NoiseFilter::Auto, None));
+        assert_eq!(plan(NoiseFilter::Auto, Some(7.9), false), Plan::Both);
+        assert_eq!(plan(NoiseFilter::Auto, Some(8.0), false), Plan::Raw);
+        assert_eq!(plan(NoiseFilter::Auto, Some(12.0), false), Plan::Raw);
+        assert_eq!(plan(NoiseFilter::Auto, None, false), Plan::Raw);
+        assert_eq!(plan(NoiseFilter::Always, Some(40.0), false), Plan::Clean);
+        assert_eq!(plan(NoiseFilter::Off, Some(-5.0), false), Plan::Raw);
+
+        // Both: the raw recording goes exactly as recorded, the filtered one beside it.
+        let noisy = mix(&clean, &pink(clean.len(), 11), 0.0);
+        let p = prepare(noisy.clone(), NoiseFilter::Auto, false, None);
+        assert_eq!(p.audio, noisy);
+        assert_eq!(p.clean.as_ref().map(Vec::len), Some(noisy.len()));
+        // Always: only the filtered one.
+        let p = prepare(noisy.clone(), NoiseFilter::Always, false, None);
+        assert!(p.clean.is_none());
+        assert_ne!(p.audio, noisy);
+        // Off, and quiet rooms: untouched.
+        let p = prepare(noisy.clone(), NoiseFilter::Off, false, None);
+        assert_eq!((p.audio, p.clean.is_none()), (noisy, true));
+        let p = prepare(clean.clone(), NoiseFilter::Auto, false, None);
+        assert_eq!(p.audio, clean);
     }
 
-    fn clean_no_trim(x: Vec<f32>, mode: NoiseFilter) -> (Vec<f32>, CleanReport) {
-        clean(x, mode, None)
+    #[test]
+    fn on_this_mac_auto_never_filters() {
+        let clean = speech(4.0);
+        let noisy = mix(&clean, &pink(clean.len(), 3), 0.0);
+        let p = prepare(noisy.clone(), NoiseFilter::Auto, true, None);
+        assert_eq!(p.report.plan, Plan::Raw);
+        assert_eq!(p.audio, noisy);
+        assert!(p.clean.is_none());
+        let p = prepare(noisy, NoiseFilter::Always, true, None);
+        assert_eq!(p.report.plan, Plan::Clean);
     }
 
     #[test]
@@ -423,10 +543,41 @@ mod tests {
         let before = 10.0 * power(&noisy[..head]).log10();
         let after = 10.0 * power(&out[RATE / 10..head]).max(1e-12).log10();
         assert!(after < before - 6.0, "noise {before:.1} dB → {after:.1} dB");
-        let (levelled, report) = clean_no_trim(noisy, NoiseFilter::Always);
-        assert_eq!(levelled.len(), clean.len());
-        assert!(levelled.iter().all(|s| s.abs() <= PEAK_LIMIT + 1e-4));
-        assert!(report.gain_db <= MAX_GAIN_DB + 1e-3);
+        let p = prepare(noisy, NoiseFilter::Always, false, None);
+        assert_eq!(p.audio.len(), clean.len());
+        assert!(p.audio.iter().all(|s| s.abs() <= PEAK_LIMIT + 1e-4));
+        assert!(p.report.gain_db <= MAX_GAIN_DB + 1e-3);
+    }
+
+    #[test]
+    fn the_resampler_round_trips() {
+        // 16k → 48k → 16k is near-identity away from the filter's edges.
+        let x: Vec<f32> = (0..RATE * 2)
+            .map(|i| {
+                let t = i as f32 / RATE as f32;
+                0.3 * (2.0 * std::f32::consts::PI * 220.0 * t).sin()
+                    + 0.2 * (2.0 * std::f32::consts::PI * 1_700.0 * t).sin()
+                    + 0.1 * (2.0 * std::f32::consts::PI * 5_100.0 * t).sin()
+            })
+            .collect();
+        let up = resample(&x, RATE, DENOISE_RATE);
+        assert_eq!(up.len(), x.len() * 3);
+        let back = resample(&up, DENOISE_RATE, RATE);
+        assert_eq!(back.len(), x.len());
+        let edge = 256;
+        let err = x[edge..x.len() - edge]
+            .iter()
+            .zip(&back[edge..x.len() - edge])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(err < 0.01, "round trip is off by up to {err}");
+        // Including the first 56 ms rubato 5.0's process_all gets wrong.
+        let start_err = x[edge..1_000]
+            .iter()
+            .zip(&back[edge..1_000])
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0f32, f32::max);
+        assert!(start_err < 0.01, "the start is off by up to {start_err}");
     }
 
     #[test]
@@ -442,40 +593,70 @@ mod tests {
     }
 
     #[test]
-    fn trimming_keeps_the_speech_with_room_around_it() {
-        // 32 ms frames: noise, speech in frames 20..40, noise.
+    fn trimming_keeps_the_recorders_own_margins() {
+        // 32 ms frames: noise, speech in frames 30..50, noise.
         let frame = 512;
-        let mut scores = vec![0.05f32; 70];
-        for s in &mut scores[20..40] {
+        let mut scores = vec![0.05f32; 90];
+        for s in &mut scores[30..50] {
             *s = 0.9;
         }
-        let len = 70 * frame;
-        let r = speech_bounds(&scores, frame, len).unwrap();
-        assert_eq!(r.start, 20 * frame - 200 * 16);
-        assert_eq!(r.end, 40 * frame + 300 * 16);
+        let len = 90 * frame;
+        let Speech::In(r) = speech_bounds(&scores, frame, len) else {
+            panic!("speech expected");
+        };
+        assert_eq!(r.start, 30 * frame - 450 * 16);
+        assert_eq!(r.end, 50 * frame + 450 * 16);
         // Speech to the very end: nothing past it to cut.
-        for s in &mut scores[60..] {
+        for s in &mut scores[80..] {
             *s = 0.9;
         }
-        assert_eq!(speech_bounds(&scores, frame, len).unwrap().end, len);
-        // No speech at all: keep everything.
-        assert_eq!(speech_bounds(&[0.1; 10], frame, 10 * frame), None);
+        assert!(matches!(speech_bounds(&scores, frame, len), Speech::In(r) if r.end == len));
+        assert_eq!(speech_bounds(&[0.1; 10], frame, 10 * frame), Speech::None);
+    }
 
-        // Through `clean`, with a detector that hears speech in the middle.
+    #[test]
+    fn no_trimming_without_a_scorer_and_no_gain_on_noise_alone() {
+        // The recorder's VAD ran: no scorer is given, nothing is trimmed.
         let noisy = mix(&speech(3.0), &pink(48_000, 2), 0.0);
+        let p = prepare(noisy.clone(), NoiseFilter::Always, false, None);
+        assert_eq!(p.report.trimmed, (0, 0));
+        assert_eq!(p.audio.len(), noisy.len());
+
+        // It didn't: the raw audio is scored, and the filtered audio is cut
+        // to the speech with 450 ms either side.
+        let frame = 512;
+        let mut scored_len = 0;
         let mut detector = |x: &[f32]| -> Option<(Vec<f32>, usize)> {
+            scored_len = x.len();
             let frames = x.len().div_ceil(frame);
             Some((
                 (0..frames)
-                    .map(|i| if (30..60).contains(&i) { 0.9 } else { 0.0 })
+                    .map(|i| if (40..60).contains(&i) { 0.9 } else { 0.0 })
                     .collect(),
                 frame,
             ))
         };
-        let (out, report) = clean(noisy.clone(), NoiseFilter::Auto, Some(&mut detector));
-        assert!(report.filtered);
-        assert_eq!(out.len() + report.trimmed.0 + report.trimmed.1, noisy.len());
-        assert!(report.trimmed.0 > 0 && report.trimmed.1 > 0);
+        let p = prepare(
+            noisy.clone(),
+            NoiseFilter::Always,
+            false,
+            Some(&mut detector),
+        );
+        assert_eq!(scored_len, noisy.len());
+        assert_eq!(p.report.trimmed.0, 40 * frame - 450 * 16);
+        assert_eq!(
+            p.audio.len() + p.report.trimmed.0 + p.report.trimmed.1,
+            noisy.len()
+        );
+
+        // Noise and nothing else: filtered, but never turned up.
+        let noise_only = pink(48_000, 8).iter().map(|s| s * 0.01).collect::<Vec<_>>();
+        let mut deaf = |x: &[f32]| -> Option<(Vec<f32>, usize)> {
+            Some((vec![0.0; x.len().div_ceil(frame)], frame))
+        };
+        let p = prepare(noise_only, NoiseFilter::Always, false, Some(&mut deaf));
+        assert_eq!(p.report.gain_db, 0.0);
+        assert_eq!(p.report.trimmed, (0, 0));
     }
 
     #[test]
@@ -483,11 +664,11 @@ mod tests {
         // Well under real time even in a debug build (the noise crates are
         // optimised in dev builds too; see Cargo.toml).
         let clean = speech(10.0);
-        let noisy = mix(&clean, &pink(clean.len(), 4), 5.0);
+        let noisy = mix(&clean, &pink(clean.len(), 4), 0.0);
         let started = Instant::now();
-        let (_, report) = clean_no_trim(noisy, NoiseFilter::Auto);
+        let p = prepare(noisy, NoiseFilter::Auto, false, None);
         let took = started.elapsed().as_secs_f32();
-        assert!(report.filtered);
+        assert_eq!(p.report.plan, Plan::Both);
         eprintln!("noise filter: {:.1} ms per second of audio", took * 100.0);
         assert!(took < 10.0 * 0.15, "took {took:.2}s for 10 s of audio");
     }

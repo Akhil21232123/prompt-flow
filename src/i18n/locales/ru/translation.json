@@ -525,8 +525,8 @@
           "off": "Off"
         },
         "description": {
-          "auto": "In traffic, on the street or in a café, PromptFlow cleans up the background noise before it writes. In a quiet room your audio is left as it is.",
-          "always": "Every recording is cleaned up first. Best if you always dictate somewhere loud.",
+          "auto": "When it's very noisy (a busy café, traffic), PromptFlow also sends a cleaned-up copy and keeps whichever it understands better. Otherwise your audio goes as it is. In Private mode only Always cleans up.",
+          "always": "Every recording is cleaned up before PromptFlow writes. Can cost a word or two in steady hiss.",
           "off": "Your audio is never changed."
         }
       }
@@ -1631,7 +1631,7 @@
       "onClipboard": "On your clipboard",
       "alreadySent": "Already sent · new version on your clipboard",
       "noiseFiltered": "Noise filtered",
-      "noiseFilteredTitle": "It was noisy, so PromptFlow cleaned up the background before writing."
+      "noiseFilteredTitle": "It was noisy, and PromptFlow understood the cleaned-up recording better."
     },
     "verdict": {
       "good": "The answer looks right",

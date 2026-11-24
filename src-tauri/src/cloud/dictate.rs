@@ -238,6 +238,9 @@ pub struct Finished {
     pub target: Option<String>,
     pub memory_used: Vec<MemoryChip>,
     pub language: Option<String>,
+    /// Which recording the server's transcript came from when it got two:
+    /// "raw" or "clean" (`timing.heard_from`).
+    pub heard_from: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -335,6 +338,7 @@ pub fn parse_response(v: &Value) -> Result<DictateOutcome, ApiError> {
         target: s(v, "target"),
         memory_used,
         language: s(v, "language"),
+        heard_from: v.get("timing").and_then(|t| s(t, "heard_from")),
     }))
 }
 
@@ -392,7 +396,7 @@ pub async fn send(
     wav: Option<&[u8]>,
 ) -> Result<DictateOutcome, ApiError> {
     let meta_json = serde_json::to_string(meta).map_err(|e| ApiError::server(e.to_string()))?;
-    send_json(app, &meta_json, wav).await
+    send_json(app, &meta_json, wav, None).await
 }
 
 /// [`send`] with the meta already serialised (a kept recording's retry).
@@ -400,8 +404,10 @@ pub async fn send_json(
     app: &AppHandle,
     meta_json: &str,
     wav: Option<&[u8]>,
+    clean: Option<&[u8]>,
 ) -> Result<DictateOutcome, ApiError> {
     let meta_json = meta_json.to_string();
+    let files = audio_fields(wav, clean);
     let body = api::authed(app, || {
         let mut form = reqwest::multipart::Form::new().part(
             "meta",
@@ -409,13 +415,13 @@ pub async fn send_json(
                 .mime_str("application/json")
                 .unwrap_or_else(|_| reqwest::multipart::Part::text(meta_json.clone())),
         );
-        if let Some(wav) = wav {
-            let part = reqwest::multipart::Part::bytes(wav.to_vec()).file_name("audio.wav");
+        for (field, file_name, bytes) in &files {
+            let part = reqwest::multipart::Part::bytes(bytes.to_vec()).file_name(*file_name);
             let part = match part.mime_str("audio/wav") {
                 Ok(p) => p,
-                Err(_) => reqwest::multipart::Part::bytes(wav.to_vec()).file_name("audio.wav"),
+                Err(_) => reqwest::multipart::Part::bytes(bytes.to_vec()).file_name(*file_name),
             };
-            form = form.part("audio", part);
+            form = form.part(*field, part);
         }
         api::post("/functions/v1/dictate").multipart(form)
     })
@@ -423,6 +429,23 @@ pub async fn send_json(
     let v: Value = serde_json::from_str(&body)
         .map_err(|_| ApiError::server("PromptFlow sent an answer it couldn't read"))?;
     parse_response(&v)
+}
+
+/// The audio parts of a /dictate request: `audio`, and in heavy noise the
+/// filtered copy as `audio_clean` (the server transcribes both and keeps
+/// the surer transcript).
+pub fn audio_fields<'a>(
+    wav: Option<&'a [u8]>,
+    clean: Option<&'a [u8]>,
+) -> Vec<(&'static str, &'static str, &'a [u8])> {
+    let mut files = Vec::new();
+    if let Some(wav) = wav {
+        files.push(("audio", "audio.wav", wav));
+        if let Some(clean) = clean {
+            files.push(("audio_clean", "audio_clean.wav", clean));
+        }
+    }
+    files
 }
 
 #[cfg(test)]
@@ -477,6 +500,41 @@ mod tests {
         assert_eq!(meta.output_language, Some("same"));
         assert!(!meta.ask_back, "ask-back is engineer only");
         assert!(meta.app.is_none());
+    }
+
+    #[test]
+    fn heavy_noise_sends_two_files() {
+        let fields = |w, c| {
+            audio_fields(w, c)
+                .into_iter()
+                .map(|(f, n, b): (&str, &str, &[u8])| (f, n, b.to_vec()))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            fields(Some(&b"RAW"[..]), Some(&b"CLEAN"[..])),
+            vec![
+                ("audio", "audio.wav", b"RAW".to_vec()),
+                ("audio_clean", "audio_clean.wav", b"CLEAN".to_vec())
+            ]
+        );
+        assert_eq!(fields(Some(&b"RAW"[..]), None).len(), 1);
+        // A tapped answer has no audio, so no filtered copy either.
+        assert!(fields(None, Some(&b"CLEAN"[..])).is_empty());
+    }
+
+    #[test]
+    fn heard_from_is_read_from_timing() {
+        let v = json!({"raw": "hi", "text": "Hi.", "mode": "dictate",
+            "timing": {"stt_ms": 1, "total_ms": 2, "heard_from": "clean"}});
+        match parse_response(&v).unwrap() {
+            DictateOutcome::Done(f) => assert_eq!(f.heard_from.as_deref(), Some("clean")),
+            other => panic!("unexpected {other:?}"),
+        }
+        let v = json!({"raw": "hi", "text": "Hi.", "mode": "dictate"});
+        match parse_response(&v).unwrap() {
+            DictateOutcome::Done(f) => assert_eq!(f.heard_from, None),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]
