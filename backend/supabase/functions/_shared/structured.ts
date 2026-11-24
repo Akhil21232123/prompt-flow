@@ -204,9 +204,12 @@ export function groundParts(
     const words = [...new Set(stems(line))];
     if (words.length < 3) return true;
     const hits = words.filter((w) => have.has(w)).length;
-    // "Do not…", "Never…", "No…": a rule is where an invented constraint
-    // hides, so most of it has to be the user's own words.
-    const rule = /^\W*(?:do not|don't|never|avoid|no|without)\b/i.test(line);
+    // "Do not…", "…, not hardware specs": a rule is where an invented
+    // constraint hides, so most of it has to be the user's own words.
+    const rule =
+      /(?:^|[\s,;(])(?:do not|don't|never|avoid|no|not|without|rather than|instead of)\b/i.test(
+        line,
+      );
     return hits / words.length >= (rule ? 0.6 : 0.34);
   };
   const clean = (xs: string[]) =>

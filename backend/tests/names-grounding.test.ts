@@ -62,6 +62,7 @@ describe("requirements must come from what was said", () => {
       "List at least three GitHub repositories (with URLs) that could be integrated to improve noise robustness.",
       "Include a short assessment of how each repository could help.",
       "Do not include any proprietary or non-open-source tools.",
+      "The differentiators are actionable software features, not hardware specs.",
     ],
     output_format:
       "A plain text response with four sections: 1) Differentiators 2) Manage and Diary Use Cases 3) Noise 4) GitHub repositories",
