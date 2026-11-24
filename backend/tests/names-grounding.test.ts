@@ -109,6 +109,8 @@ describe("in heavy noise the surer of two recordings wins", () => {
     expect(pickHeard(h(-0.6), h(-0.3)).from).toBe("clean");
     expect(pickHeard(h(-0.3), h(-0.6)).from).toBe("raw");
     expect(pickHeard(h(-0.3), h(-0.28)).from).toBe("raw");
+    // Café at 5 dB in the live test: -0.09 raw vs -0.048 filtered, filtered right.
+    expect(pickHeard(h(-0.09), h(-0.048)).from).toBe("clean");
   });
   test("a copy that heard nothing never wins", () => {
     expect(pickHeard(h(-0.6), h(-0.1, "silence")).from).toBe("raw");

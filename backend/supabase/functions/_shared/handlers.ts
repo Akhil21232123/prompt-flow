@@ -355,7 +355,7 @@ export function pickHeard(raw: Heard, clean: Heard | undefined): Heard {
   if (!clean || clean.dropped) return { ...raw, from: "raw" };
   if (raw.dropped) return { ...clean, from: "clean" };
   const better =
-    (clean.confidence ?? -Infinity) > (raw.confidence ?? -Infinity) + 0.05;
+    (clean.confidence ?? -Infinity) > (raw.confidence ?? -Infinity) + 0.03;
   return better ? { ...clean, from: "clean" } : { ...raw, from: "raw" };
 }
 
