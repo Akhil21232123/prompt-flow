@@ -10,6 +10,19 @@ default-run = "handy"
 [profile.dev]
 incremental = true # Compile your binary in smaller steps.
 
+# The noise filter's DSP crates are unusably slow unoptimised; build them
+# optimised in dev and test builds too (the app's own code stays debug).
+[profile.dev.package.nnnoiseless]
+opt-level = 3
+[profile.dev.package.easyfft]
+opt-level = 3
+[profile.dev.package.rustfft]
+opt-level = 3
+[profile.dev.package.realfft]
+opt-level = 3
+[profile.dev.package.rubato]
+opt-level = 3
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -65,6 +78,8 @@ symphonia = { version = "0.5.5", features = ["aac", "alac", "isomp4", "mp3", "ai
 symphonia-adapter-libopus = "0.2.9"
 # Resamples a decoded file to 16 kHz; the version handy-recorder already uses.
 rubato = "5"
+# Noise filter (RNNoise, pure Rust, BSD-3) for dictation in noisy places.
+nnnoiseless = { version = "0.5", default-features = false }
 handy-recorder = "0.1.1"
 reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate", "multipart"] }
 futures-util = "0.3"

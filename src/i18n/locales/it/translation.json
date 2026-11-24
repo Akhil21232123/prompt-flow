@@ -516,6 +516,19 @@
       "volume": {
         "title": "Volume",
         "description": "Regola il volume del feedback audio"
+      },
+      "noiseFilter": {
+        "title": "Noise filter",
+        "options": {
+          "auto": "Auto",
+          "always": "Always",
+          "off": "Off"
+        },
+        "description": {
+          "auto": "When it's very noisy (a busy café, traffic), PromptFlow also sends a cleaned-up copy and keeps whichever it understands better. Otherwise your audio goes as it is. In Private mode only Always cleans up.",
+          "always": "Every recording is cleaned up before PromptFlow writes. Can cost a word or two in steady hiss.",
+          "off": "Your audio is never changed."
+        }
       }
     },
     "advanced": {
@@ -1616,7 +1629,9 @@
       "bad": "Bad result",
       "thanks": "Thanks",
       "onClipboard": "On your clipboard",
-      "alreadySent": "Already sent · new version on your clipboard"
+      "alreadySent": "Already sent · new version on your clipboard",
+      "noiseFiltered": "Noise filtered",
+      "noiseFilteredTitle": "It was noisy, and PromptFlow understood the cleaned-up recording better."
     },
     "verdict": {
       "good": "The answer looks right",

@@ -349,6 +349,61 @@ pub fn create_detector(
     })
 }
 
+/// Gets a finished recording ready for the transcriber the way the Noise
+/// filter setting says (see `audio_toolkit::noise`). `on_device`: for the
+/// local model (Private mode), where Auto never filters. Trims with the
+/// selected voice detector only when the recorder's own didn't run. Runs on
+/// the caller's thread; it takes tens of milliseconds per second of audio
+/// when it filters, and next to nothing otherwise.
+pub fn prepare_for_transcription(
+    app_handle: &tauri::AppHandle,
+    samples: Vec<f32>,
+    on_device: bool,
+) -> crate::audio_toolkit::noise::Prepared {
+    use crate::audio_toolkit::noise;
+    let started = Instant::now();
+    let settings = get_settings(app_handle);
+    let mut detector: Option<Box<dyn SpeechScorer>> = None;
+    let mut score = |audio: &[f32]| -> Option<(Vec<f32>, usize)> {
+        if detector.is_none() {
+            detector = create_detector(settings.vad_backend, app_handle)
+                .map_err(|e| warn!("No voice detector to trim with: {e}"))
+                .ok();
+        }
+        let detector = detector.as_mut()?;
+        let frame = detector.frame_samples();
+        let mut padded = audio.to_vec();
+        padded.resize(audio.len().div_ceil(frame) * frame, 0.0);
+        detector
+            .score(&padded)
+            .map_err(|e| warn!("Voice detector failed while trimming: {e}"))
+            .ok()
+            .map(|scores| (scores, frame))
+    };
+    // The recorder's voice detector already cut the silence (keeping its
+    // own margins): trimming again would only eat into them.
+    let scorer: Option<noise::Scorer<'_>> = (!settings.vad_enabled).then_some(&mut score);
+    let prepared = noise::prepare(samples, settings.flow.noise_filter, on_device, scorer);
+    let report = prepared.report;
+    if report.filtered() {
+        info!(
+            "Noise filter ({:?}): SNR {:.1} dB, gain {:+.1} dB, trimmed {} + {} samples, {:?}",
+            report.plan,
+            report.snr_db.unwrap_or(f32::NAN),
+            report.gain_db,
+            report.trimmed.0,
+            report.trimmed.1,
+            started.elapsed()
+        );
+    } else {
+        debug!(
+            "Noise filter not used (SNR {:?} dB, {:?})",
+            report.snr_db, settings.flow.noise_filter
+        );
+    }
+    prepared
+}
+
 /// A detector for `backend` with a recording's smoothing (pre-roll, onset,
 /// offline hangover): what keeps speech in a recording, and what cuts the
 /// silence out of other audio the same way.

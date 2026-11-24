@@ -1786,7 +1786,11 @@ new_keys_notice?: boolean;
 /**
  * The "set 🌐 to Do Nothing" tip was shown (it's shown once).
  */
-fn_tip_shown?: boolean }
+fn_tip_shown?: boolean; 
+/**
+ * Clean recordings made somewhere noisy before transcribing them.
+ */
+noise_filter?: NoiseFilter }
 export type FnKeyStatus = { 
 /**
  * The tap is listening (permissions granted and the setting is on).
@@ -1907,7 +1911,7 @@ export type IslandTip =
  * picker (or switch input source) when Fn is used.
  */
 "fn_also_used_by_macos"
-export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null; hint: SmartHint | null; hands_free: boolean } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean; tip: IslandTip | null } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
+export type IslandView = { kind: "hidden" } | { kind: "listening"; mode: IslandMode; language: string; answering: boolean; target: string | null; context: IslandContext | null; hint: SmartHint | null; hands_free: boolean } | { kind: "working"; mode: IslandMode; step: IslandStep; target: string | null } | { kind: "ask"; question: string; options: string[] } | { kind: "done"; mode: IslandMode; preview: string; label: string | null; memory: MemoryChip[]; pasted: boolean; sent: boolean; chips: Redo[]; rateable: boolean; tip: IslandTip | null; noise_filtered: boolean } | { kind: "verdict"; good: boolean; issues: string[]; has_fix: boolean } | { kind: "error"; error: IslandError; message: string | null; retry_after_sec: number | null; retry: RetryState | null } | 
 /**
  * A Handy notice from the on-device pipeline (Private mode).
  */
@@ -2039,6 +2043,14 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
+/**
+ * Settings → Sound → Noise filter.
+ */
+export type NoiseFilter = 
+/**
+ * Only when the recording is very noisy.
+ */
+"auto" | "always" | "off"
 export type Notice = { code: NoticeCode; level: NoticeLevel; source: NoticeSource; 
 /**
  * What only Rust knows, such as a model name or a raw error.

@@ -57,6 +57,8 @@ struct LastResult {
     /// For feedback.
     dictation_id: Option<String>,
     label: Option<String>,
+    /// The words came from the noise-filtered recording.
+    noise_filtered: bool,
 }
 
 /// The kept recording the island is offering to retry. Its audio and meta
@@ -398,7 +400,12 @@ where
     C: Fn() -> bool,
 {
     let settings = get_settings(app);
-    let sample_count = rec.samples.len();
+    // Somewhere very noisy: a filtered copy goes too (or instead, with
+    // "Always"). A clean recording is sent exactly as recorded.
+    let prepared = prepare_recording(app, rec.samples, false).await;
+    let noise = noise_upload(prepared.report.plan);
+    // What's said about the audio describes what's uploaded as `audio`.
+    let sample_count = prepared.audio.len();
     let duration =
         sample_count as f64 / crate::audio_toolkit::constants::WHISPER_SAMPLE_RATE as f64;
     // Reading the screen is bounded on its own, but never let it hold the
@@ -485,19 +492,31 @@ where
     let mut meta = dictate::build_meta(cloud_mode(mode), &settings.flow, input.clone(), clarify);
     let request_id = dictate::new_request_id();
     meta.request_id = Some(request_id.clone());
+    meta.noise_filtered = prepared.report.filtered();
+    meta.snr_db = prepared.report.snr_db.map(|db| (db * 10.0).round() / 10.0);
     let meta_json = serde_json::to_string(&meta).unwrap_or_default();
-    let wav = Arc::new(dictate::encode_wav(&rec.samples));
+    let samples = prepared.audio;
+    let wav = Arc::new(dictate::encode_wav(&samples));
+    let clean_wav = prepared
+        .clean
+        .as_deref()
+        .map(|c| Arc::new(dictate::encode_wav(c)));
 
     // History keeps the audio, like the on-device pipeline.
     let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
     let wav_path = hm.recordings_dir().join(&file_name);
-    let samples = rec.samples;
     let wav_saved = tauri::async_runtime::spawn_blocking(move || {
         crate::audio_toolkit::save_wav_file(&wav_path, &samples).is_ok()
     });
 
-    let result = dictate::send_json(app, &meta_json, Some(wav.as_slice())).await;
+    let result = dictate::send_json(
+        app,
+        &meta_json,
+        Some(wav.as_slice()),
+        clean_wav.as_deref().map(Vec::as_slice),
+    )
+    .await;
     let wav_saved = wav_saved.await.unwrap_or(false);
     if cancelled() {
         island::hide(app);
@@ -532,8 +551,10 @@ where
                     duration_sec: duration,
                 },
                 wav,
+                clean_wav,
             }),
             verify_front: false,
+            noise,
         },
     )
     .await;
@@ -591,6 +612,8 @@ struct HandleContext {
     /// The result may arrive long after the recording (a retry): paste only
     /// into the app it was recorded in, and only if the island is still ours.
     verify_front: bool,
+    /// What the noise filter sent (the result card may say so).
+    noise: NoiseUpload,
 }
 
 struct RetryPayload {
@@ -598,6 +621,8 @@ struct RetryPayload {
     attempt: u32,
     item: outbox::OutboxItem,
     wav: Arc<Vec<u8>>,
+    /// The filtered copy sent beside it, in heavy noise.
+    clean_wav: Option<Arc<Vec<u8>>>,
 }
 
 async fn handle_outcome(
@@ -640,6 +665,7 @@ async fn handle_outcome(
                     sample_count: ctx.sample_count,
                     stop_time: ctx.stop_time,
                     verify_front: ctx.verify_front,
+                    noise: ctx.noise,
                 },
             )
             .await;
@@ -702,7 +728,12 @@ async fn handle_outcome(
                 // Never lose what was said: keep it on disk and try again.
                 (Some(payload), Some(auto)) => {
                     log::warn!("PromptFlow request failed ({e}); keeping the recording to retry");
-                    if let Err(err) = outbox::save(app, &payload.item, &payload.wav) {
+                    if let Err(err) = outbox::save(
+                        app,
+                        &payload.item,
+                        &payload.wav,
+                        payload.clean_wav.as_deref().map(Vec::as_slice),
+                    ) {
                         log::error!("Could not keep the recording: {err}");
                         show_api_error(app, &e);
                         return;
@@ -801,7 +832,7 @@ fn offer_retry(app: &AppHandle, e: &ApiError, mut pending: PendingRetry) {
 }
 
 /// Takes the retry view `id` is offering, with its kept recording.
-fn take_retry(app: &AppHandle, id: u64) -> Option<(PendingRetry, outbox::OutboxItem, Vec<u8>)> {
+fn take_retry(app: &AppHandle, id: u64) -> Option<(PendingRetry, outbox::Kept)> {
     let pending = {
         let mut p = lock(&PENDING_RETRY);
         match p.as_ref() {
@@ -809,12 +840,12 @@ fn take_retry(app: &AppHandle, id: u64) -> Option<(PendingRetry, outbox::OutboxI
             _ => None,
         }
     }?;
-    let Some((item, wav)) = outbox::get(app, &pending.request_id) else {
+    let Some(kept) = outbox::get(app, &pending.request_id) else {
         // Deleted from History meanwhile.
         island::dismiss(app, id);
         return None;
     };
-    Some((pending, item, wav))
+    Some((pending, kept))
 }
 
 /// What a kept recording knows of where it was recorded.
@@ -841,7 +872,7 @@ fn outbox_mode(item: &outbox::OutboxItem) -> FlowMode {
 /// Sends the kept recording shown in island view `id` again, with the same
 /// request id.
 pub async fn retry(app: &AppHandle, id: u64) {
-    let Some((pending, item, wav)) = take_retry(app, id) else {
+    let Some((pending, outbox::Kept { item, wav, clean })) = take_retry(app, id) else {
         return;
     };
     let mode = outbox_mode(&item);
@@ -853,7 +884,8 @@ pub async fn retry(app: &AppHandle, id: u64) {
             target: item.target.clone(),
         },
     );
-    let result = dictate::send_json(app, &item.meta_json, Some(&wav)).await;
+    let result = dictate::send_json(app, &item.meta_json, Some(&wav), clean.as_deref()).await;
+    let noise = kept_noise_upload(&item.meta_json, clean.is_some());
     handle_outcome(
         app,
         result,
@@ -869,8 +901,10 @@ pub async fn retry(app: &AppHandle, id: u64) {
                 attempt: pending.attempt + 1,
                 item,
                 wav: Arc::new(wav),
+                clean_wav: clean.map(Arc::new),
             }),
             verify_front: true,
+            noise,
         },
     )
     .await;
@@ -879,7 +913,7 @@ pub async fn retry(app: &AppHandle, id: u64) {
 /// Gives up on the cloud for the kept recording in view `id`: transcribes
 /// it on this Mac and pastes the words as heard.
 pub async fn paste_raw(app: &AppHandle, id: u64) {
-    let Some((_, item, wav)) = take_retry(app, id) else {
+    let Some((_, outbox::Kept { item, wav, .. })) = take_retry(app, id) else {
         return;
     };
     let working_id = island::show(
@@ -923,12 +957,15 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
                         target: None,
                         memory_used: Vec::new(),
                         language: None,
+                        heard_from: None,
                     },
                     input: outbox_input(&item),
                     working_id,
                     sample_count,
                     stop_time: Instant::now(),
                     verify_front: true,
+                    // Transcribed here from the recording as sent.
+                    noise: kept_noise_upload(&item.meta_json, false),
                 },
             )
             .await;
@@ -944,14 +981,14 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
 /// History's "Retry" for a kept recording: sends it (never asking a
 /// question back) and returns the text, which also lands in History.
 pub async fn send_kept(app: &AppHandle, id: &str) -> Result<String, ApiError> {
-    let (item, wav) = outbox::get(app, id)
+    let outbox::Kept { item, wav, clean } = outbox::get(app, id)
         .ok_or_else(|| ApiError::new(ErrorCode::BadRequest, "That recording is gone"))?;
     let mut meta: serde_json::Value =
         serde_json::from_str(&item.meta_json).unwrap_or_else(|_| serde_json::json!({}));
     if let Some(o) = meta.as_object_mut() {
         o.insert("ask_back".into(), serde_json::json!(false));
     }
-    match dictate::send_json(app, &meta.to_string(), Some(&wav)).await {
+    match dictate::send_json(app, &meta.to_string(), Some(&wav), clean.as_deref()).await {
         Ok(DictateOutcome::Done(f)) => {
             outbox::remove(app, id);
             Ok(f.text)
@@ -1018,6 +1055,7 @@ struct Delivery {
     /// Paste only if the island is still ours and the recording's app is in
     /// front; otherwise copy (a retried result can arrive much later).
     verify_front: bool,
+    noise: NoiseUpload,
 }
 
 /// The redos offered after a result of `mode`.
@@ -1040,7 +1078,9 @@ async fn deliver(app: &AppHandle, d: Delivery) {
         sample_count,
         stop_time,
         verify_front,
+        noise,
     } = d;
+    let noise_filtered = noise_note(noise, finished.heard_from.as_deref());
     let text = crate::transcription_hook::apply(app, finished.text.clone()).await;
     if text.trim().is_empty() {
         if island::current_id() == working_id {
@@ -1103,9 +1143,76 @@ async fn deliver(app: &AppHandle, d: Delivery) {
             submitted,
             dictation_id: finished.id,
             label: finished.label,
+            noise_filtered,
         },
         finished.memory_used,
     );
+}
+
+/// Gets a finished recording ready off the async runtime (see
+/// `audio_toolkit::noise`). If that fails, the recording goes as it was.
+pub(crate) async fn prepare_recording(
+    app: &AppHandle,
+    raw: Vec<f32>,
+    on_device: bool,
+) -> crate::audio_toolkit::noise::Prepared {
+    let handle = app.clone();
+    let backup = raw.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::managers::audio::prepare_for_transcription(&handle, raw, on_device)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        log::warn!("Noise filter failed ({e}); sending the recording as it was");
+        crate::audio_toolkit::noise::Prepared {
+            audio: backup,
+            ..Default::default()
+        }
+    })
+}
+
+/// What the noise filter put in a request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoiseUpload {
+    /// The recording as it was.
+    None,
+    /// Only the filtered recording ("Always").
+    Clean,
+    /// Both, for the server to choose (heavy noise, Auto).
+    Both,
+}
+
+fn noise_upload(plan: crate::audio_toolkit::noise::Plan) -> NoiseUpload {
+    use crate::audio_toolkit::noise::Plan;
+    match plan {
+        Plan::Raw => NoiseUpload::None,
+        Plan::Clean => NoiseUpload::Clean,
+        Plan::Both => NoiseUpload::Both,
+    }
+}
+
+/// A kept request's upload: both files if a filtered copy was kept, else
+/// what its meta says.
+fn kept_noise_upload(meta_json: &str, has_clean: bool) -> NoiseUpload {
+    let filtered = serde_json::from_str::<serde_json::Value>(meta_json)
+        .ok()
+        .and_then(|v| v.get("noise_filtered").and_then(|b| b.as_bool()))
+        .unwrap_or(false);
+    match (has_clean, filtered) {
+        (true, _) => NoiseUpload::Both,
+        (false, true) => NoiseUpload::Clean,
+        (false, false) => NoiseUpload::None,
+    }
+}
+
+/// Whether the result card says "Noise filtered": the words came from the
+/// filtered recording (with two sent, only if the server says it used it).
+fn noise_note(upload: NoiseUpload, heard_from: Option<&str>) -> bool {
+    match upload {
+        NoiseUpload::None => false,
+        NoiseUpload::Clean => true,
+        NoiseUpload::Both => heard_from == Some("clean"),
+    }
 }
 
 /// Shows `result` in the island and remembers it for Undo, Copy, redos and
@@ -1128,6 +1235,7 @@ fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::Mem
             },
             rateable: result.dictation_id.is_some(),
             tip: crate::fn_key::take_tip(app),
+            noise_filtered: result.noise_filtered,
         },
     );
     *lock(&LAST_RESULT) = Some(result);
@@ -1254,6 +1362,8 @@ pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
             submitted: last.submitted && !pasted,
             dictation_id: finished.id,
             label: finished.label,
+            // A redo rewrites the same words: the note stays with them.
+            noise_filtered: last.noise_filtered,
         },
         finished.memory_used,
     );
@@ -1337,6 +1447,7 @@ pub async fn answer(app: &AppHandle, id: u64, answer: Option<String>) {
             // A tapped answer has no recording to keep; it's quick to tap again.
             retry: None,
             verify_front: false,
+            noise: NoiseUpload::None,
         },
     )
     .await;
@@ -1530,6 +1641,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                     chips: Vec::new(),
                     rateable: false,
                     tip: None,
+                    noise_filtered: false,
                 },
             );
             *lock(&LAST_RESULT) = Some(LastResult {
@@ -1543,6 +1655,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                 submitted: false,
                 dictation_id: None,
                 label: None,
+                noise_filtered: false,
             });
             Ok(())
         }
@@ -1735,6 +1848,26 @@ mod tests {
     }
 
     #[test]
+    fn the_noise_note_follows_what_the_server_heard() {
+        use crate::audio_toolkit::noise::Plan;
+        assert_eq!(noise_upload(Plan::Both), NoiseUpload::Both);
+        // Two sent: only when the server kept the filtered one.
+        assert!(noise_note(NoiseUpload::Both, Some("clean")));
+        assert!(!noise_note(NoiseUpload::Both, Some("raw")));
+        assert!(!noise_note(NoiseUpload::Both, None));
+        // "Always": the filtered one was all there was.
+        assert!(noise_note(NoiseUpload::Clean, None));
+        assert!(!noise_note(NoiseUpload::None, Some("clean")));
+        // A kept request remembers what it sent.
+        assert_eq!(kept_noise_upload("{}", true), NoiseUpload::Both);
+        assert_eq!(
+            kept_noise_upload(r#"{"noise_filtered":true}"#, false),
+            NoiseUpload::Clean
+        );
+        assert_eq!(kept_noise_upload("not json", false), NoiseUpload::None);
+    }
+
+    #[test]
     fn redo_never_replaces_a_sent_or_moved_paste() {
         let mut last = LastResult {
             island_id: 1,
@@ -1747,6 +1880,7 @@ mod tests {
             submitted: false,
             dictation_id: None,
             label: None,
+            noise_filtered: false,
         };
         assert!(redo_replaces(&last, Some("com.apple.Notes")));
         assert!(!redo_replaces(&last, Some("com.apple.Safari")));
@@ -1813,6 +1947,7 @@ mod tests {
             submitted: false,
             dictation_id: Some("d1".into()),
             label: Some("Prompt · for Claude".into()),
+            noise_filtered: false,
         };
         let b = feedback_body(Some(&last), "up", Some("  "));
         assert_eq!(b["dictation_id"], "d1");

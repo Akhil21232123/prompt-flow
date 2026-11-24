@@ -2,7 +2,8 @@
 //!
 //! When a request fails for a reason that may pass (no network, a server
 //! error, a timeout), the audio and the request's meta are written to
-//! `outbox/` in the app's data folder: `<request id>.wav` and `.json`. They
+//! `outbox/` in the app's data folder: `<request id>.wav` and `.json`
+//! (and `.clean.wav` when the noise filter sent a filtered copy too). They
 //! survive a quit, show in History as "Not sent", and leave the outbox when
 //! they're sent or the user deletes them. At most `CAP` are kept; the oldest
 //! goes first.
@@ -66,17 +67,31 @@ fn safe_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
 }
 
-pub fn save(app: &AppHandle, item: &OutboxItem, wav: &[u8]) -> Result<(), String> {
+/// Keeps a request: its meta, its audio and, when the noise filter made
+/// one, the filtered audio sent beside it (`<id>.clean.wav`).
+pub fn save(
+    app: &AppHandle,
+    item: &OutboxItem,
+    wav: &[u8],
+    clean: Option<&[u8]>,
+) -> Result<(), String> {
     let dir = dir(app).ok_or("No data folder")?;
-    save_in(&dir, item, wav)
+    save_in(&dir, item, wav, clean)
 }
 
-fn save_in(dir: &Path, item: &OutboxItem, wav: &[u8]) -> Result<(), String> {
+fn save_in(dir: &Path, item: &OutboxItem, wav: &[u8], clean: Option<&[u8]>) -> Result<(), String> {
     if !safe_id(&item.id) {
         return Err("Bad request id".into());
     }
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(format!("{}.wav", item.id)), wav).map_err(|e| e.to_string())?;
+    let clean_path = dir.join(format!("{}.clean.wav", item.id));
+    match clean {
+        Some(clean) => std::fs::write(clean_path, clean).map_err(|e| e.to_string())?,
+        None => {
+            let _ = std::fs::remove_file(clean_path);
+        }
+    }
     let json = serde_json::to_vec(item).map_err(|e| e.to_string())?;
     std::fs::write(dir.join(format!("{}.json", item.id)), json).map_err(|e| e.to_string())?;
     // Keep the newest CAP.
@@ -107,18 +122,27 @@ fn list_in(dir: &Path) -> Vec<OutboxItem> {
     items
 }
 
-pub fn get(app: &AppHandle, id: &str) -> Option<(OutboxItem, Vec<u8>)> {
+/// A kept request.
+pub struct Kept {
+    pub item: OutboxItem,
+    pub wav: Vec<u8>,
+    /// The filtered audio sent beside it, if there was one.
+    pub clean: Option<Vec<u8>>,
+}
+
+pub fn get(app: &AppHandle, id: &str) -> Option<Kept> {
     let dir = dir(app)?;
     get_in(&dir, id)
 }
 
-fn get_in(dir: &Path, id: &str) -> Option<(OutboxItem, Vec<u8>)> {
+fn get_in(dir: &Path, id: &str) -> Option<Kept> {
     if !safe_id(id) {
         return None;
     }
     let item = serde_json::from_slice(&std::fs::read(dir.join(format!("{id}.json"))).ok()?).ok()?;
     let wav = std::fs::read(dir.join(format!("{id}.wav"))).ok()?;
-    Some((item, wav))
+    let clean = std::fs::read(dir.join(format!("{id}.clean.wav"))).ok();
+    Some(Kept { item, wav, clean })
 }
 
 pub fn remove(app: &AppHandle, id: &str) {
@@ -132,6 +156,7 @@ fn remove_in(dir: &Path, id: &str) {
         return;
     }
     let _ = std::fs::remove_file(dir.join(format!("{id}.wav")));
+    let _ = std::fs::remove_file(dir.join(format!("{id}.clean.wav")));
     let _ = std::fs::remove_file(dir.join(format!("{id}.json")));
 }
 
@@ -181,23 +206,37 @@ mod tests {
     fn saved_recordings_survive_and_the_oldest_go_first() {
         let dir = tempfile::tempdir().unwrap();
         for n in 0..(CAP as u32 + 3) {
-            save_in(dir.path(), &item(&uuid(n), n as i64), b"RIFFxxxx").unwrap();
+            save_in(dir.path(), &item(&uuid(n), n as i64), b"RIFFxxxx", None).unwrap();
         }
         let items = list_in(dir.path());
         assert_eq!(items.len(), CAP);
         assert_eq!(items[0].id, uuid(CAP as u32 + 2), "newest first");
         assert!(get_in(dir.path(), &uuid(0)).is_none(), "oldest dropped");
-        let (got, wav) = get_in(dir.path(), &uuid(5)).unwrap();
-        assert_eq!(got.app_name.as_deref(), Some("Notes"));
-        assert_eq!(wav, b"RIFFxxxx");
+        let kept = get_in(dir.path(), &uuid(5)).unwrap();
+        assert_eq!(kept.item.app_name.as_deref(), Some("Notes"));
+        assert_eq!(kept.wav, b"RIFFxxxx");
+        assert!(kept.clean.is_none());
         remove_in(dir.path(), &uuid(5));
         assert!(get_in(dir.path(), &uuid(5)).is_none());
     }
 
     #[test]
+    fn both_recordings_are_kept_for_a_retry() {
+        let dir = tempfile::tempdir().unwrap();
+        let id = uuid(1);
+        save_in(dir.path(), &item(&id, 1), b"RAW", Some(b"CLEAN")).unwrap();
+        let kept = get_in(dir.path(), &id).unwrap();
+        assert_eq!(kept.wav, b"RAW");
+        assert_eq!(kept.clean.as_deref(), Some(&b"CLEAN"[..]));
+        assert_eq!(list_in(dir.path()).len(), 1, "one request, not two");
+        remove_in(dir.path(), &id);
+        assert!(!dir.path().join(format!("{id}.clean.wav")).exists());
+    }
+
+    #[test]
     fn ids_never_escape_the_folder() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(save_in(dir.path(), &item("../../evil", 1), b"x").is_err());
+        assert!(save_in(dir.path(), &item("../../evil", 1), b"x", None).is_err());
         assert!(get_in(dir.path(), "../x").is_none());
     }
 

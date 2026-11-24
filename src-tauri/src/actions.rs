@@ -941,6 +941,16 @@ impl ShortcutAction for TranscribeAction {
                     )
                     .await;
                 } else {
+                    // The noise filter on this Mac: only "Always" (Auto
+                    // needs the cloud's second decode to pick the better).
+                    let prepared =
+                        crate::cloud::pipeline::prepare_recording(&ah, samples, true).await;
+                    if prepared.report.filtered() {
+                        // A live decode heard the raw audio: decode the
+                        // filtered audio instead, and keep that in History.
+                        tm.cancel_stream();
+                    }
+                    let samples = prepared.audio;
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
                     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
