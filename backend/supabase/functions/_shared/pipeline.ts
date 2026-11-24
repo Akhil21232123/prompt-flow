@@ -3,9 +3,10 @@
 // the fidelity guard.
 
 import { classify, isAiTarget } from "./categories.ts";
-import { findInventions } from "./fidelity.ts";
+import { findInventions, spokenNumbers } from "./fidelity.ts";
 import { needsEnglish, type OutputLanguage } from "./languages.ts";
 import { relevantMemories, usedMemories } from "./memory.ts";
+import { fixKnownNames, KNOWN_NAMES } from "./names.ts";
 import * as P from "./prompts.ts";
 import * as S from "./snippets.ts";
 import {
@@ -17,6 +18,7 @@ import {
 } from "./targets.ts";
 import {
   dropEchoedRules,
+  groundParts,
   JSON_RETRY_NOTE,
   layoutFor,
   parseDraft,
@@ -163,7 +165,7 @@ async function polish(
       : undefined,
     app: req.app,
     developerMode: user.settings.developer_mode,
-    dictionary: user.dictionary,
+    dictionary: [...user.dictionary, ...KNOWN_NAMES],
     hasSnippetTokens: protectedText.tokens.length > 0,
     translateFrom: translateFrom(req, outputLanguageFor("dictate", req, user)),
   });
@@ -252,7 +254,7 @@ async function engineer(
     category,
     target: fixedTarget,
     customInstructions: s.custom_instructions,
-    dictionary: user.dictionary,
+    dictionary: [...user.dictionary, ...KNOWN_NAMES],
     context,
   });
   const smart = { model: deps.models.smart, maxTokens: 2000 };
@@ -279,8 +281,15 @@ async function engineer(
           ? "coding_agent"
           : "chat_assistant"));
   const layout = layoutFor(ai, target, s.format);
+  // What the user gave us: their words, the screen, relevant memories.
+  const given = trustedContext(req, user);
+  const spoken = spokenNumbers(given);
   const render = (p: PromptParts) =>
-    renderPrompt(dropEchoedRules(p, req.text), layout, req.screen);
+    renderPrompt(
+      groundParts(dropEchoedRules(p, req.text), given, spoken),
+      layout,
+      req.screen,
+    );
 
   let parts = draft?.parts;
   // Still no JSON: use the reply's text as it is, unless it's broken JSON.
@@ -445,8 +454,14 @@ export async function rewrite(
       calls: 0,
     };
   }
-  // Only memories that are about this request; the rest stay out entirely.
-  req = { ...req, memories: relevantMemories(req.memories ?? [], req.text) };
+  // Names speech recognition reliably mishears ("FNN", "whisperflow") are
+  // fixed first, and only memories about this request come along.
+  const heard = fixKnownNames(req.text);
+  req = {
+    ...req,
+    text: heard,
+    memories: relevantMemories(req.memories ?? [], heard),
+  };
   let mode = resolveMode(req, user, category);
   // A few words ("so I'm prompting") are not a request to engineer: writing
   // a prompt from them means inventing one. Clean them up instead.

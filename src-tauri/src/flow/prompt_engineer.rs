@@ -87,7 +87,7 @@ How to rewrite:
 4. Make expectations explicit when the speaker clearly implied them, such as wanting complete working code rather than a sketch, or wanting sources.
 5. Specify the deliverable: format, structure, length and what it must include.
 6. Add success criteria only when they give the AI a check that the requirements don't already state; never restate a requirement as a criterion. Never repeat a point in two places.
-7. Missing information: {missing_info} Never fill a gap with an assumption of your own (\"assume a JSON format\"), and never add constraints, rules or warnings the speaker did not ask for.
+7. Missing information: {missing_info} Never fill a gap with an assumption of your own (\"assume a JSON format\"), and never add constraints, rules, warnings or quantities (\"at least three\", \"four sections\") the speaker did not ask for. Requirements are the speaker's own asks, nothing more.
 8. Match the length to the request. A one-line ask becomes a few sharp lines, not a page. Leave out generic filler that would not change the result (\"be thorough\", \"think step by step\", \"you are a world-class expert\"). Add a one-line role only when it brings real domain expertise.
 9. Phrase instructions as what to do. Keep the speaker's own \"don't\"s.
 10. Write calm, plain instructions: no ALL CAPS, no \"CRITICAL\" or \"MUST\", no threats or rewards.

@@ -143,6 +143,83 @@ function overlap(a: string, b: string): number {
 const ECHOED_RULE =
   /\b(?:app or window|window details|the app (?:this|it) is typed|unrelated (?:code|refactor\w*|features?|shortcuts?|examples?|content|details?)|not mentioned (?:here|above)|anything (?:not|they didn't) (?:said|mention\w*)|invent\w*|assumptions?)\b/i;
 
+/** Words every instruction uses; they say nothing about what was asked. */
+const INSTRUCTION_WORDS = new Set(
+  "provide include list describe explain give make write ensure use keep add focus brief short clear concise each any all every must should not don't avoid only also with without where when how what which that this these those your their response answer output format section sections bullet bullets example examples point points detail details item items summary short simple plain text possible relevant specific following based using about into from have will would could more most less least well good best help".split(
+    " ",
+  ),
+);
+
+const stems = (t: string) =>
+  (t.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [])
+    .filter((w) => w.length > 2 && !INSTRUCTION_WORDS.has(w))
+    .map((w) => w.slice(0, 5));
+
+const NUMBER_WORDS: Record<string, string> = {
+  two: "2",
+  three: "3",
+  four: "4",
+  five: "5",
+  six: "6",
+  seven: "7",
+  eight: "8",
+  nine: "9",
+  ten: "10",
+  twelve: "12",
+  fifteen: "15",
+  twenty: "20",
+};
+
+/**
+ * A count the user never gave ("at least three repositories", "four
+ * sections"), removed: "repositories", "sections". `spoken` is every number
+ * that was said, as digits.
+ */
+export function dropInventedCounts(line: string, spoken: Set<string>): string {
+  return line
+    .replace(
+      /\b(?:(?:at least|at most|exactly|up to|no more than|no fewer than|a minimum of|a maximum of)\s+)?(two|three|four|five|six|seven|eight|nine|ten|twelve|fifteen|twenty|\d{1,3})(?:\s*[-–]\s*(?:\w+|\d+))?\s+(?=(?:[\p{L}-]+\s+){0,2}[\p{L}-]+s\b)/giu,
+      (m, n: string) => {
+        const digits = NUMBER_WORDS[n.toLowerCase()] ?? n;
+        return spoken.has(digits) ? m : "";
+      },
+    )
+    .replace(/\s{2,}/g, " ");
+}
+
+/**
+ * Requirements the user never asked for. A line is kept when enough of its
+ * distinctive words (instruction words like "provide" and "brief" don't
+ * count) come from what was said, the screen or a relevant memory; a line
+ * with almost none of them is the model's own idea ("Do not suggest hardware
+ * solutions", "No proprietary tools") and goes. Counts nobody said go too.
+ */
+export function groundParts(
+  p: PromptParts,
+  source: string,
+  spoken: Set<string>,
+): PromptParts {
+  const have = new Set(stems(source));
+  const grounded = (line: string) => {
+    const words = [...new Set(stems(line))];
+    if (words.length < 3) return true;
+    const hits = words.filter((w) => have.has(w)).length;
+    // "Do not…", "Never…", "No…": a rule is where an invented constraint
+    // hides, so most of it has to be the user's own words.
+    const rule = /^\W*(?:do not|don't|never|avoid|no|without)\b/i.test(line);
+    return hits / words.length >= (rule ? 0.6 : 0.34);
+  };
+  const clean = (xs: string[]) =>
+    xs.filter(grounded).map((x) => dropInventedCounts(x, spoken));
+  return {
+    ...p,
+    task: dropInventedCounts(p.task, spoken),
+    requirements: clean(p.requirements),
+    acceptance_criteria: clean(p.acceptance_criteria),
+    output_format: dropInventedCounts(p.output_format, spoken),
+  };
+}
+
 /** Drops echoed rules, unless the user's own words contain them. */
 export function dropEchoedRules(p: PromptParts, said: string): PromptParts {
   if (ECHOED_RULE.test(said)) return p;

@@ -144,7 +144,8 @@ describe("dictate: finished response", () => {
     ];
     for (const [app, check] of apps) {
       const { ctx } = fakeCtx({
-        transcript: "explain how rate limits work in postgres",
+        transcript:
+          "explain how rate limits work in postgres, cover token buckets and mention pg_cron",
         replies: {
           architect: draft("Explain how rate limits work in Postgres.", parts),
           critic: review(

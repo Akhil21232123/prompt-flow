@@ -44,6 +44,16 @@ MAIL_REPLY = (
     "So yeah. Surrender for now."
 )
 
+RESEARCH = (
+    "I am testing out this prompt flow now. I am holding FNN and talking. Also, you need to test out manage cases "
+    "and you need to test out the diary use cases and all and then you need to make the voice better in traffic and "
+    "noises and sort of. And then we need to make differentiators that lets users switch from whisperflow to prompt "
+    "flow. and yeah we should be with Perflown in every case possible yeah that's possible because they are only "
+    "software solution they don't have big big manufacturing and sort of so they are a software and we are a "
+    "software so we can obviously beat them in many aspects so think on what we can do research and yeah scan the "
+    "GitHub for new repositories which we can add to make this even more better"
+)
+
 MEMORIES = [
     {"content": "I am a funding engineer", "kind": "fact"},
     {"content": "Testing PromptFlow with Telugu language inputs using Gemini", "kind": "project"},
@@ -89,6 +99,10 @@ CASES = [
     ("selected text is edited", {"text": "make this formal", "mode": "auto", "app": MAIL,
                                  "selection": "hey can u send the deck by tmrw thx"}, "command",
      [["deck"]], [r"<task>"], ""),
+    ("research request (24 Nov) → prompt, nothing added", {"text": RESEARCH, "mode": "auto", "app": CLAUDE}, "engineer",
+     [["wispr flow"], ["promptflow"], ["github"], ["traffic", "noise"]],
+     INVENTED + [r"whisperflow", r"\bfnn\b", r"hardware", r"proprietary", r"at least (?:two|three|four|five)",
+                 r"(?:two|three|four|five) sections"], "no_repeats"),
     ("'my backend' uses the stack from memory", {"text": "write a readme for my backend project please", "mode": "auto",
                                                  "app": CLAUDE}, "engineer", [["supabase"]], INVENTED, "memory"),
 ]

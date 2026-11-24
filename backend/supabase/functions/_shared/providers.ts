@@ -280,6 +280,7 @@ export function isSilent(
  */
 export const BASE_VOCABULARY = [
   "PromptFlow",
+  "Wispr Flow",
   "Claude",
   "ChatGPT",
   "Gemini",

@@ -31,6 +31,7 @@ import {
   wavSeconds,
 } from "./limits.ts";
 import { extractMemories, memorySearches } from "./memory.ts";
+import { namesOnScreen } from "./names.ts";
 import { classify, isAiTarget } from "./categories.ts";
 import {
   MIN_PROMPT_WORDS,
@@ -466,6 +467,8 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     const vocabulary = vocabularyPrompt([
       ...user.dictionary,
       ...(aiApp ? BASE_VOCABULARY : []),
+      // Names in the window right now (the email thread, the doc title).
+      ...namesOnScreen([base.app?.title, base.app?.surrounding_text]),
     ]);
     const whisperLanguage = sttLanguage(
       meta.language ?? user.settings.spoken_language,

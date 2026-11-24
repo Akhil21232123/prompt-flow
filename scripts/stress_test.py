@@ -256,6 +256,21 @@ def v2_checks(token, check):
     r = dictate(token, speak(VAGUE[0]), "engineer", app=CLAUDE, ask_back=False)
     check("ask-back: ask_back=false never asks", r["_status"] == 200 and not r.get("needs_clarification"), f"{r['_status']} {r.get('code')} {r.get('error')!r} label={r.get('label')!r}{(' why=' + r['fallback_reason']) if r.get('fallback_reason') else ''} q={r.get('question')!r}")
 
+    # Fn ("auto") through real audio: decided on what was heard.
+    r = dictate(token, speak(CLEAR), "auto", app=CLAUDE, ask_back=False)
+    check("fn: a spoken request in Claude becomes a prompt", r["_status"] == 200 and r.get("mode") == "engineer",
+          f"mode={r.get('mode')!r} label={r.get('label')!r}")
+    r = dictate(token, speak("so I'm prompting"), "auto", app=CLAUDE)
+    check("fn: three words in Claude stay words", r["_status"] == 200 and r.get("mode") == "dictate" and len(r.get("text", "").split()) <= 6,
+          f"mode={r.get('mode')!r} text={r.get('text')!r}")
+    r = dictate(token, speak("Thanks for your reply, but I am not interested in buying it right now."), "auto",
+                app={"name": "Mail", "bundle_id": "com.apple.mail"})
+    check("fn: mail stays a message", r["_status"] == 200 and r.get("mode") == "dictate" and "<task>" not in r.get("text", ""),
+          f"mode={r.get('mode')!r}")
+    r = dictate(token, speak("I am holding the F N key and talking about whisper flow and prompt flow."), "dictate")
+    check("names: Fn, Wispr Flow and PromptFlow spelled right", all(x in r.get("text", "") for x in ("Fn", "Wispr Flow", "PromptFlow")),
+          repr(r.get("text")))
+
     # AI-specific prompts: XML for Claude, Markdown for ChatGPT.
     ramble = speak(RAMBLE)
     r = dictate(token, ramble, "engineer", app=CLAUDE, ask_back=False)
