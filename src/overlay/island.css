@@ -661,3 +661,11 @@ body {
   min-width: 0;
   line-height: 1.4;
 }
+
+/* "Noise filtered" on a result: a quiet note, not a warning. */
+.i-noise {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}

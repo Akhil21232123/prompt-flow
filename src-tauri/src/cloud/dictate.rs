@@ -101,6 +101,12 @@ pub struct DictateMeta {
     /// retry from a new dictation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,
+    /// The audio went through the noise filter (a noisy place).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub noise_filtered: bool,
+    /// The estimated speech-to-noise ratio, in dB.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snr_db: Option<f32>,
 }
 
 /// A fresh `request_id`.
@@ -209,6 +215,8 @@ pub fn build_meta(
         skip_clarify,
         device: "mac",
         request_id: None,
+        noise_filtered: false,
+        snr_db: None,
     }
 }
 
@@ -469,6 +477,19 @@ mod tests {
         assert_eq!(meta.output_language, Some("same"));
         assert!(!meta.ask_back, "ask-back is engineer only");
         assert!(meta.app.is_none());
+    }
+
+    #[test]
+    fn noise_fields_go_along_only_when_known() {
+        let mut meta = build_meta(CloudMode::Auto, &flow(), MetaInput::default(), None);
+        let v = serde_json::to_value(&meta).unwrap();
+        assert!(v.get("noise_filtered").is_none());
+        assert!(v.get("snr_db").is_none());
+        meta.noise_filtered = true;
+        meta.snr_db = Some(6.5);
+        let v = serde_json::to_value(&meta).unwrap();
+        assert_eq!(v["noise_filtered"], true);
+        assert_eq!(v["snr_db"], 6.5);
     }
 
     #[test]

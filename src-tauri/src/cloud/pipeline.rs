@@ -482,17 +482,21 @@ where
             None,
         ),
     };
+    // Somewhere noisy: clean the audio first (a clean recording is sent
+    // exactly as recorded).
+    let (samples, noise) = clean_recording(app, rec.samples).await;
     let mut meta = dictate::build_meta(cloud_mode(mode), &settings.flow, input.clone(), clarify);
     let request_id = dictate::new_request_id();
     meta.request_id = Some(request_id.clone());
+    meta.noise_filtered = noise.filtered;
+    meta.snr_db = noise.snr_db.map(|db| (db * 10.0).round() / 10.0);
     let meta_json = serde_json::to_string(&meta).unwrap_or_default();
-    let wav = Arc::new(dictate::encode_wav(&rec.samples));
+    let wav = Arc::new(dictate::encode_wav(&samples));
 
     // History keeps the audio, like the on-device pipeline.
     let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());
     let wav_path = hm.recordings_dir().join(&file_name);
-    let samples = rec.samples;
     let wav_saved = tauri::async_runtime::spawn_blocking(move || {
         crate::audio_toolkit::save_wav_file(&wav_path, &samples).is_ok()
     });
@@ -534,6 +538,7 @@ where
                 wav,
             }),
             verify_front: false,
+            noise_filtered: noise.filtered,
         },
     )
     .await;
@@ -591,6 +596,8 @@ struct HandleContext {
     /// The result may arrive long after the recording (a retry): paste only
     /// into the app it was recorded in, and only if the island is still ours.
     verify_front: bool,
+    /// The audio went through the noise filter (the result card says so).
+    noise_filtered: bool,
 }
 
 struct RetryPayload {
@@ -640,6 +647,7 @@ async fn handle_outcome(
                     sample_count: ctx.sample_count,
                     stop_time: ctx.stop_time,
                     verify_front: ctx.verify_front,
+                    noise_filtered: ctx.noise_filtered,
                 },
             )
             .await;
@@ -854,6 +862,7 @@ pub async fn retry(app: &AppHandle, id: u64) {
         },
     );
     let result = dictate::send_json(app, &item.meta_json, Some(&wav)).await;
+    let noise_filtered = meta_noise_filtered(&item.meta_json);
     handle_outcome(
         app,
         result,
@@ -871,6 +880,7 @@ pub async fn retry(app: &AppHandle, id: u64) {
                 wav: Arc::new(wav),
             }),
             verify_front: true,
+            noise_filtered,
         },
     )
     .await;
@@ -929,6 +939,7 @@ pub async fn paste_raw(app: &AppHandle, id: u64) {
                     sample_count,
                     stop_time: Instant::now(),
                     verify_front: true,
+                    noise_filtered: meta_noise_filtered(&item.meta_json),
                 },
             )
             .await;
@@ -1018,6 +1029,7 @@ struct Delivery {
     /// Paste only if the island is still ours and the recording's app is in
     /// front; otherwise copy (a retried result can arrive much later).
     verify_front: bool,
+    noise_filtered: bool,
 }
 
 /// The redos offered after a result of `mode`.
@@ -1040,6 +1052,7 @@ async fn deliver(app: &AppHandle, d: Delivery) {
         sample_count,
         stop_time,
         verify_front,
+        noise_filtered,
     } = d;
     let text = crate::transcription_hook::apply(app, finished.text.clone()).await;
     if text.trim().is_empty() {
@@ -1105,12 +1118,44 @@ async fn deliver(app: &AppHandle, d: Delivery) {
             label: finished.label,
         },
         finished.memory_used,
+        noise_filtered,
     );
+}
+
+/// Runs the noise filter over a finished recording off the async runtime.
+/// If it fails, the recording goes as it was.
+pub(crate) async fn clean_recording(
+    app: &AppHandle,
+    raw: Vec<f32>,
+) -> (Vec<f32>, crate::audio_toolkit::noise::CleanReport) {
+    let handle = app.clone();
+    let backup = raw.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::managers::audio::clean_for_transcription(&handle, raw)
+    })
+    .await
+    .unwrap_or_else(|e| {
+        log::warn!("Noise filter failed ({e}); sending the recording as it was");
+        (backup, Default::default())
+    })
+}
+
+/// Whether a kept request's audio was filtered (it says so in its meta).
+fn meta_noise_filtered(meta_json: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(meta_json)
+        .ok()
+        .and_then(|v| v.get("noise_filtered").and_then(|b| b.as_bool()))
+        .unwrap_or(false)
 }
 
 /// Shows `result` in the island and remembers it for Undo, Copy, redos and
 /// feedback.
-fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::MemoryChip>) {
+fn show_result(
+    app: &AppHandle,
+    mut result: LastResult,
+    memory: Vec<dictate::MemoryChip>,
+    noise_filtered: bool,
+) {
     let has_raw = !result.raw.trim().is_empty();
     result.island_id = island::show(
         app,
@@ -1128,6 +1173,7 @@ fn show_result(app: &AppHandle, mut result: LastResult, memory: Vec<dictate::Mem
             },
             rateable: result.dictation_id.is_some(),
             tip: crate::fn_key::take_tip(app),
+            noise_filtered,
         },
     );
     *lock(&LAST_RESULT) = Some(result);
@@ -1256,6 +1302,8 @@ pub async fn redo(app: &AppHandle, id: u64, kind: Redo) {
             label: finished.label,
         },
         finished.memory_used,
+        // A redo rewrites the words; the audio isn't touched again.
+        false,
     );
 }
 
@@ -1337,6 +1385,7 @@ pub async fn answer(app: &AppHandle, id: u64, answer: Option<String>) {
             // A tapped answer has no recording to keep; it's quick to tap again.
             retry: None,
             verify_front: false,
+            noise_filtered: false,
         },
     )
     .await;
@@ -1530,6 +1579,7 @@ pub async fn send_fix(app: &AppHandle, id: u64) -> Result<(), String> {
                     chips: Vec::new(),
                     rateable: false,
                     tip: None,
+                    noise_filtered: false,
                 },
             );
             *lock(&LAST_RESULT) = Some(LastResult {

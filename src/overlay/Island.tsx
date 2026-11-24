@@ -10,6 +10,7 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import {
   ArrowUpRight,
+  AudioLines,
   Check,
   Copy,
   CornerUpLeft,
@@ -724,6 +725,15 @@ const Island: React.FC = () => {
                 </span>
               )}
               <span className="i-eyebrow">{label}</span>
+              {view.noise_filtered && (
+                <span
+                  className="i-hint-inline i-noise"
+                  title={t("island.done.noiseFilteredTitle")}
+                >
+                  <AudioLines size={11} />
+                  {t("island.done.noiseFiltered")}
+                </span>
+              )}
               {!view.pasted && (
                 <span className="i-hint-inline">
                   {view.sent

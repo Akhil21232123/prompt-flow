@@ -941,6 +941,10 @@ impl ShortcutAction for TranscribeAction {
                     )
                     .await;
                 } else {
+                    // Somewhere noisy: clean it before the model hears it
+                    // (a clean recording stays exactly as recorded).
+                    let (samples, _noise) =
+                        crate::cloud::pipeline::clean_recording(&ah, samples).await;
                     // Save WAV concurrently with transcription
                     let sample_count = samples.len();
                     let file_name = format!("handy-{}.wav", chrono::Utc::now().timestamp());

@@ -349,6 +349,54 @@ pub fn create_detector(
     })
 }
 
+/// Cleans a finished recording made somewhere noisy, the way the Noise
+/// filter setting says (see `audio_toolkit::noise`): denoised, levelled and
+/// trimmed with the selected voice detector. A clean recording comes back
+/// exactly as it was. Runs on the caller's thread; it takes tens of
+/// milliseconds per second of audio.
+pub fn clean_for_transcription(
+    app_handle: &tauri::AppHandle,
+    samples: Vec<f32>,
+) -> (Vec<f32>, crate::audio_toolkit::noise::CleanReport) {
+    use crate::audio_toolkit::noise;
+    let started = Instant::now();
+    let settings = get_settings(app_handle);
+    let mut detector: Option<Box<dyn SpeechScorer>> = None;
+    let mut score = |audio: &[f32]| -> Option<(Vec<f32>, usize)> {
+        if detector.is_none() {
+            detector = create_detector(settings.vad_backend, app_handle)
+                .map_err(|e| warn!("No voice detector to trim with: {e}"))
+                .ok();
+        }
+        let detector = detector.as_mut()?;
+        let frame = detector.frame_samples();
+        let mut padded = audio.to_vec();
+        padded.resize(audio.len().div_ceil(frame) * frame, 0.0);
+        detector
+            .score(&padded)
+            .map_err(|e| warn!("Voice detector failed while trimming: {e}"))
+            .ok()
+            .map(|scores| (scores, frame))
+    };
+    let (out, report) = noise::clean(samples, settings.flow.noise_filter, Some(&mut score));
+    if report.filtered {
+        info!(
+            "Noise filter: SNR {:.1} dB, gain {:+.1} dB, trimmed {} + {} samples, {:?}",
+            report.snr_db.unwrap_or(f32::NAN),
+            report.gain_db,
+            report.trimmed.0,
+            report.trimmed.1,
+            started.elapsed()
+        );
+    } else {
+        debug!(
+            "Noise filter not needed (SNR {:?} dB, {:?})",
+            report.snr_db, settings.flow.noise_filter
+        );
+    }
+    (out, report)
+}
+
 /// A detector for `backend` with a recording's smoothing (pre-roll, onset,
 /// offline hangover): what keeps speech in a recording, and what cuts the
 /// silence out of other audio the same way.

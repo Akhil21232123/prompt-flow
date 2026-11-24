@@ -205,6 +205,8 @@ pub enum IslandView {
         rateable: bool,
         /// A one-time tip with a fix button.
         tip: Option<IslandTip>,
+        /// The recording went through the noise filter.
+        noise_filtered: bool,
     },
     Verdict {
         good: bool,
@@ -744,6 +746,7 @@ mod tests {
             chips: vec![Redo::AsPrompt],
             rateable: true,
             tip: None,
+            noise_filtered: false,
         };
         assert_eq!(done.hold(), Some(DONE_HOLD));
         let good = IslandView::Verdict {

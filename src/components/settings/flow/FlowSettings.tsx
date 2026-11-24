@@ -81,6 +81,7 @@ const withDefaults = (flow?: Flow): FullFlow => ({
   fn_key: flow?.fn_key ?? true,
   new_keys_notice: flow?.new_keys_notice ?? false,
   fn_tip_shown: flow?.fn_tip_shown ?? false,
+  noise_filter: flow?.noise_filter ?? "auto",
 });
 
 const newId = () =>

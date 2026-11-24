@@ -516,6 +516,19 @@
       "volume": {
         "title": "भोल्युम",
         "description": "अडियो फिडब्याक आवाजको भोल्युम मिलाउनुहोस्"
+      },
+      "noiseFilter": {
+        "title": "Noise filter",
+        "options": {
+          "auto": "Auto",
+          "always": "Always",
+          "off": "Off"
+        },
+        "description": {
+          "auto": "In traffic, on the street or in a café, PromptFlow cleans up the background noise before it writes. In a quiet room your audio is left as it is.",
+          "always": "Every recording is cleaned up first. Best if you always dictate somewhere loud.",
+          "off": "Your audio is never changed."
+        }
       }
     },
     "advanced": {
@@ -1616,7 +1629,9 @@
       "bad": "Bad result",
       "thanks": "Thanks",
       "onClipboard": "On your clipboard",
-      "alreadySent": "Already sent · new version on your clipboard"
+      "alreadySent": "Already sent · new version on your clipboard",
+      "noiseFiltered": "Noise filtered",
+      "noiseFilteredTitle": "It was noisy, so PromptFlow cleaned up the background before writing."
     },
     "verdict": {
       "good": "The answer looks right",

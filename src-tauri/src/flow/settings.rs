@@ -383,6 +383,9 @@ pub struct FlowSettings {
     /// The "set 🌐 to Do Nothing" tip was shown (it's shown once).
     #[serde(default)]
     pub fn_tip_shown: bool,
+    /// Clean recordings made somewhere noisy before transcribing them.
+    #[serde(default)]
+    pub noise_filter: crate::audio_toolkit::noise::NoiseFilter,
 }
 
 /// Languages the cloud understands, plus "auto".
@@ -417,6 +420,7 @@ impl Default for FlowSettings {
             fn_key: true,
             new_keys_notice: false,
             fn_tip_shown: false,
+            noise_filter: Default::default(),
         }
     }
 }
