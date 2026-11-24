@@ -1,0 +1,27 @@
+name: noise eval
+# Does RNNoise (the Mac app's noise filter) help real speech recognition?
+# Mixes spoken sentences with pink, traffic and café noise at 0-20 dB SNR and
+# compares Whisper's word error rate with and without the filter, through
+# the deployed backend as a throwaway user (scripts/noise_eval.py). Manual.
+on:
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      REF: ${{ vars.SUPABASE_PROJECT_REF || 'fhslwvrspzdcvokajvno' }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Tools
+        run: |
+          python3 -m pip install --break-system-packages --quiet numpy
+          cargo install --quiet nnnoiseless --features bin || cargo install --quiet nnnoiseless
+          which nnnoiseless
+      - name: Noise eval
+        env:
+          PF_URL: https://${{ env.REF }}.supabase.co
+          PF_ANON: ${{ vars.PF_ANON || 'sb_publishable_havZ6UNdxBtt0AtqpBZaaw_Y_lr8Lss' }}
+          PF_SERVICE: ${{ secrets.PF_SERVICE }}
+        run: python3 scripts/noise_eval.py
