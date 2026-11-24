@@ -316,6 +316,8 @@ interface Heard {
   confidence?: number;
   /** Which recording won when the app sent a noise-filtered copy too. */
   from?: "raw" | "clean";
+  /** Both results, reported so the choice can be checked and tuned. */
+  candidates?: Array<Record<string, unknown>>;
 }
 
 /**
@@ -334,7 +336,18 @@ async function hearBest(
     hear(ctx, raw, opts),
     hear(ctx, clean, opts).catch(() => undefined),
   ]);
-  return { ...pickHeard(a, b), ms: Math.max(a.ms, b?.ms ?? 0) };
+  return {
+    ...pickHeard(a, b),
+    ms: Math.max(a.ms, b?.ms ?? 0),
+    candidates: [a, b]
+      .filter((x): x is Heard => !!x)
+      .map((x, i) => ({
+        from: i ? "clean" : "raw",
+        confidence: x.confidence,
+        words: x.text.split(/\s+/).filter(Boolean).length,
+        dropped: x.dropped ?? null,
+      })),
+  };
 }
 
 /** The raw result unless the filtered one heard speech with more confidence. */
@@ -428,6 +441,7 @@ function finished(
   language: string | undefined,
   timing: Record<string, number | string>,
   id?: string,
+  sttCandidates?: Array<Record<string, unknown>>,
 ) {
   return {
     ...(id ? { id } : {}),
@@ -444,6 +458,7 @@ function finished(
       : {}),
     ...(language ? { language } : {}),
     timing,
+    ...(sttCandidates ? { stt_candidates: sttCandidates } : {}),
   };
 }
 
@@ -517,6 +532,7 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
     let sttMs = 0;
     let sttProvider: string | undefined;
     let heardFrom: Heard["from"];
+    let heardCandidates: Heard["candidates"];
     let answer: string | undefined;
 
     if (pending) {
@@ -543,6 +559,7 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
       sttMs = heard.ms;
       sttProvider = heard.provider;
       heardFrom = heard.from;
+      heardCandidates = heard.candidates;
       if (heard.dropped) {
         return json({
           dropped: true,
@@ -670,6 +687,7 @@ export async function handleDictate(req: Request, ctx: Ctx): Promise<Response> {
           ...(heardFrom && audioClean ? { heard_from: heardFrom } : {}),
         },
         id,
+        heardCandidates,
       ),
     );
   } catch (e) {

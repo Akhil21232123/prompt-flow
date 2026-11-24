@@ -155,7 +155,8 @@ def transcribe_both(token, raw16, clean16):
     r = call("POST", "/functions/v1/dictate", token, raw=body, content_type=f"multipart/form-data; boundary={boundary}")
     if r.get("_status") != 200:
         return f"<error {r.get('_status')} {r.get('error', '')}>", "?"
-    return r.get("raw") or "", (r.get("timing") or {}).get("heard_from", "?")
+    cands = " ".join(f"{c.get('from')}:{c.get('confidence') if c.get('confidence') is None else round(c['confidence'], 3)}/{c.get('words')}w" for c in r.get("stt_candidates") or [])
+    return r.get("raw") or "", f"{(r.get('timing') or {}).get('heard_from', '?')} [{cands}]"
 
 
 def main():
